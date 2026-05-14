@@ -1,0 +1,162 @@
+name: Generate Daily Posts
+
+# 매일 KST 09:00 (= UTC 00:00) 자동 실행 + 수동 실행 가능
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "수동 실행 사유 (선택)"
+        required: false
+        default: "manual trigger"
+
+# 동시 실행 방지 (이전 실행이 끝나야 다음 시작)
+concurrency:
+  group: generate-posts
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    name: Trigger Tistory Auto cron
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 환경 변수 검증
+        env:
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "${PRODUCTION_URL}" ]; then
+            echo "::error::PRODUCTION_URL secret이 설정되지 않았습니다"
+            exit 1
+          fi
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::CRON_SECRET secret이 설정되지 않았습니다"
+            exit 1
+          fi
+          echo "✓ Secrets 검증 통과"
+
+      - name: POST /api/cron/generate
+        id: cron
+        env:
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -uo pipefail
+
+          echo "▶ POST ${PRODUCTION_URL}/api/cron/generate"
+          echo "  Trigger: ${{ github.event_name }}"
+          echo "  Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+
+          # curl 호출 (최대 5분, 재시도 3회)
+          response=$(curl -sS \
+            -w "\nHTTP_STATUS:%{http_code}\nTOTAL_TIME:%{time_total}\n" \
+            -X POST "${PRODUCTION_URL}/api/cron/generate" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            --max-time 300 \
+            --retry 2 \
+            --retry-delay 5 \
+            --retry-connrefused)
+
+          http_status=$(echo "$response" | grep "HTTP_STATUS:" | cut -d: -f2)
+          total_time=$(echo "$response" | grep "TOTAL_TIME:" | cut -d: -f2)
+          body=$(echo "$response" | sed '/HTTP_STATUS:/d;/TOTAL_TIME:/d')
+
+          echo "Response status: $http_status"
+          echo "Total time: ${total_time}s"
+          echo ""
+          echo "Response body:"
+          echo "$body" | head -200
+          echo ""
+
+          # GitHub Step Summary 작성
+          {
+            echo "## 🚀 Tistory Auto - Daily Posts Generation"
+            echo ""
+            echo "**실행 시간:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo "**트리거:** \`${{ github.event_name }}\`"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # jq로 응답 파싱 (jq는 ubuntu-latest에 기본 설치됨)
+          if command -v jq >/dev/null 2>&1 && [ -n "$body" ]; then
+            saved=$(echo "$body" | jq -r '.saved // 0' 2>/dev/null || echo "0")
+            track1=$(echo "$body" | jq -r '.summary.track1Count // 0' 2>/dev/null || echo "0")
+            track2=$(echo "$body" | jq -r '.summary.track2Count // 0' 2>/dev/null || echo "0")
+            failed=$(echo "$body" | jq -r '.summary.failedCount // 0' 2>/dev/null || echo "0")
+            duration=$(echo "$body" | jq -r '.durationMs // 0' 2>/dev/null || echo "0")
+            errors=$(echo "$body" | jq -r '.summary.errorCount // 0' 2>/dev/null || echo "0")
+
+            {
+              echo "### 📊 결과 요약"
+              echo ""
+              echo "| 항목 | 값 |"
+              echo "|------|-----|"
+              echo "| HTTP 상태 | \`$http_status\` |"
+              echo "| 저장된 글 | **${saved}편** |"
+              echo "| Track 1 (사용자 키워드) | ${track1}편 |"
+              echo "| Track 2 (AI 발굴) | ${track2}편 |"
+              echo "| 실패한 글 | ${failed}편 |"
+              echo "| 에러 | ${errors}개 |"
+              echo "| 소요 시간 (서버) | ${duration}ms |"
+              echo "| 소요 시간 (전체) | ${total_time}s |"
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            # 키워드 목록 출력
+            track1_kw=$(echo "$body" | jq -r '.track1[]? | "  - [\(if .ok then "✅" else "❌" end)] \(.keyword) (\(.category))"' 2>/dev/null || echo "")
+            track2_kw=$(echo "$body" | jq -r '.track2[]? | "  - [\(if .ok then "✅" else "❌" end)] \(.keyword)"' 2>/dev/null || echo "")
+
+            if [ -n "$track1_kw" ]; then
+              {
+                echo "### 📝 Track 1 — 사용자 키워드"
+                echo ""
+                echo "$track1_kw"
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+            if [ -n "$track2_kw" ]; then
+              {
+                echo "### 🤖 Track 2 — AI 발굴 키워드"
+                echo ""
+                echo "$track2_kw"
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+
+            # 에러가 있으면 표시
+            err_list=$(echo "$body" | jq -r '.errors[]?' 2>/dev/null || echo "")
+            if [ -n "$err_list" ]; then
+              {
+                echo "### ⚠️ 에러"
+                echo ""
+                echo "\`\`\`"
+                echo "$err_list"
+                echo "\`\`\`"
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+
+            # notice 출력 (job 결과 페이지 상단에 표시)
+            echo "::notice::저장 ${saved}편 (Track1 ${track1}, Track2 ${track2}), 실패 ${failed}편, 소요 ${total_time}s"
+          else
+            {
+              echo "### ⚠️ 응답 파싱 실패"
+              echo ""
+              echo "\`\`\`"
+              echo "$body" | head -50
+              echo "\`\`\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # HTTP 상태 검증
+          if [ "$http_status" != "200" ]; then
+            echo "::error::Cron 호출 실패 (HTTP $http_status)"
+            exit 1
+          fi
+
+          echo ""
+          echo "✓ 글 생성 완료"
