@@ -1,26 +1,101 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  --font-sans:
+    "Pretendard Variable", Pretendard, -apple-system, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* ntelecomsafe.com 라임 그린 (사이트 컬러와 통일) */
+  --color-brand-50: #f4f9e0;
+  --color-brand-100: #eaf5bd;
+  --color-brand-200: #d4e89c;
+  --color-brand-500: #9dc91a;
+  --color-brand-600: #7fa512;
+  --color-brand-700: #5f7c0e;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  /* Toss ink (gray scale) */
+  --color-ink-50: #f9fafb;
+  --color-ink-100: #f2f4f6;
+  --color-ink-200: #e5e8eb;
+  --color-ink-300: #d1d6db;
+  --color-ink-400: #b0b8c1;
+  --color-ink-500: #8b95a1;
+  --color-ink-600: #6b7684;
+  --color-ink-700: #4e5968;
+  --color-ink-800: #333d4b;
+  --color-ink-900: #191f28;
+
+  /* Status colors */
+  --color-mint-50: #e6f9f3;
+  --color-mint-500: #00c896;
+  --color-mint-700: #00a076;
+  --color-amber-50: #fff7e6;
+  --color-amber-500: #ff9500;
+  --color-amber-700: #d67700;
+  --color-rose-50: #ffeef0;
+  --color-rose-500: #f04452;
+  --color-rose-700: #c2333e;
+  --color-violet-50: #f5efff;
+  --color-violet-500: #9b5bff;
+  --color-violet-700: #7233e8;
+
+  /* Shadows */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  --shadow-press: 0 8px 28px rgba(157, 201, 26, 0.32);
+
+  /* Animations */
+  --animate-fade-up: fadeUp 0.4s ease-out both;
+
+  @keyframes fadeUp {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 }
 
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-feature-settings: "ss01", "ss02";
+  letter-spacing: -0.01em;
+}
+
+body {
+  background: var(--color-ink-50);
+  color: var(--color-ink-900);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d6db;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b0b8c1;
+}
+
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
