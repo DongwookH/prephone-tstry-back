@@ -1,4 +1,5 @@
 import { generateJSON } from "./gemini";
+import { getGlobalContext, getCategoryContext } from "./knowledge";
 
 /**
  * Gemini로 SEO 최적화 + 시각적 레이아웃이 잡힌 한국어 블로그 글 생성.
@@ -50,7 +51,26 @@ function buildPrompt(opts: {
     ? subKeywords.map((k, i) => `   ${i + 1}. ${k}`).join("\n")
     : "   (없음 — 본문에서 자연스러운 동의어 활용)";
 
+  const globalCtx = getGlobalContext();
+  const catCtx = getCategoryContext(category);
+
   return `당신은 한국 SEO + 블로그 카피라이팅 전문가입니다. 다음 키워드로 티스토리 발행용 한국어 블로그 글 1편을 작성해주세요.
+
+# 📚 회사 정보 (Knowledge Base — 반드시 이 정보만 사용, 추측/창작 금지)
+
+${globalCtx}
+
+# 📚 카테고리별 상세 정보
+
+${catCtx}
+
+⚠️ **위 KB에 없는 가격·정책·FAQ는 절대 만들지 마세요.**
+- 가격: 02-plans 표 그대로
+- 정책 (약정, 위약금, 회선 한도, 미성년자 등): 04-faq / 06-cases 그대로
+- 케이스별 가능 여부: 01-services / 06-cases 그대로
+- 정보가 없으면 "자세한 내용은 [공식 사이트] 또는 [카톡 문의]에서 확인해 주세요" 식으로 우회
+
+---
 
 # 주 키워드 (글 제목과 H2에 자연스럽게 사용)
 ${keyword}

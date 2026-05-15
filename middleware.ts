@@ -5,9 +5,12 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
 
   // 보호되지 않는 경로
+  // ⚠️ /api/cron/* 는 production에서도 Bearer 토큰 자체 인증이므로 통과
+  //    (OAuth 미들웨어가 막으면 GitHub Actions cron이 307 redirect로 실패)
   const isPublic =
     pathname.startsWith("/login") ||
     pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/cron") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon");
 
@@ -20,6 +23,7 @@ export default auth((req) => {
       pathname.startsWith("/api/naver/keyword") ||
       pathname.startsWith("/api/posts/test") ||
       pathname.startsWith("/api/posts/preview") ||
+      pathname.startsWith("/api/knowledge/status") ||
       pathname.startsWith("/api/cron/generate")); // GET dry-run 용도
 
   if (isPublic || isDevHealthcheck) return NextResponse.next();
