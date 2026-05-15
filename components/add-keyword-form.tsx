@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Plus, X, Loader2, Check, AlertCircle } from "lucide-react";
 import {
@@ -51,11 +52,27 @@ function AddKeywordModal({ onClose }: { onClose: () => void }) {
   const [category, setCategory] = useState<string>("");
   const [priority, setPriority] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [result, setResult] = useState<{
     added: AddedKeyword[];
     skipped: { keyword: string; reason: string }[];
     error?: string;
   } | null>(null);
+
+  // Portal 마운트 + ESC 닫기 + body 스크롤 잠금
+  useEffect(() => {
+    setMounted(true);
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = original;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
 
   const handleSubmit = async () => {
     // 콤마 또는 줄바꿈으로 구분
@@ -91,13 +108,16 @@ function AddKeywordModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  return (
+  if (!mounted) return null;
+
+  const modal = (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm p-4 overflow-y-auto"
+      className="fixed inset-0 flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
+      style={{ zIndex: 9999 }}
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-3xl shadow-hover w-full max-w-[560px] my-8 flex flex-col max-h-[calc(100vh-64px)]"
+        className="bg-white rounded-3xl shadow-hover w-full max-w-[560px] my-12 flex flex-col max-h-[calc(100vh-96px)]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header (sticky) */}
@@ -299,4 +319,7 @@ function AddKeywordModal({ onClose }: { onClose: () => void }) {
       </div>
     </div>
   );
+
+  // Portal로 body 직속에 마운트 → topbar의 backdrop-blur stacking context 영향 X
+  return createPortal(modal, document.body);
 }
