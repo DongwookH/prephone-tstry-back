@@ -11,6 +11,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { UserMenu } from "./user-menu";
 
 const adminItems = [
   { href: "/settings", label: "설정", icon: Settings },
@@ -22,12 +23,20 @@ type SidebarCounts = {
   keywordsCount?: number;
 };
 
+type SidebarUser = {
+  name: string;
+  email: string;
+  image: string | null;
+};
+
 export function Sidebar({
   variant = "full",
   counts,
+  user,
 }: {
   variant?: "full" | "compact";
   counts?: SidebarCounts;
+  user?: SidebarUser;
 }) {
   const pathname = usePathname();
 
@@ -87,9 +96,13 @@ export function Sidebar({
             );
           })}
         </nav>
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white font-bold text-[13px]">
-          N
-        </div>
+        {user ? (
+          <UserMenu user={user} variant="compact" />
+        ) : (
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white font-bold text-[13px]">
+            N
+          </div>
+        )}
       </aside>
     );
   }
@@ -202,19 +215,24 @@ export function Sidebar({
       </nav>
 
       <div className="border-t border-ink-100 p-3">
-        <button className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-ink-50 transition">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white font-bold text-[14px]">
-            N
-          </div>
-          <div className="flex-1 text-left min-w-0">
-            <div className="text-[13px] font-bold text-ink-900 truncate">
-              ntelecom_admin
+        {user ? (
+          <UserMenu user={user} />
+        ) : (
+          <Link
+            href="/login"
+            className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-ink-50 transition"
+          >
+            <div className="w-9 h-9 rounded-full bg-ink-200 text-ink-700 flex items-center justify-center font-bold text-[14px]">
+              ?
             </div>
-            <div className="text-[11px] text-ink-500 truncate">
-              admin@ntelecomsafe.com
+            <div className="flex-1 text-left min-w-0">
+              <div className="text-[13px] font-bold text-ink-900">
+                로그인 필요
+              </div>
+              <div className="text-[11px] text-ink-500">계정 연결 안 됨</div>
             </div>
-          </div>
-        </button>
+          </Link>
+        )}
       </div>
     </aside>
   );

@@ -474,6 +474,252 @@ export async function getTodayPosts(): Promise<PostRow[]> {
   return all.filter((p) => (p.created_at || "").slice(0, 10) === todayKST);
 }
 
+// ═══════════════════════════════════════════════════════════════
+// settings 시트 — Gemini 키 관리용
+// ═══════════════════════════════════════════════════════════════
+// 구조 (헤더):
+//   id | type | value | label | enabled | created_at | last_used | usage_count
+// type:
+//   - gemini_key : Gemini API 키 (value=실제 키)
+//   - gemini_model : 모델 이름 (value=gemini-2.5-flash-lite 등)
+// ─────────────────────────────────────────────────────────────────
+
+export type SettingRow = {
+  id: string;
+  type: string;
+  value: string;
+  label: string;
+  enabled: string; // "1" | "0"
+  created_at: string;
+  last_used: string;
+  usage_count: string;
+};
+
+const SETTINGS_SHEET = "settings";
+const SETTINGS_HEADERS = [
+  "id",
+  "type",
+  "value",
+  "label",
+  "enabled",
+  "created_at",
+  "last_used",
+  "usage_count",
+];
+
+/**
+ * settings 시트가 없으면 만들고 헤더 채워둠. 1회 호출로 충분.
+ */
+async function ensureSettingsSheet(): Promise<void> {
+  const sheets = getClient();
+  const id = mainSheetId();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: id,
+    fields: "sheets.properties.title",
+  });
+  const exists = meta.data.sheets?.some(
+    (s) => s.properties?.title === SETTINGS_SHEET,
+  );
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: id,
+      requestBody: {
+        requests: [
+          { addSheet: { properties: { title: SETTINGS_SHEET } } },
+        ],
+      },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: id,
+      range: `${SETTINGS_SHEET}!A1:H1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [SETTINGS_HEADERS] },
+    });
+  }
+}
+
+/** settings 시트의 모든 행. */
+export async function readSettings(): Promise<SettingRow[]> {
+  try {
+    return await readSheetAsObjects<SettingRow>(mainSheetId(), SETTINGS_SHEET);
+  } catch {
+    // 시트가 아직 없으면 빈 배열
+    return [];
+  }
+}
+
+/** type=gemini_key 인 활성 키만. enabled=="1". */
+export async function getGeminiKeysFromSheet(): Promise<SettingRow[]> {
+  const all = await readSettings();
+  return all.filter(
+    (r) => r.type === "gemini_key" && r.enabled === "1" && r.value,
+  );
+}
+
+/** 추가 — 새 row 생성. */
+export async function addGeminiKey(
+  value: string,
+  label: string,
+): Promise<{ id: string }> {
+  await ensureSettingsSheet();
+  const now = new Date().toISOString();
+  const newId = `gk-${Date.now()}`;
+  await appendRow(mainSheetId(), SETTINGS_SHEET, [
+    newId,
+    "gemini_key",
+    value,
+    label || "",
+    "1",
+    now,
+    "",
+    "0",
+  ]);
+  return { id: newId };
+}
+
+/** 비활성화 (실제 삭제 X — enabled=0). */
+export async function disableGeminiKey(id: string): Promise<boolean> {
+  const sheets = getClient();
+  const spreadsheetId = mainSheetId();
+  const rows = await readRange(spreadsheetId, `${SETTINGS_SHEET}!A:H`);
+  if (rows.length < 2) return false;
+  // header row 자동 감지
+  let headerIdx = 0;
+  if (rows[0]?.[0]?.startsWith("💡")) headerIdx = 1;
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    if (rows[i]?.[0] === id) {
+      const rowNum = i + 1;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${SETTINGS_SHEET}!E${rowNum}`,
+        valueInputOption: "RAW",
+        requestBody: { values: [["0"]] },
+      });
+      return true;
+    }
+  }
+  return false;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// gemini_usage 시트 — Gemini 토큰 사용량 누적
+// ═══════════════════════════════════════════════════════════════
+// 구조 (헤더): date(YYYY-MM-DD) | model | calls | input_tokens | output_tokens | total_tokens
+// 같은 date+model 조합은 누적해서 update.
+// ─────────────────────────────────────────────────────────────────
+
+export type UsageRow = {
+  date: string;
+  model: string;
+  calls: string;
+  input_tokens: string;
+  output_tokens: string;
+  total_tokens: string;
+};
+
+const USAGE_SHEET = "gemini_usage";
+const USAGE_HEADERS = [
+  "date",
+  "model",
+  "calls",
+  "input_tokens",
+  "output_tokens",
+  "total_tokens",
+];
+
+async function ensureUsageSheet(): Promise<void> {
+  const sheets = getClient();
+  const id = mainSheetId();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: id,
+    fields: "sheets.properties.title",
+  });
+  const exists = meta.data.sheets?.some(
+    (s) => s.properties?.title === USAGE_SHEET,
+  );
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: id,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: USAGE_SHEET } } }],
+      },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: id,
+      range: `${USAGE_SHEET}!A1:F1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [USAGE_HEADERS] },
+    });
+  }
+}
+
+/**
+ * 사용량 누적 기록 — 같은 date+model 행이 있으면 update, 없으면 append.
+ * 호출 1번당 calls +1, tokens 누적.
+ */
+export async function bumpGeminiUsage(input: {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+}): Promise<void> {
+  await ensureUsageSheet();
+  const todayKST = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  const sheets = getClient();
+  const spreadsheetId = mainSheetId();
+  const rows = await readRange(spreadsheetId, `${USAGE_SHEET}!A:F`);
+  let headerIdx = 0;
+  if (rows[0]?.[0]?.startsWith("💡")) headerIdx = 1;
+
+  // 같은 date + model 찾기
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    if (rows[i]?.[0] === todayKST && rows[i]?.[1] === input.model) {
+      const rowNum = i + 1;
+      const calls = parseInt(rows[i][2] || "0", 10) + 1;
+      const inp = parseInt(rows[i][3] || "0", 10) + input.inputTokens;
+      const out = parseInt(rows[i][4] || "0", 10) + input.outputTokens;
+      const tot = inp + out;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${USAGE_SHEET}!C${rowNum}:F${rowNum}`,
+        valueInputOption: "RAW",
+        requestBody: { values: [[calls, inp, out, tot]] },
+      });
+      return;
+    }
+  }
+  // 없으면 append
+  await appendRow(spreadsheetId, USAGE_SHEET, [
+    todayKST,
+    input.model,
+    1,
+    input.inputTokens,
+    input.outputTokens,
+    input.inputTokens + input.outputTokens,
+  ]);
+}
+
+/** 최근 N일 사용량 (오래된 순). */
+export async function getGeminiUsage(days = 14): Promise<UsageRow[]> {
+  let all: UsageRow[];
+  try {
+    all = await readSheetAsObjects<UsageRow>(mainSheetId(), USAGE_SHEET);
+  } catch {
+    return [];
+  }
+  const cutoff = new Date();
+  cutoff.setUTCDate(cutoff.getUTCDate() - days);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return all
+    .filter((r) => r.date >= cutoffStr)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 /**
  * 시트가 정상 연결됐는지 헬스체크.
  */

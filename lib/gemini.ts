@@ -3,31 +3,67 @@ import type {
   GenerativeModel,
   GenerationConfig,
   Tool,
+  GenerateContentResult,
 } from "@google/generative-ai";
+import { getGeminiKeysFromSheet, bumpGeminiUsage } from "./sheets";
 
 /**
  * Gemini API 다중 키 fallback 클라이언트.
  *
- * - GEMINI_API_KEYS=key1,key2,key3 (콤마 구분, 공백 허용)
- * - 첫 번째 키부터 순서대로 시도
- * - 일시적 오류(429 rate limit, 5xx)에서만 fallback, 인증 오류(401/403)는 즉시 중단
- * - 모든 키 소진 시 마지막 에러 throw
+ * 키 우선순위:
+ *   1. settings 시트의 enabled=1 키 (백오피스에서 관리)
+ *   2. fallback: GEMINI_API_KEYS env (콤마 구분)
  *
- * 사용 예:
- *   const text = await generateText("선불폰 글 써줘");
- *   const json = await generateJSON("키워드 10개 JSON으로");
+ * - 첫 번째 키부터 순서대로 시도
+ * - 일시적 오류(429 rate limit, 5xx)에서만 fallback, 인증 오류(401/403)도 fallback
+ * - 모든 키 소진 시 마지막 에러 throw
+ * - 호출마다 usageMetadata 캡처 → bumpGeminiUsage()로 시트에 누적
  */
 
-const RAW =
-  process.env.GEMINI_API_KEYS ?? process.env.GEMINI_API_KEY ?? "";
+const ENV_RAW = process.env.GEMINI_API_KEYS ?? process.env.GEMINI_API_KEY ?? "";
 
-const KEYS = RAW.split(",")
+const ENV_KEYS = ENV_RAW.split(",")
   .map((k) => k.trim())
   .filter(Boolean);
 
-if (KEYS.length === 0 && process.env.NODE_ENV !== "test") {
+// 시트 키는 짧게 캐시 (60초) — 너무 자주 시트 API 부르지 않도록
+let cachedSheetKeys: { keys: string[]; fetchedAt: number } | null = null;
+const SHEET_KEY_TTL_MS = 60_000;
+
+async function getSheetKeys(): Promise<string[]> {
+  const now = Date.now();
+  if (
+    cachedSheetKeys &&
+    now - cachedSheetKeys.fetchedAt < SHEET_KEY_TTL_MS
+  ) {
+    return cachedSheetKeys.keys;
+  }
+  try {
+    const rows = await getGeminiKeysFromSheet();
+    const keys = rows.map((r) => r.value).filter(Boolean);
+    cachedSheetKeys = { keys, fetchedAt: now };
+    return keys;
+  } catch (err) {
+    console.warn("[Gemini] settings 시트 키 로드 실패 — env fallback:", err);
+    return [];
+  }
+}
+
+/** 시트 + env 합쳐서 최종 키 목록 반환 (시트 우선, env는 fallback). */
+async function resolveKeys(): Promise<string[]> {
+  const sheetKeys = await getSheetKeys();
+  if (sheetKeys.length > 0) return sheetKeys;
+  return ENV_KEYS;
+}
+
+/** 다음 시도 시 시트 키를 다시 읽도록. settings 변경 후 호출. */
+export function invalidateGeminiKeyCache() {
+  cachedSheetKeys = null;
+}
+
+if (ENV_KEYS.length === 0 && process.env.NODE_ENV !== "test") {
   console.warn(
-    "[Gemini] ⚠️ GEMINI_API_KEYS 환경변수가 비어있습니다. 글 생성이 동작하지 않습니다.",
+    "[Gemini] ⚠️ GEMINI_API_KEYS env 비어있음 — settings 시트 키만 사용 가능합니다.",
   );
 }
 
@@ -85,9 +121,10 @@ export async function generateWithFallback<T>(
     tools?: Tool[];
   } = {},
 ): Promise<T> {
+  const KEYS = await resolveKeys();
   if (KEYS.length === 0) {
     throw new Error(
-      "GEMINI_API_KEYS가 설정되지 않았습니다. .env.local을 확인하세요.",
+      "Gemini API 키가 없습니다 — 백오피스 설정 또는 GEMINI_API_KEYS env 등록 필요.",
     );
   }
 
@@ -131,6 +168,27 @@ export async function generateWithFallback<T>(
 }
 
 /**
+ * 토큰 사용량 캡처 + 시트 누적 — generateContent 결과에서 usageMetadata 추출.
+ * 실패해도 본 호출에 영향 없도록 try/catch.
+ */
+async function trackUsage(
+  modelName: string,
+  result: GenerateContentResult,
+): Promise<void> {
+  try {
+    const usage = result.response.usageMetadata;
+    if (!usage) return;
+    await bumpGeminiUsage({
+      model: modelName,
+      inputTokens: usage.promptTokenCount ?? 0,
+      outputTokens: usage.candidatesTokenCount ?? 0,
+    });
+  } catch (err) {
+    console.warn("[Gemini] usage 기록 실패 (무시):", err);
+  }
+}
+
+/**
  * 텍스트 생성 (가장 자주 쓰는 형태).
  */
 export async function generateText(
@@ -140,8 +198,10 @@ export async function generateText(
     generationConfig?: GenerationConfig;
   } = {},
 ): Promise<string> {
+  const modelName = options.model ?? DEFAULT_MODEL;
   return generateWithFallback(async (model) => {
     const result = await model.generateContent(prompt);
+    await trackUsage(modelName, result);
     return result.response.text();
   }, options);
 }
@@ -157,8 +217,10 @@ export async function generateJSON<T = unknown>(
     generationConfig?: GenerationConfig;
   } = {},
 ): Promise<T> {
+  const modelName = options.model ?? DEFAULT_MODEL;
   const text = await generateWithFallback(async (model) => {
     const result = await model.generateContent(prompt);
+    await trackUsage(modelName, result);
     return result.response.text();
   }, {
     ...options,
@@ -178,12 +240,18 @@ export async function generateJSON<T = unknown>(
 }
 
 /**
- * 디버그용. 현재 등록된 키 개수와 마스킹된 첫 키 미리보기.
+ * 현재 키 상태 — async (시트 + env 합본).
  */
-export function geminiKeyStatus() {
+export async function geminiKeyStatus() {
+  const keys = await resolveKeys();
+  const sheetKeys = await getSheetKeys();
   return {
-    count: KEYS.length,
-    keys: KEYS.map(maskKey),
+    count: keys.length,
+    keys: keys.map(maskKey),
     model: DEFAULT_MODEL,
+    source:
+      sheetKeys.length > 0 ? ("sheet" as const) : ("env" as const),
+    envCount: ENV_KEYS.length,
+    sheetCount: sheetKeys.length,
   };
 }

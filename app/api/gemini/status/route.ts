@@ -18,7 +18,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const status = geminiKeyStatus();
+  const status = await geminiKeyStatus();
   const url = new URL(req.url);
   const shouldTest = url.searchParams.get("test") === "1";
 
