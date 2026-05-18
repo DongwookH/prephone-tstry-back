@@ -115,6 +115,14 @@ ${personaDesc}
 
 ## 인라인 스타일 HTML (티스토리는 JS 안 되므로 details/summary 활용)
 
+⚠️ **티스토리 sanitizer 안전 규칙 (절대 어기지 말 것):**
+- \`<summary>\` 안에는 **블록 요소(\`<div>\`, \`<p>\`, \`<h1~6>\`) 절대 금지**.
+  티스토리는 summary 안 div를 평탄화시켜 summary 바깥으로 빼버립니다.
+  → 제목/부제는 \`<span style="display:block">\` 으로만 작성.
+- \`<summary>\` 안에 임의의 마커 기호(\`<span>−</span>\` 등) 넣지 말 것.
+  → 티스토리가 자체 ▶/▼ marker를 자동 추가합니다.
+- 첫 번째 \`<details>\`만 \`open\` 속성 부여, 나머지는 닫힌 상태로 시작.
+
 각 블록은 아래 정확한 패턴으로 작성:
 
 ## 🎨 컬러 팔레트 (ntelecomsafe.com 사이트와 통일)
@@ -171,13 +179,11 @@ ${personaDesc}
 </div>
 
 <!-- ④ 각 H2 섹션 (5~6개) — 토글 details, 옅은 라임 헤더 -->
+<!-- ✅ 첫 번째 섹션만 open. summary 안엔 <span style="display:block"> 만 사용 (div 절대 X). 마커 span도 넣지 X. -->
 <details id="section-1" open style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
-  <summary style="cursor:pointer;list-style:none;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);display:flex;justify-content:space-between;align-items:center;">
-    <div>
-      <div style="font-size:18px;font-weight:800;color:#191F28;">1) {H2 제목 — 예: 준비물 - 유심부터 인증까지 한 번에}</div>
-      <div style="font-size:13px;color:#5F7C0E;margin-top:4px;font-weight:600;">{한 줄 부제 — 예: 비대면 개통은 "준비물"에서 승부가 납니다}</div>
-    </div>
-    <span style="color:#5F7C0E;font-size:24px;font-weight:300;">−</span>
+  <summary style="cursor:pointer;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);">
+    <span style="display:block;font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">1) {H2 제목 — 예: 준비물 - 유심부터 인증까지 한 번에}</span>
+    <span style="display:block;font-size:13px;color:#5F7C0E;margin-top:4px;font-weight:600;">{한 줄 부제 — 예: 비대면 개통은 "준비물"에서 승부가 납니다}</span>
   </summary>
   <div style="padding:24px 28px;">
     <!-- 라임 세로선 부제목 (H3 대신) -->
@@ -199,13 +205,11 @@ ${personaDesc}
   </div>
 </details>
 
-<details id="section-3" open style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
-  <summary style="cursor:pointer;list-style:none;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);display:flex;justify-content:space-between;align-items:center;">
-    <div>
-      <div style="font-size:18px;font-weight:800;color:#191F28;">3) 개통 절차 - 승인 후 충전하기가 진짜 끝!</div>
-      <div style="font-size:13px;color:#5F7C0E;margin-top:4px;font-weight:600;">{한 줄 부제 — 5분 흐름}</div>
-    </div>
-    <span style="color:#5F7C0E;font-size:24px;font-weight:300;">−</span>
+<!-- 2번째 이후 섹션은 open 없음 — 토글 닫힌 상태로 시작 -->
+<details id="section-3" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
+  <summary style="cursor:pointer;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);">
+    <span style="display:block;font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">3) 개통 절차 - 승인 후 충전하기가 진짜 끝!</span>
+    <span style="display:block;font-size:13px;color:#5F7C0E;margin-top:4px;font-weight:600;">{한 줄 부제 — 5분 흐름}</span>
   </summary>
   <div style="padding:24px 28px;">
     <div style="border-left:3px solid #9DC91A;padding-left:12px;font-weight:800;font-size:15px;margin-bottom:12px;color:#191F28;">비대면 개통 6단계(웹페이지 기준)</div>
@@ -223,21 +227,18 @@ ${personaDesc}
 </details>
 
 <!-- ⑤ Q&A 섹션 — 각 Q를 details로, 옅은 라임 헤더 -->
-<details id="section-6" open style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
-  <summary style="cursor:pointer;list-style:none;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);display:flex;justify-content:space-between;align-items:center;">
-    <div>
-      <div style="font-size:18px;font-weight:800;color:#191F28;">6) Q&amp;A - {키워드} 자주 묻는 질문</div>
-      <div style="font-size:13px;color:#5F7C0E;margin-top:4px;font-weight:600;">개통 과정에서 생기는 질문 5가지</div>
-    </div>
-    <span style="color:#5F7C0E;font-size:24px;font-weight:300;">−</span>
+<details id="section-6" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
+  <summary style="cursor:pointer;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);">
+    <span style="display:block;font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">6) Q&amp;A - {키워드} 자주 묻는 질문</span>
+    <span style="display:block;font-size:13px;color:#5F7C0E;margin-top:4px;font-weight:600;">개통 과정에서 생기는 질문 5가지</span>
   </summary>
   <div style="padding:24px 28px;">
     <details style="margin-bottom:16px;border-bottom:1px solid #E5E8EB;padding-bottom:16px;">
-      <summary style="cursor:pointer;font-weight:700;font-size:15px;color:#191F28;">Q1. {질문}</summary>
+      <summary style="cursor:pointer;padding:4px 0;"><span style="font-weight:700;font-size:15px;color:#191F28;">Q1. {질문}</span></summary>
       <p style="margin:12px 0 0;font-size:14px;line-height:1.8;color:#4E5968;">{답변 2~3문장}</p>
     </details>
     <details style="margin-bottom:16px;border-bottom:1px solid #E5E8EB;padding-bottom:16px;">
-      <summary style="cursor:pointer;font-weight:700;font-size:15px;color:#191F28;">Q2. {질문}</summary>
+      <summary style="cursor:pointer;padding:4px 0;"><span style="font-weight:700;font-size:15px;color:#191F28;">Q2. {질문}</span></summary>
       <p style="margin:12px 0 0;font-size:14px;line-height:1.8;color:#4E5968;">{답변}</p>
     </details>
     <!-- ... Q3, Q4, Q5 동일 패턴 -->
@@ -292,6 +293,84 @@ function htmlTextLength(html: string): number {
     .length;
 }
 
+/**
+ * 티스토리 sanitizer 안전 후처리 — Gemini가 prompt 규칙을 어겨도 자동 복구.
+ *
+ * 변환 규칙:
+ *  1) <summary>...</summary> 안의 <div ...>...</div> → <span style="display:block;...">...</span>
+ *     (티스토리가 summary 안 div를 평탄화시켜 외부로 빼버리는 문제 방지)
+ *  2) <summary> 안의 마지막 인라인 마커 span (텍스트가 "−" "+" "▼" "▲" "▾" "▿" 1글자) 제거
+ *     (티스토리 기본 marker가 자동 추가됨)
+ *  3) <details ... open ...> 첫 번째만 유지, 2번째부터 open 속성 제거
+ *     (전부 펼치면 토글 의미 없음)
+ *
+ * 정규식 기반이라 100% 완벽하진 않지만 우리 prompt 패턴에는 안전하게 동작.
+ */
+export function sanitizeForTistory(html: string): string {
+  if (!html) return html;
+  let out = html;
+
+  // (1) summary 안의 <div ...>...</div> → <span style="display:block;...">...</span>
+  //     summary 내부에 한해서만 적용. summary 내부 div가 중첩이면 가장 안쪽부터 변환되도록 반복.
+  out = out.replace(
+    /<summary\b([^>]*)>([\s\S]*?)<\/summary>/gi,
+    (_full, summaryAttrs, summaryInner) => {
+      // div 안의 div도 처리하기 위해 변환 후 다시 검사 (최대 5회)
+      let inner = summaryInner;
+      for (let i = 0; i < 5; i++) {
+        const before = inner;
+        // <div ...> → <span style="display:block;...">
+        inner = inner.replace(
+          /<div(\s[^>]*style="([^"]*)"[^>]*)?>/gi,
+          (_m: string, _attrs: string | undefined, style: string | undefined) => {
+            const styleStr = style ? `display:block;${style}` : "display:block;";
+            return `<span style="${styleStr}">`;
+          },
+        );
+        // 속성 없는 <div> 도 처리
+        inner = inner.replace(/<div>/gi, '<span style="display:block;">');
+        // </div> → </span>
+        inner = inner.replace(/<\/div>/gi, "</span>");
+        if (inner === before) break;
+      }
+      return `<summary${summaryAttrs}>${inner}</summary>`;
+    },
+  );
+
+  // (2) summary 안 마지막 위치의 marker span (1글자 텍스트가 ±/−/+/▼ 등) 제거
+  //     예: <summary>...<span style="...">−</span></summary>
+  out = out.replace(
+    /<summary\b([^>]*)>([\s\S]*?)<\/summary>/gi,
+    (_full, summaryAttrs, summaryInner) => {
+      // 안쪽 끝에서 공백 + 마커 span 패턴 찾기
+      const inner = summaryInner.replace(
+        /\s*<span\b[^>]*>\s*[−–—+\-▼▲▾▿]\s*<\/span>\s*$/i,
+        "",
+      );
+      return `<summary${summaryAttrs}>${inner}</summary>`;
+    },
+  );
+
+  // (3) <details ... open ...> 첫 번째만 유지, 그 다음부터는 open 제거
+  let detailsCount = 0;
+  out = out.replace(
+    /<details\b([^>]*)>/gi,
+    (_match, attrs: string) => {
+      detailsCount += 1;
+      if (detailsCount === 1) return `<details${attrs}>`;
+      // open 속성 제거 (\\sopen\\s, ' open', 'open '등)
+      const cleaned = attrs
+        .replace(/\sopen(?=[\s>=])/gi, "")
+        .replace(/\sopen$/gi, "")
+        .replace(/^open\s/gi, " ")
+        .replace(/\sopen=("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+      return `<details${cleaned}>`;
+    },
+  );
+
+  return out;
+}
+
 export async function generatePost(opts: {
   keyword: string;
   category?: string;
@@ -321,10 +400,13 @@ export async function generatePost(opts: {
     },
   });
 
+  // 티스토리 sanitizer 안전 후처리 — summary 안 div를 span으로, 마커 제거, open 첫개만
+  const safeHtml = sanitizeForTistory(result.content_html || "");
+
   const charCount =
     typeof result.char_count === "number" && result.char_count > 0
       ? result.char_count
-      : htmlTextLength(result.content_html || "");
+      : htmlTextLength(safeHtml);
   const seoScore =
     typeof result.seo_score === "number"
       ? Math.max(0, Math.min(100, result.seo_score))
@@ -333,7 +415,7 @@ export async function generatePost(opts: {
   return {
     title: result.title?.trim() || `${opts.keyword} 가이드`,
     meta_description: result.meta_description?.trim() || "",
-    content_html: result.content_html || "",
+    content_html: safeHtml,
     char_count: charCount,
     seo_score: seoScore,
     utm_campaign: utmCampaign,
