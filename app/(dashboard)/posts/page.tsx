@@ -1,21 +1,36 @@
+import Link from "next/link";
 import { Topbar } from "@/components/topbar";
 import { PostRow, PostRowHeader, EmptyPostsState } from "@/components/post-row";
-import { getAllPosts } from "@/lib/sheets";
+import { getAllPosts, type PostRow as PostRowType } from "@/lib/sheets";
 import { Plus, Search, SlidersHorizontal, ChevronDown } from "lucide-react";
 
 export const revalidate = 60;
 
-export default async function PostsPage() {
+type FilterStatus = "all" | "ready" | "published" | "failed";
+
+// Next.js 16: searchParams는 Promise
+type PageProps = {
+  searchParams: Promise<{
+    page?: string;
+    status?: string;
+    q?: string;
+  }>;
+};
+
+export default async function PostsPage({ searchParams }: PageProps) {
+  const sp = await searchParams;
+  const currentPage = Math.max(1, parseInt(sp.page || "1", 10) || 1);
+  const status: FilterStatus =
+    sp.status === "ready" ||
+    sp.status === "published" ||
+    sp.status === "failed"
+      ? sp.status
+      : "all";
+  const q = (sp.q || "").trim().toLowerCase();
+
   const all = await getAllPosts();
 
-  // 최신순 정렬
-  const sorted = [...all].sort((a, b) => {
-    const ta = new Date(a.created_at).getTime() || 0;
-    const tb = new Date(b.created_at).getTime() || 0;
-    return tb - ta;
-  });
-
-  // 통계
+  // ── 통계 (필터 무관) ──
   const total = all.length;
   const published = all.filter((p) => p.status === "published").length;
   const ready = all.filter((p) => p.status === "ready").length;
@@ -30,10 +45,47 @@ export default async function PostsPage() {
         ) / 10
       : 0;
 
-  // 페이지네이션 (1페이지에 15개)
+  // ── 필터 + 검색 + 정렬 ──
+  let filtered: PostRowType[] = all;
+  if (status !== "all") {
+    filtered = filtered.filter((p) => p.status === status);
+  }
+  if (q) {
+    filtered = filtered.filter(
+      (p) =>
+        p.title?.toLowerCase().includes(q) ||
+        p.keyword?.toLowerCase().includes(q) ||
+        p.category?.toLowerCase().includes(q),
+    );
+  }
+  const sorted = filtered.sort((a, b) => {
+    const ta = new Date(a.created_at).getTime() || 0;
+    const tb = new Date(b.created_at).getTime() || 0;
+    return tb - ta;
+  });
+
+  // ── 페이지네이션 ──
   const PAGE_SIZE = 15;
-  const visible = sorted.slice(0, PAGE_SIZE);
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const filteredCount = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(filteredCount / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIdx = (safePage - 1) * PAGE_SIZE;
+  const visible = sorted.slice(startIdx, startIdx + PAGE_SIZE);
+
+  function buildHref(opts: { page?: number; status?: FilterStatus; q?: string }) {
+    const params = new URLSearchParams();
+    const p = opts.page ?? safePage;
+    const s = opts.status ?? status;
+    const query = opts.q ?? q;
+    if (p > 1) params.set("page", String(p));
+    if (s !== "all") params.set("status", s);
+    if (query) params.set("q", query);
+    const qs = params.toString();
+    return qs ? `/posts?${qs}` : "/posts";
+  }
+
+  // 페이지 번호 windowing (최대 5개 + 첫/끝)
+  const pageNumbers = paginationWindow(safePage, totalPages, 5);
 
   return (
     <>
@@ -84,40 +136,78 @@ export default async function PostsPage() {
         </section>
 
         <section className="bg-white rounded-2xl shadow-card p-4 mb-4">
-          <div className="flex items-center gap-3 flex-wrap">
+          {/* GET form — 검색은 페이지 리로드로 ?q= 적용 */}
+          <form
+            action="/posts"
+            method="GET"
+            className="flex items-center gap-3 flex-wrap"
+          >
             <div className="flex items-center gap-2 h-10 px-3 rounded-xl bg-ink-50 flex-1 min-w-[280px]">
               <Search size={16} className="text-ink-500" />
               <input
                 type="text"
-                placeholder="제목, 키워드로 검색"
+                name="q"
+                defaultValue={q}
+                placeholder="제목, 키워드, 카테고리로 검색"
                 className="flex-1 bg-transparent outline-none text-[13px] font-medium placeholder-ink-400"
               />
-            </div>
-            <div className="flex items-center gap-1 p-1 rounded-xl bg-ink-100">
-              <button className="px-3 h-8 rounded-lg bg-white shadow-card text-[12px] font-bold text-ink-900">
-                전체 {total}
-              </button>
-              <button className="px-3 h-8 rounded-lg text-[12px] font-semibold text-ink-600 hover:text-ink-900 transition">
-                대기 {ready}
-              </button>
-              <button className="px-3 h-8 rounded-lg text-[12px] font-semibold text-ink-600 hover:text-ink-900 transition">
-                완료 {published}
-              </button>
-              {failed > 0 && (
-                <button className="px-3 h-8 rounded-lg text-[12px] font-semibold text-ink-600 hover:text-ink-900 transition">
-                  실패 {failed}
-                </button>
+              {q && (
+                <Link
+                  href={buildHref({ q: "", page: 1 })}
+                  className="text-[11px] font-bold text-ink-500 hover:text-rose-600"
+                >
+                  ✕ 초기화
+                </Link>
               )}
             </div>
-            <button className="h-10 px-3 rounded-xl text-[13px] font-semibold text-ink-700 hover:bg-ink-100 transition flex items-center gap-1.5">
+            {/* 필터 상태가 검색 시에도 유지되도록 hidden input */}
+            {status !== "all" && (
+              <input type="hidden" name="status" value={status} />
+            )}
+
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-ink-100">
+              <FilterTab
+                label="전체"
+                count={total}
+                active={status === "all"}
+                href={buildHref({ status: "all", page: 1 })}
+              />
+              <FilterTab
+                label="대기"
+                count={ready}
+                active={status === "ready"}
+                href={buildHref({ status: "ready", page: 1 })}
+              />
+              <FilterTab
+                label="완료"
+                count={published}
+                active={status === "published"}
+                href={buildHref({ status: "published", page: 1 })}
+              />
+              {failed > 0 && (
+                <FilterTab
+                  label="실패"
+                  count={failed}
+                  active={status === "failed"}
+                  href={buildHref({ status: "failed", page: 1 })}
+                />
+              )}
+            </div>
+            <button
+              type="button"
+              className="h-10 px-3 rounded-xl text-[13px] font-semibold text-ink-700 hover:bg-ink-100 transition flex items-center gap-1.5"
+            >
               <SlidersHorizontal size={14} />
               필터
             </button>
-            <button className="h-10 px-3 rounded-xl text-[13px] font-semibold text-ink-700 hover:bg-ink-100 transition flex items-center gap-1.5">
+            <button
+              type="button"
+              className="h-10 px-3 rounded-xl text-[13px] font-semibold text-ink-700 hover:bg-ink-100 transition flex items-center gap-1.5"
+            >
               <ChevronDown size={14} />
               최신순
             </button>
-          </div>
+          </form>
         </section>
 
         <section className="bg-white rounded-2xl shadow-card overflow-hidden">
@@ -129,40 +219,151 @@ export default async function PostsPage() {
                   <PostRow key={p.id} post={p} />
                 ))}
               </div>
-              <div className="px-5 py-4 border-t border-ink-100 bg-ink-50/40 flex items-center justify-between">
+              <div className="px-5 py-4 border-t border-ink-100 bg-ink-50/40 flex items-center justify-between flex-wrap gap-3">
                 <span className="text-[13px] text-ink-500 font-medium">
                   <span className="font-bold text-ink-800">
-                    1-{visible.length}
+                    {startIdx + 1}-{startIdx + visible.length}
                   </span>{" "}
-                  / {total}개
+                  / {filteredCount}개
+                  {filteredCount !== total && (
+                    <span className="ml-2 text-ink-400">
+                      (전체 {total}개 중 필터링)
+                    </span>
+                  )}
                 </span>
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(totalPages, 5) }).map(
-                    (_, i) => (
-                      <button
-                        key={i}
-                        className={
-                          i === 0
-                            ? "w-9 h-9 rounded-lg bg-brand-500 text-white text-[13px] font-bold"
-                            : "w-9 h-9 rounded-lg hover:bg-ink-100 transition text-[13px] font-bold text-ink-700"
-                        }
-                      >
-                        {i + 1}
-                      </button>
-                    ),
+                  <PageLink
+                    href={buildHref({ page: safePage - 1 })}
+                    disabled={safePage <= 1}
+                  >
+                    ‹
+                  </PageLink>
+                  {pageNumbers[0] > 1 && (
+                    <>
+                      <PageLink href={buildHref({ page: 1 })}>1</PageLink>
+                      {pageNumbers[0] > 2 && (
+                        <span className="px-1 text-ink-400 text-[13px]">…</span>
+                      )}
+                    </>
                   )}
+                  {pageNumbers.map((n) => (
+                    <PageLink
+                      key={n}
+                      href={buildHref({ page: n })}
+                      active={n === safePage}
+                    >
+                      {n}
+                    </PageLink>
+                  ))}
+                  {pageNumbers[pageNumbers.length - 1] < totalPages && (
+                    <>
+                      {pageNumbers[pageNumbers.length - 1] < totalPages - 1 && (
+                        <span className="px-1 text-ink-400 text-[13px]">…</span>
+                      )}
+                      <PageLink href={buildHref({ page: totalPages })}>
+                        {totalPages}
+                      </PageLink>
+                    </>
+                  )}
+                  <PageLink
+                    href={buildHref({ page: safePage + 1 })}
+                    disabled={safePage >= totalPages}
+                  >
+                    ›
+                  </PageLink>
                 </div>
               </div>
             </>
           ) : (
             <EmptyPostsState
-              message="아직 생성된 글이 없습니다"
-              hint="매일 KST 09:00에 자동으로 10편이 생성됩니다."
+              message={
+                q || status !== "all"
+                  ? "검색 결과가 없습니다"
+                  : "아직 생성된 글이 없습니다"
+              }
+              hint={
+                q || status !== "all"
+                  ? "다른 키워드로 검색하거나 필터를 초기화해보세요."
+                  : "매일 KST 09:00에 자동으로 10편이 생성됩니다."
+              }
             />
           )}
         </section>
       </div>
     </>
+  );
+}
+
+/** 현재 페이지를 중심으로 window 개수만큼 페이지 번호 반환 */
+function paginationWindow(
+  current: number,
+  total: number,
+  windowSize: number,
+): number[] {
+  if (total <= windowSize) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const half = Math.floor(windowSize / 2);
+  let start = Math.max(1, current - half);
+  const end = Math.min(total, start + windowSize - 1);
+  start = Math.max(1, end - windowSize + 1);
+  return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+}
+
+function FilterTab({
+  label,
+  count,
+  active,
+  href,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={
+        active
+          ? "px-3 h-8 rounded-lg bg-white shadow-card text-[12px] font-bold text-ink-900 flex items-center"
+          : "px-3 h-8 rounded-lg text-[12px] font-semibold text-ink-600 hover:text-ink-900 transition flex items-center"
+      }
+    >
+      {label} {count}
+    </Link>
+  );
+}
+
+function PageLink({
+  href,
+  children,
+  active,
+  disabled,
+}: {
+  href: string;
+  children: React.ReactNode;
+  active?: boolean;
+  disabled?: boolean;
+}) {
+  if (disabled) {
+    return (
+      <span className="w-9 h-9 rounded-lg text-[13px] font-bold text-ink-300 flex items-center justify-center cursor-not-allowed select-none">
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      className={
+        active
+          ? "w-9 h-9 rounded-lg bg-brand-500 text-white text-[13px] font-bold flex items-center justify-center"
+          : "w-9 h-9 rounded-lg hover:bg-ink-100 transition text-[13px] font-bold text-ink-700 flex items-center justify-center"
+      }
+    >
+      {children}
+    </Link>
   );
 }
 
