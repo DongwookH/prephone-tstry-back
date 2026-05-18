@@ -398,25 +398,12 @@ function SectionCardRender({ card }: { card: SectionCard }) {
           }}
         >
           {num ? (
-            <div
-              style={{
-                background: "#9DC91A",
-                color: "white",
-                width: 64,
-                height: 64,
-                borderRadius: 16,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 32,
-                fontWeight: 900,
-                lineHeight: 1,
-                // Pretendard의 라틴 숫자 baseline 보정
-                paddingTop: 4,
-              }}
-            >
-              {num.replace(")", "")}
-            </div>
+            <NumberBadge
+              value={num.replace(")", "")}
+              size={64}
+              radius={16}
+              fontSize={32}
+            />
           ) : (
             <div style={{ width: 64 }} />
           )}
@@ -564,6 +551,66 @@ function SectionCardRender({ card }: { card: SectionCard }) {
   );
 }
 
+/**
+ * SVG 기반 숫자 배지 — 폰트 metric에 의존하지 않고 정확한 정중앙에 숫자 배치.
+ *
+ * Pretendard의 라틴 숫자는 baseline이 한글과 달라 div + flex center로는
+ * 항상 위/아래로 미세하게 어긋남. SVG <text>의 dominantBaseline="central"
+ * + textAnchor="middle" 조합은 글리프 박스의 중심에 두므로 폰트 무관.
+ */
+function NumberBadge({
+  value,
+  size,
+  radius,
+  fontSize,
+  gradient,
+}: {
+  value: number | string;
+  size: number;
+  radius: number;
+  fontSize: number;
+  gradient?: boolean;
+}) {
+  const gradId = `nbg-${value}-${size}`;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ flexShrink: 0, display: "block" }}
+    >
+      {gradient ? (
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#9DC91A" />
+            <stop offset="100%" stopColor="#7FA512" />
+          </linearGradient>
+        </defs>
+      ) : null}
+      <rect
+        width={size}
+        height={size}
+        rx={radius}
+        ry={radius}
+        fill={gradient ? `url(#${gradId})` : "#9DC91A"}
+      />
+      <text
+        x={size / 2}
+        y={size / 2}
+        dominantBaseline="central"
+        textAnchor="middle"
+        fontSize={fontSize}
+        fontWeight={900}
+        fill="white"
+        fontFamily="Pretendard Variable, Pretendard, -apple-system, system-ui, sans-serif"
+      >
+        {value}
+      </text>
+    </svg>
+  );
+}
+
 function BulletRow({
   index,
   text,
@@ -587,26 +634,13 @@ function BulletRow({
       }}
     >
       {style === "steps" ? (
-        <div
-          style={{
-            flexShrink: 0,
-            width: 44,
-            height: 44,
-            borderRadius: 10,
-            background: "linear-gradient(135deg,#9DC91A 0%,#7FA512 100%)",
-            color: "white",
-            fontSize: 24,
-            fontWeight: 900,
-            lineHeight: 1, // ← 글자 박스 = 정확한 폰트 크기
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            // 한글 폰트의 라틴 숫자 baseline 보정 (Pretendard에서 미세하게 위로 떠 보임)
-            paddingTop: 3,
-          }}
-        >
-          {index + 1}
-        </div>
+        <NumberBadge
+          value={index + 1}
+          size={44}
+          radius={10}
+          fontSize={24}
+          gradient
+        />
       ) : (
         <div
           style={{
