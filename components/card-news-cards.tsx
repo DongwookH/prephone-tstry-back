@@ -357,12 +357,16 @@ function CoverCardRender({ card }: { card: CoverCard }) {
   );
 }
 
-// ─── 섹션 카드 (1080×1080) ─────────────────────
+// ─── 섹션 카드 (1080×1080) — 인포그래픽 스타일 ─────────────────────
 function SectionCardRender({ card }: { card: SectionCard }) {
   // 제목에서 숫자) 부분 분리
   const numberMatch = card.title.match(/^(\d+\))\s*(.+)$/);
   const num = numberMatch ? numberMatch[1] : null;
   const titleRest = numberMatch ? numberMatch[2] : card.title;
+
+  // 제목 길이별 폰트 크기 자동 조정
+  const titleLen = titleRest.length;
+  const titleSize = titleLen > 30 ? 40 : titleLen > 20 ? 46 : 52;
 
   return (
     <div
@@ -374,11 +378,11 @@ function SectionCardRender({ card }: { card: SectionCard }) {
         flexDirection: "column",
       }}
     >
-      {/* 상단 라임 헤더 */}
+      {/* 상단 라임 헤더 (제목까지만 — 부제는 본문 영역으로 옮김) */}
       <div
         style={{
           background: "linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%)",
-          padding: "60px 70px 40px",
+          padding: "56px 70px 40px",
           borderBottom: "1px solid #D4E89C",
         }}
       >
@@ -425,7 +429,7 @@ function SectionCardRender({ card }: { card: SectionCard }) {
         </div>
         <h2
           style={{
-            fontSize: 52,
+            fontSize: titleSize,
             fontWeight: 900,
             color: "#191F28",
             lineHeight: 1.25,
@@ -434,52 +438,71 @@ function SectionCardRender({ card }: { card: SectionCard }) {
             wordBreak: "keep-all",
           }}
         >
-          {titleRest.length > 45 ? titleRest.slice(0, 45) + "…" : titleRest}
+          {titleRest}
         </h2>
-        {card.subtitle && (
-          <p
-            style={{
-              fontSize: 22,
-              color: "#5F7C0E",
-              fontWeight: 700,
-              margin: "16px 0 0",
-              lineHeight: 1.5,
-              wordBreak: "keep-all",
-            }}
-          >
-            {card.subtitle.length > 60
-              ? card.subtitle.slice(0, 60) + "…"
-              : card.subtitle}
-          </p>
-        )}
       </div>
 
-      {/* 본문 영역 */}
+      {/* 본문 영역 — 인포그래픽 (hook + bullets) */}
       <div
         style={{
           flex: 1,
-          padding: "50px 70px 40px",
+          padding: "44px 70px 40px",
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
         }}
       >
-        {card.body ? (
-          <p
-            style={{
-              fontSize: 28,
-              lineHeight: 1.7,
-              color: "#191F28",
-              margin: 0,
-              fontWeight: 500,
-              wordBreak: "keep-all",
-            }}
-          >
-            {card.body.length > 180 ? card.body.slice(0, 180) + "…" : card.body}
-          </p>
-        ) : (
-          <div />
-        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+          {/* Hook — 강조 한 줄 (부제 또는 hook) */}
+          {(card.subtitle || card.hook) && (
+            <div
+              style={{
+                borderLeft: "5px solid #9DC91A",
+                paddingLeft: 20,
+                fontSize: 26,
+                lineHeight: 1.5,
+                color: "#191F28",
+                fontWeight: 700,
+                wordBreak: "keep-all",
+              }}
+            >
+              {card.subtitle || card.hook}
+            </div>
+          )}
+
+          {/* Bullets — 체크리스트 또는 단계 */}
+          {card.bullets && card.bullets.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 14,
+              }}
+            >
+              {card.bullets.slice(0, 4).map((b, i) => (
+                <BulletRow
+                  key={i}
+                  index={i}
+                  text={b}
+                  style={card.bulletStyle ?? "checklist"}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* fallback: bullets 없으면 hook을 큰 텍스트로 (이미 hook 위에 출력했으니 중복 X) */}
+          {!card.bullets && !card.subtitle && !card.hook && (
+            <div
+              style={{
+                fontSize: 24,
+                color: "#8B95A1",
+                fontStyle: "italic",
+              }}
+            >
+              {/* 의도적으로 비움 — 정보 부족한 카드는 깨끗하게 */}
+            </div>
+          )}
+        </div>
 
         {/* 푸터 */}
         <div
@@ -487,7 +510,7 @@ function SectionCardRender({ card }: { card: SectionCard }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            paddingTop: 32,
+            paddingTop: 28,
             borderTop: "1px solid #E5E8EB",
           }}
         >
@@ -510,6 +533,82 @@ function SectionCardRender({ card }: { card: SectionCard }) {
             ntelecomsafe.com
           </span>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function BulletRow({
+  index,
+  text,
+  style,
+}: {
+  index: number;
+  text: string;
+  style: "checklist" | "steps";
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 16,
+        background: "#F8FBE8",
+        border: "1px solid #E1EFA8",
+        borderRadius: 14,
+        padding: "16px 20px",
+      }}
+    >
+      {style === "steps" ? (
+        <div
+          style={{
+            flexShrink: 0,
+            width: 40,
+            height: 40,
+            borderRadius: 10,
+            background: "linear-gradient(135deg,#9DC91A 0%,#7FA512 100%)",
+            color: "white",
+            fontSize: 22,
+            fontWeight: 900,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {index + 1}
+        </div>
+      ) : (
+        <div
+          style={{
+            flexShrink: 0,
+            width: 36,
+            height: 36,
+            borderRadius: "50%",
+            background: "#9DC91A",
+            color: "white",
+            fontSize: 20,
+            fontWeight: 900,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginTop: 2,
+          }}
+        >
+          ✓
+        </div>
+      )}
+      <div
+        style={{
+          fontSize: 24,
+          color: "#191F28",
+          fontWeight: 600,
+          lineHeight: 1.45,
+          wordBreak: "keep-all",
+          flex: 1,
+          paddingTop: 4,
+        }}
+      >
+        {text.length > 48 ? text.slice(0, 48) + "…" : text}
       </div>
     </div>
   );

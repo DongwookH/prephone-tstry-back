@@ -26,7 +26,12 @@ export type SectionCard = {
   totalPages: number;
   title: string;
   subtitle?: string;
-  body?: string;
+  /** 한 줄 강조 메시지 — 본문 첫 문장 (짧게, 60자 이내). */
+  hook?: string;
+  /** 불릿 항목 — 체크리스트(✅) 또는 단계(1.2.3.) 본문에서 추출. 3~4개. */
+  bullets?: string[];
+  /** 불릿 스타일 — checklist(✅), steps(1️⃣2️⃣3️⃣). 없으면 fallback. */
+  bulletStyle?: "checklist" | "steps";
 };
 
 export type CardData = CoverCard | SectionCard;
@@ -52,6 +57,69 @@ function isQASummary(title: string, attrs: string): boolean {
   if (/id\s*=\s*["']section-6["']/i.test(attrs)) return true;
   if (/id\s*=\s*["']section-q/i.test(attrs)) return true;
   return false;
+}
+
+/** 본문 첫 문장 추출 — 마침표/물음표/느낌표 단위, 60자 이내 자연 cut. */
+function extractHook(inner: string): string | undefined {
+  // 모든 <p> 텍스트 모음
+  const paragraphs = [...inner.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
+    .map((m) => stripTags(m[1]))
+    .filter((s) => s.length > 0);
+
+  for (const para of paragraphs) {
+    // 문장 단위 분리
+    const sentences = para.split(/(?<=[.!?。요죠다])\s+/);
+    for (const s of sentences) {
+      const trimmed = s.trim();
+      if (trimmed.length < 8) continue; // 너무 짧으면 skip
+      if (trimmed.length <= 60) return trimmed;
+      // 60자 이내로 자연 cut — 쉼표 기준
+      const commaCut = trimmed.slice(0, 60).lastIndexOf(",");
+      if (commaCut > 20) {
+        return trimmed.slice(0, commaCut);
+      }
+      // 공백 기준 cut
+      const spaceCut = trimmed.slice(0, 56).lastIndexOf(" ");
+      if (spaceCut > 20) {
+        return trimmed.slice(0, spaceCut) + "…";
+      }
+      return trimmed.slice(0, 56) + "…";
+    }
+  }
+  return undefined;
+}
+
+/** 체크리스트(✅) 추출 — ✅ 다음 텍스트를 한 항목씩. 최대 4개. */
+function extractChecklist(inner: string): string[] {
+  // ✅ 다음 텍스트를 <br>나 줄바꿈, 또는 다음 ✅까지 추출
+  const items: string[] = [];
+  // ✅로 split해서 각 조각 정리
+  const parts = inner.split(/✅\s*/);
+  for (let i = 1; i < parts.length; i++) {
+    // 첫 <br> 또는 ✅ 이전까지가 한 항목
+    const raw = parts[i].split(/<br\s*\/?>/i)[0].split(/✅/)[0];
+    const txt = stripTags(raw);
+    if (txt && txt.length >= 2 && txt.length <= 50) {
+      items.push(txt);
+      if (items.length >= 4) break;
+    }
+  }
+  return items;
+}
+
+/** 단계(1. 2. 3.) 추출 — <strong>N. 라벨</strong> 패턴. 최대 4개. */
+function extractSteps(inner: string): string[] {
+  const items: string[] = [];
+  const pattern = /<strong>\s*(\d+)\.\s*([^<]+?)<\/strong>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(inner)) !== null) {
+    const txt = stripTags(m[2]).trim();
+    if (txt && txt.length <= 40) {
+      items.push(txt);
+      if (items.length >= 4) break;
+    }
+  }
+  return items;
 }
 
 export function extractCardData(opts: {
@@ -98,25 +166,29 @@ export function extractCardData(opts: {
     );
     const subtitle = subMatch ? stripTags(subMatch[1]) : undefined;
 
-    // 본문 첫 단락 — <p> 첫 매치
-    const bodyMatch = inner.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i);
-    let body: string | undefined;
-    if (bodyMatch) {
-      body = stripTags(bodyMatch[1]);
-      // 너무 짧으면 다음 p나 체크리스트도 시도
-      if (body.length < 30) {
-        const all = [...inner.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)];
-        for (const m of all) {
-          const txt = stripTags(m[1]);
-          if (txt.length >= body.length) body = txt;
-          if (body.length >= 80) break;
-        }
-      }
-      // 200자 자르기
-      if (body.length > 200) body = body.slice(0, 200).trim() + "…";
+    // 인포그래픽 추출: 체크리스트 > 단계 > hook 우선순위
+    let bullets: string[] = extractChecklist(inner);
+    let bulletStyle: SectionCard["bulletStyle"] = "checklist";
+    if (bullets.length < 2) {
+      bullets = extractSteps(inner);
+      bulletStyle = "steps";
+    }
+    if (bullets.length < 2) {
+      bullets = [];
+      bulletStyle = undefined;
     }
 
-    sections.push({ type: "section", title, subtitle, body });
+    // 한 줄 hook (본문 첫 문장, 60자 이내)
+    const hook = extractHook(inner);
+
+    sections.push({
+      type: "section",
+      title,
+      subtitle,
+      hook,
+      bullets: bullets.length > 0 ? bullets : undefined,
+      bulletStyle,
+    });
 
     // 최대 4장까지만 추출 — 이미 4장 모았으면 종료
     if (sections.length >= MAX_SECTION_CARDS) break;
