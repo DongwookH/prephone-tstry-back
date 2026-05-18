@@ -36,7 +36,7 @@ export type SectionCard = {
 
 export type CardData = CoverCard | SectionCard;
 
-/** HTML 태그 제거 + 엔티티 디코드 + 공백 정리. */
+/** HTML 태그 제거 + 엔티티 디코드 + 마크다운 잔재 제거 + 공백 정리. */
 function stripTags(s: string): string {
   return s
     .replace(/<[^>]+>/g, " ")
@@ -47,6 +47,9 @@ function stripTags(s: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&[a-z]+;/gi, " ")
+    // 마크다운 강조 잔재 제거 (sanitizeForTistory가 놓친 경우 카드뉴스 단계에서 안전망)
+    .replace(/\*\*([^*\n]+?)\*\*/g, "$1")
+    .replace(/__([^_\n]+?)__/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
 }

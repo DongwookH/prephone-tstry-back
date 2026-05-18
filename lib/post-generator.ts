@@ -119,13 +119,27 @@ ${personaDesc}
 - \`<summary>\` 안에는 **자식 태그(\`<div>\`, \`<span>\`, \`<p>\`, \`<b>\` 등) 일체 금지**.
   티스토리 기본 모드(WYSIWYG)는 summary 안 자식 태그를 모두 제거하여 빈 박스만 남깁니다.
   → summary 안에는 **plain 텍스트 한 줄만** (스타일은 summary 자체에 인라인으로).
-- summary 텍스트는 **\`▼ \`로 시작** (스페이스 1칸 포함). 예: \`▼ 1) 준비물 - ...\`
+- **summary 텍스트는 30자 이내**, 한 줄로 짧게.
+  형식: \`▼ {번호}) {핵심 키워드 한 마디}\` (예: \`▼ 2) 준비물 - 3가지\`, \`▼ 3) 개통 절차 5단계\`)
+  ⚠ summary에 부제·설명·길게 풀어쓴 문장 절대 포함 X.
+  나쁜 예: \`▼ 2) 개통 전 필수 준비물 비대면 개통은 '준비물'에서 승부가 납니다!\` (부제가 합쳐짐)
+  좋은 예: \`▼ 2) 준비물 3가지\` (부제는 본문 영역 첫 div에 별도)
+- summary 텍스트는 **\`▼ \`로 시작** (스페이스 1칸 포함).
   → 티스토리 native marker(▶)는 padding 위에 떠 보여 어색하므로
      \`list-style:none;\` 으로 숨기고 우리가 직접 ▼를 텍스트 앞에 인라인 배치.
 - 부제가 필요하면 details **본문 영역(<div>)의 첫 자식**으로 넣고,
   헤더 배경색(라임 그라데이션)을 동일하게 적용해서 시각적으로 헤더의 연속처럼 보이게 함.
 - \`<summary>\` 안에 ▼ 외에 다른 마커 기호(\`<span>−</span>\` \`+\` 등) 넣지 말 것.
 - **모든 \`<details>\`에 \`open\` 속성 부여** — default로 모두 펼친 상태.
+
+⚠️ **마크다운 문법 절대 사용 금지 — HTML 태그만 사용:**
+- 강조: \`**텍스트**\` ❌ → \`<strong>텍스트</strong>\` ✅
+- 이탤릭: \`*텍스트*\` \`_텍스트_\` ❌ → \`<em>텍스트</em>\` ✅
+- 헤딩: \`## 제목\` ❌ → \`<h2 style="...">제목</h2>\` ✅
+- 리스트: \`- 항목\` \`* 항목\` ❌ → \`<ul>...<li>\` 또는 \`✅ 항목\` 텍스트
+- 링크: \`[텍스트](url)\` ❌ → \`<a href="url">텍스트</a>\` ✅
+- 코드: \`\` \`코드\` \`\` ❌ → \`<code>코드</code>\` ✅
+티스토리는 마크다운 렌더링 X → \`**\` \`__\` 같은 기호가 raw로 노출됨.
 
 각 블록은 아래 정확한 패턴으로 작성:
 
@@ -313,13 +327,17 @@ function htmlTextLength(html: string): number {
 export function sanitizeForTistory(html: string): string {
   if (!html) return html;
 
+  // (0) 마크다운 잔재 먼저 HTML로 변환 — summary 평탄화 전에 처리해야
+  //     summary 안의 **텍스트** 가 <strong>으로 바뀐 후 평탄화에서 텍스트로 추출됨
+  let out = transformMarkdownEmphasis(html);
+
   // (1) 모든 <summary>를 단위로 처리 — 중첩 details도 안전
   //     - summary 안 자식 태그 → 텍스트만 추출
   //     - 부제는 summary 직후 div 띠로 삽입
   //     - 끝의 잡 마커(±/−/+/▲) 제거 (단, 시작의 ▼는 보존)
   //     - 텍스트 시작에 "▼ " 없으면 자동 추가
   //     - summary style에 list-style:none 자동 추가 (native marker 숨김)
-  let out = html.replace(
+  out = out.replace(
     /<summary\b([^>]*)>([\s\S]*?)<\/summary>/gi,
     (full, summaryAttrs: string, summaryInner: string) => {
       // 끝의 잡 마커 (±/−/+/▲/▾/▿) 제거 — 태그 안이든 밖이든. ▼는 시작에만 보존하므로 끝에 있으면 제거.
@@ -329,39 +347,22 @@ export function sanitizeForTistory(html: string): string {
       );
       cleaned = cleaned.replace(/\s*[−–—+\-▼▲▾▿]\s*$/, "");
 
-      // 자식 태그 있나?
-      const hasChildTags = /<[a-z][^>]*>/i.test(cleaned);
-
-      let mainText: string;
-      let subTexts: string[];
-
-      if (!hasChildTags) {
-        mainText = cleaned.trim();
-        subTexts = [];
-      } else {
-        // 자식 태그 텍스트 분리 — 텍스트 블록 단위로 모음
-        const textBlocks: string[] = [];
-        const tagPattern =
-          /<(?:span|div|b|i|strong|em|small|p)\b[^>]*>([\s\S]*?)<\/(?:span|div|b|i|strong|em|small|p)>/gi;
-        const parts = cleaned.split(tagPattern);
-        for (const part of parts) {
-          const txt = part
-            ?.replace(/<[^>]+>/g, "")
-            .replace(/\s+/g, " ")
-            .trim();
-          if (txt) textBlocks.push(txt);
-        }
-        if (textBlocks.length === 0) return full;
-        mainText = textBlocks[0];
-        subTexts = textBlocks.slice(1);
-      }
+      // 자식 태그가 있어도 모든 텍스트를 합쳐서 단일 제목으로 처리.
+      // prompt 규칙: summary에는 한 줄만. 부제는 본문 영역(<div>)에 별도로 둠.
+      // 자식 태그가 있더라도(strong/span 등) raw 텍스트만 추출.
+      const mainText = cleaned
+        .replace(/<[^>]+>/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!mainText) return full;
 
       // mainText 앞에 "▼ " 자동 추가 (없으면)
-      if (!/^[▼▶▽▸]/.test(mainText)) {
-        mainText = `▼ ${mainText}`;
+      let titleText = mainText;
+      if (!/^[▼▶▽▸]/.test(titleText)) {
+        titleText = `▼ ${titleText}`;
       } else {
         // ▶/▽/▸로 시작하면 ▼로 통일
-        mainText = mainText.replace(/^[▶▽▸]\s*/, "▼ ");
+        titleText = titleText.replace(/^[▶▽▸]\s*/, "▼ ");
       }
 
       // summary style에 list-style:none 자동 추가 (없으면)
@@ -379,18 +380,7 @@ export function sanitizeForTistory(html: string): string {
         newAttrs = `${newAttrs} style="list-style:none;"`;
       }
 
-      let result = `<summary${newAttrs}>${mainText}</summary>`;
-      if (subTexts.length > 0) {
-        // summary 배경 그라데이션을 동일하게 적용 (헤더 연속처럼 보이게)
-        const bgMatch = summaryAttrs.match(
-          /background:\s*(linear-gradient\([^;)]+\)[^;]*)/i,
-        );
-        const bg = bgMatch
-          ? bgMatch[1]
-          : "linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%)";
-        result += `<div style="background:${bg};padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">${subTexts.join(" ")}</div>`;
-      }
-      return result;
+      return `<summary${newAttrs}>${titleText}</summary>`;
     },
   );
 
@@ -406,6 +396,30 @@ export function sanitizeForTistory(html: string): string {
   );
 
   return out;
+}
+
+/**
+ * HTML 태그 바깥의 텍스트 노드에서만 마크다운 강조를 HTML로 변환.
+ * 태그 attribute 안의 * 는 건드리지 않음.
+ */
+function transformMarkdownEmphasis(html: string): string {
+  // HTML을 태그/텍스트 토큰으로 split
+  // <tag ...> 또는 텍스트 노드. lookahead로 split 위치 보존.
+  const parts = html.split(/(<[^>]+>)/g);
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part) continue;
+    // 태그면 그대로
+    if (part.startsWith("<") && part.endsWith(">")) continue;
+    // 텍스트 노드 — 마크다운 변환
+    let text = part;
+    // **텍스트** 또는 __텍스트__ → <strong>
+    // [^*\n] : 줄바꿈/별표 제외, non-greedy
+    text = text.replace(/\*\*([^*\n]+?)\*\*/g, "<strong>$1</strong>");
+    text = text.replace(/__([^_\n]+?)__/g, "<strong>$1</strong>");
+    parts[i] = text;
+  }
+  return parts.join("");
 }
 
 export async function generatePost(opts: {
