@@ -1,13 +1,17 @@
 /**
  * 글 content_html에서 카드뉴스용 데이터 추출.
  *
- * 추출 대상:
+ * 추출 대상 (최대 5장):
  *  - 표지 카드 (cover): 글 제목 + 키워드 + 카테고리
- *  - 각 H2 섹션 카드 (section): summary 제목 + 부제 + 본문 첫 단락
+ *  - 각 H2 섹션 카드 (section): summary 제목 + 부제 + 본문 첫 단락 (최대 4장)
  *  - Q&A 섹션은 제외 (제목에 "Q&A" / "자주 묻는" / "Q1." 포함되는 details)
  *
  * 정규식 기반 — 우리 prompt 패턴(sanitize 후)에 안전하게 동작.
  */
+
+/** 카드뉴스 1세트의 카드 수 (표지 1 + 섹션 4). */
+export const CARDNEWS_MAX = 5;
+const MAX_SECTION_CARDS = CARDNEWS_MAX - 1; // 4
 
 export type CoverCard = {
   type: "cover";
@@ -113,9 +117,12 @@ export function extractCardData(opts: {
     }
 
     sections.push({ type: "section", title, subtitle, body });
+
+    // 최대 4장까지만 추출 — 이미 4장 모았으면 종료
+    if (sections.length >= MAX_SECTION_CARDS) break;
   }
 
-  // 페이지 번호 부여
+  // 페이지 번호 부여 (분모는 실제 카드 수)
   const total = sections.length;
   for (let i = 0; i < sections.length; i++) {
     cards.push({

@@ -118,7 +118,7 @@ export function CardNewsCards({
               카드뉴스
             </h3>
             <p className="text-[11px] text-ink-500 mt-0.5">
-              {cards.length}장 · 1080×1080 인스타 · Q&A 제외
+              {cards.length}장 (표지 1 + 섹션 {cards.length - 1}) · 1080×1080 · Q&A 제외
             </p>
           </div>
           <button
