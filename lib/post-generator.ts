@@ -119,11 +119,13 @@ ${personaDesc}
 - \`<summary>\` 안에는 **자식 태그(\`<div>\`, \`<span>\`, \`<p>\`, \`<b>\` 등) 일체 금지**.
   티스토리 기본 모드(WYSIWYG)는 summary 안 자식 태그를 모두 제거하여 빈 박스만 남깁니다.
   → summary 안에는 **plain 텍스트 한 줄만** (스타일은 summary 자체에 인라인으로).
+- summary 텍스트는 **\`▼ \`로 시작** (스페이스 1칸 포함). 예: \`▼ 1) 준비물 - ...\`
+  → 티스토리 native marker(▶)는 padding 위에 떠 보여 어색하므로
+     \`list-style:none;\` 으로 숨기고 우리가 직접 ▼를 텍스트 앞에 인라인 배치.
 - 부제가 필요하면 details **본문 영역(<div>)의 첫 자식**으로 넣고,
   헤더 배경색(라임 그라데이션)을 동일하게 적용해서 시각적으로 헤더의 연속처럼 보이게 함.
-- \`<summary>\` 안에 임의의 마커 기호(\`<span>−</span>\` 등) 넣지 말 것.
-  → 티스토리가 자체 ▶/▼ marker를 자동 추가합니다.
-- 첫 번째 \`<details>\`만 \`open\` 속성 부여, 나머지는 닫힌 상태로 시작.
+- \`<summary>\` 안에 ▼ 외에 다른 마커 기호(\`<span>−</span>\` \`+\` 등) 넣지 말 것.
+- **모든 \`<details>\`에 \`open\` 속성 부여** — default로 모두 펼친 상태.
 
 각 블록은 아래 정확한 패턴으로 작성:
 
@@ -181,9 +183,9 @@ ${personaDesc}
 </div>
 
 <!-- ④ 각 H2 섹션 (5~6개) — 토글 details, 옅은 라임 헤더 -->
-<!-- ✅ 첫 번째 섹션만 open. summary 안엔 plain 텍스트만 (자식 태그 절대 X). 부제는 본문 영역 첫 자식으로. -->
+<!-- ✅ 모든 details에 open. summary 안엔 plain 텍스트만, "▼ "로 시작. list-style:none. 부제는 본문 영역 첫 자식. -->
 <details id="section-1" open style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
-  <summary style="cursor:pointer;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">1) {H2 제목 — 예: 준비물 - 유심부터 인증까지 한 번에}</summary>
+  <summary style="cursor:pointer;list-style:none;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">▼ 1) {H2 제목 — 예: 준비물 - 유심부터 인증까지 한 번에}</summary>
   <!-- 부제 띠 (라임 그라데이션 연속) — summary 직후 헤더의 일부처럼 보이게 -->
   <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">{한 줄 부제 — 예: 비대면 개통은 "준비물"에서 승부가 납니다}</div>
   <div style="padding:24px 28px;">
@@ -206,9 +208,9 @@ ${personaDesc}
   </div>
 </details>
 
-<!-- 2번째 이후 섹션은 open 없음 — 토글 닫힌 상태로 시작 -->
-<details id="section-3" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
-  <summary style="cursor:pointer;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">3) 개통 절차 - 승인 후 충전하기가 진짜 끝!</summary>
+<!-- 모든 섹션 open. summary 텍스트 시작은 "▼ " 고정. -->
+<details id="section-3" open style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
+  <summary style="cursor:pointer;list-style:none;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">▼ 3) 개통 절차 - 승인 후 충전하기가 진짜 끝!</summary>
   <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">{한 줄 부제 — 5분 흐름}</div>
   <div style="padding:24px 28px;">
     <div style="border-left:3px solid #9DC91A;padding-left:12px;font-weight:800;font-size:15px;margin-bottom:12px;color:#191F28;">비대면 개통 6단계(웹페이지 기준)</div>
@@ -226,16 +228,16 @@ ${personaDesc}
 </details>
 
 <!-- ⑤ Q&A 섹션 — 각 Q를 details로, 옅은 라임 헤더 -->
-<details id="section-6" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
-  <summary style="cursor:pointer;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">6) Q&amp;A - {키워드} 자주 묻는 질문</summary>
+<details id="section-6" open style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
+  <summary style="cursor:pointer;list-style:none;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">▼ 6) Q&amp;A - {키워드} 자주 묻는 질문</summary>
   <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">개통 과정에서 생기는 질문 5가지</div>
   <div style="padding:24px 28px;">
-    <details style="margin-bottom:16px;border-bottom:1px solid #E5E8EB;padding-bottom:16px;">
-      <summary style="cursor:pointer;padding:4px 0;font-weight:700;font-size:15px;color:#191F28;">Q1. {질문}</summary>
+    <details open style="margin-bottom:16px;border-bottom:1px solid #E5E8EB;padding-bottom:16px;">
+      <summary style="cursor:pointer;list-style:none;padding:4px 0;font-weight:700;font-size:15px;color:#191F28;">▼ Q1. {질문}</summary>
       <p style="margin:12px 0 0;font-size:14px;line-height:1.8;color:#4E5968;">{답변 2~3문장}</p>
     </details>
-    <details style="margin-bottom:16px;border-bottom:1px solid #E5E8EB;padding-bottom:16px;">
-      <summary style="cursor:pointer;padding:4px 0;font-weight:700;font-size:15px;color:#191F28;">Q2. {질문}</summary>
+    <details open style="margin-bottom:16px;border-bottom:1px solid #E5E8EB;padding-bottom:16px;">
+      <summary style="cursor:pointer;list-style:none;padding:4px 0;font-weight:700;font-size:15px;color:#191F28;">▼ Q2. {질문}</summary>
       <p style="margin:12px 0 0;font-size:14px;line-height:1.8;color:#4E5968;">{답변}</p>
     </details>
     <!-- ... Q3, Q4, Q5 동일 패턴 -->
@@ -312,11 +314,15 @@ export function sanitizeForTistory(html: string): string {
   if (!html) return html;
 
   // (1) 모든 <summary>를 단위로 처리 — 중첩 details도 안전
-  //     summary 안 자식 태그를 텍스트만 추출 + 부제는 summary 직후 div 띠로 삽입
+  //     - summary 안 자식 태그 → 텍스트만 추출
+  //     - 부제는 summary 직후 div 띠로 삽입
+  //     - 끝의 잡 마커(±/−/+/▲) 제거 (단, 시작의 ▼는 보존)
+  //     - 텍스트 시작에 "▼ " 없으면 자동 추가
+  //     - summary style에 list-style:none 자동 추가 (native marker 숨김)
   let out = html.replace(
     /<summary\b([^>]*)>([\s\S]*?)<\/summary>/gi,
     (full, summaryAttrs: string, summaryInner: string) => {
-      // 끝의 마커 (±/−/+/▼/▲) 제거 — 태그 안이든 밖이든
+      // 끝의 잡 마커 (±/−/+/▲/▾/▿) 제거 — 태그 안이든 밖이든. ▼는 시작에만 보존하므로 끝에 있으면 제거.
       let cleaned = summaryInner.replace(
         /\s*<[^>]+>\s*[−–—+\-▼▲▾▿]\s*<\/[^>]+>\s*$/i,
         "",
@@ -325,31 +331,55 @@ export function sanitizeForTistory(html: string): string {
 
       // 자식 태그 있나?
       const hasChildTags = /<[a-z][^>]*>/i.test(cleaned);
+
+      let mainText: string;
+      let subTexts: string[];
+
       if (!hasChildTags) {
-        // 이미 plain text — 마커만 제거된 상태로 반환
-        if (cleaned === summaryInner) return full;
-        return `<summary${summaryAttrs}>${cleaned.trim()}</summary>`;
+        mainText = cleaned.trim();
+        subTexts = [];
+      } else {
+        // 자식 태그 텍스트 분리 — 텍스트 블록 단위로 모음
+        const textBlocks: string[] = [];
+        const tagPattern =
+          /<(?:span|div|b|i|strong|em|small|p)\b[^>]*>([\s\S]*?)<\/(?:span|div|b|i|strong|em|small|p)>/gi;
+        const parts = cleaned.split(tagPattern);
+        for (const part of parts) {
+          const txt = part
+            ?.replace(/<[^>]+>/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (txt) textBlocks.push(txt);
+        }
+        if (textBlocks.length === 0) return full;
+        mainText = textBlocks[0];
+        subTexts = textBlocks.slice(1);
       }
 
-      // 자식 태그 텍스트 분리 — 텍스트 블록 단위로 모음
-      const textBlocks: string[] = [];
-      const tagPattern =
-        /<(?:span|div|b|i|strong|em|small|p)\b[^>]*>([\s\S]*?)<\/(?:span|div|b|i|strong|em|small|p)>/gi;
-      const parts = cleaned.split(tagPattern);
-      for (const part of parts) {
-        const txt = part
-          ?.replace(/<[^>]+>/g, "")
-          .replace(/\s+/g, " ")
-          .trim();
-        if (txt) textBlocks.push(txt);
+      // mainText 앞에 "▼ " 자동 추가 (없으면)
+      if (!/^[▼▶▽▸]/.test(mainText)) {
+        mainText = `▼ ${mainText}`;
+      } else {
+        // ▶/▽/▸로 시작하면 ▼로 통일
+        mainText = mainText.replace(/^[▶▽▸]\s*/, "▼ ");
       }
 
-      if (textBlocks.length === 0) return full;
+      // summary style에 list-style:none 자동 추가 (없으면)
+      let newAttrs = summaryAttrs;
+      const styleMatch = newAttrs.match(/style="([^"]*)"/i);
+      if (styleMatch) {
+        if (!/list-style\s*:/i.test(styleMatch[1])) {
+          const newStyle = `list-style:none;${styleMatch[1]}`;
+          newAttrs = newAttrs.replace(
+            /style="[^"]*"/i,
+            `style="${newStyle}"`,
+          );
+        }
+      } else {
+        newAttrs = `${newAttrs} style="list-style:none;"`;
+      }
 
-      const mainText = textBlocks[0];
-      const subTexts = textBlocks.slice(1);
-
-      let result = `<summary${summaryAttrs}>${mainText}</summary>`;
+      let result = `<summary${newAttrs}>${mainText}</summary>`;
       if (subTexts.length > 0) {
         // summary 배경 그라데이션을 동일하게 적용 (헤더 연속처럼 보이게)
         const bgMatch = summaryAttrs.match(
@@ -364,19 +394,14 @@ export function sanitizeForTistory(html: string): string {
     },
   );
 
-  // (2) <details ... open ...> 첫 번째만 유지, 그 다음부터는 open 제거
-  let detailsCount = 0;
+  // (2) 모든 <details>에 open 속성 강제 — default로 모두 펼친 상태
   out = out.replace(
-    /<details\b([^>]*)>/gi,
+    /<details\b([^>]*?)>/gi,
     (_match, attrs: string) => {
-      detailsCount += 1;
-      if (detailsCount === 1) return `<details${attrs}>`;
-      const cleaned = attrs
-        .replace(/\sopen(?=[\s>=])/gi, "")
-        .replace(/\sopen$/gi, "")
-        .replace(/^open\s/gi, " ")
-        .replace(/\sopen=("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
-      return `<details${cleaned}>`;
+      if (/\sopen(?=[\s>=])|\sopen$|^open\s|\sopen=/i.test(attrs)) {
+        return `<details${attrs}>`;
+      }
+      return `<details${attrs} open>`;
     },
   );
 
