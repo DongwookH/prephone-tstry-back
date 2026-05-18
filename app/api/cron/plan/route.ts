@@ -44,14 +44,14 @@ export async function POST(req: Request) {
     );
   }
 
-  // 2. Track 1: 사용자 키워드 5개 픽
+  // 2. Track 1: 사용자 키워드 5개 픽 (일단 5개)
   const manualKeywords = allKeywords.filter((k) => k.source !== "auto");
-  const track1Picks = pickKeywordsForToday(
+  let track1Picks = pickKeywordsForToday(
     manualKeywords.length ? manualKeywords : allKeywords,
     5,
   );
 
-  // 3. Track 2: GSG 발굴 5개
+  // 3. Track 2: GSG 발굴 5개 (실패 시 errors에 기록하고 진행)
   let track2Picks: Array<{ keyword: string; category: string }> = [];
   try {
     const usedKw = allKeywords.map((k) => k.keyword).filter(Boolean).slice(0, 80);
@@ -87,6 +87,29 @@ export async function POST(req: Request) {
     }
   } catch (err) {
     errors.push(`Track2 발굴 실패: ${(err as Error).message}`);
+  }
+
+  // 3-A. Track2 부족 시 Track1에서 보강 — 항상 plan을 10개로 채우는 게 목표
+  // (manualKeywords 풀에 여유가 있다면)
+  const TARGET_TOTAL = 10;
+  const shortfall = TARGET_TOTAL - (track1Picks.length + track2Picks.length);
+  if (shortfall > 0) {
+    // 이미 픽된 키워드 제외하고 추가 픽
+    const alreadyPicked = new Set(track1Picks.map((k) => k.keyword));
+    const remaining = (manualKeywords.length ? manualKeywords : allKeywords).filter(
+      (k) => !alreadyPicked.has(k.keyword),
+    );
+    const extraPicks = pickKeywordsForToday(remaining, shortfall);
+    if (extraPicks.length > 0) {
+      track1Picks = [...track1Picks, ...extraPicks];
+      console.info(
+        `[plan] Track2 부족(${track2Picks.length}/5) → Track1에서 ${extraPicks.length}개 보강 (총 Track1=${track1Picks.length})`,
+      );
+    } else {
+      errors.push(
+        `Track1 보강 실패 — 사용 가능한 키워드 부족 (필요: ${shortfall}, 남은: ${remaining.length})`,
+      );
+    }
   }
 
   // 4. 서브 키워드 자동 매칭
@@ -137,24 +160,25 @@ export async function POST(req: Request) {
     slot: number;
   }> = [];
 
-  track1Picks.forEach((k, i) => {
+  // slot은 plan에 들어가는 순서대로 1부터 부여 — 보강 픽도 빈 슬롯 자동 사용
+  track1Picks.forEach((k) => {
     plan.push({
       track: 1,
       keyword: k.keyword,
       category: k.category || "일반",
       subKeywords: pickSubKeywords(k.keyword, k.category || "일반"),
       persona: personas[plan.length % personas.length],
-      slot: i + 1,
+      slot: plan.length + 1,
     });
   });
-  track2Picks.forEach((k, i) => {
+  track2Picks.forEach((k) => {
     plan.push({
       track: 2,
       keyword: k.keyword,
       category: k.category,
       subKeywords: pickSubKeywords(k.keyword, k.category),
       persona: personas[plan.length % personas.length],
-      slot: i + 1 + 5,
+      slot: plan.length + 1,
     });
   });
 
