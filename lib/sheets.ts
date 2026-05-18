@@ -721,6 +721,82 @@ export async function getGeminiUsage(days = 14): Promise<UsageRow[]> {
 }
 
 /**
+ * posts 시트에서 ids에 해당하는 행을 모두 삭제 (중복 row 있어도 전부).
+ *
+ * 시트 행 인덱스가 삭제 시 변동되지 않도록 가장 큰 행 번호부터 삭제.
+ */
+export async function deletePostsByIds(
+  ids: string[],
+): Promise<{ deleted: number; matchedIds: string[]; notFound: string[] }> {
+  if (ids.length === 0) {
+    return { deleted: 0, matchedIds: [], notFound: [] };
+  }
+  const sheets = getClient();
+  const spreadsheetId = mainSheetId();
+
+  // 1) id 컬럼 읽어서 매치되는 row 번호 찾기 (1-indexed = sheet row)
+  const idCol = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "posts!A:A",
+  });
+  const rows = (idCol.data.values ?? []) as string[][];
+  const targetSet = new Set(ids);
+  const matchedIds = new Set<string>();
+  const matchedRowNums: number[] = []; // 1-indexed
+
+  // 헤더는 첫 행 (코멘트 없는 가정) — 데이터는 2행부터
+  for (let i = 1; i < rows.length; i++) {
+    const cellId = rows[i]?.[0];
+    if (cellId && targetSet.has(cellId)) {
+      matchedRowNums.push(i + 1); // 1-indexed
+      matchedIds.add(cellId);
+    }
+  }
+
+  if (matchedRowNums.length === 0) {
+    return { deleted: 0, matchedIds: [], notFound: ids };
+  }
+
+  // 2) posts 시트의 numeric sheetId 가져오기 (deleteDimension용)
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties",
+  });
+  const postsSheet = meta.data.sheets?.find(
+    (s) => s.properties?.title === "posts",
+  );
+  const numericSheetId = postsSheet?.properties?.sheetId;
+  if (numericSheetId === undefined || numericSheetId === null) {
+    throw new Error("posts 시트 메타데이터 못 찾음");
+  }
+
+  // 3) 큰 row부터 삭제 — 인덱스 변동 방지
+  const sortedDesc = [...matchedRowNums].sort((a, b) => b - a);
+  const requests = sortedDesc.map((rowNum) => ({
+    deleteDimension: {
+      range: {
+        sheetId: numericSheetId,
+        dimension: "ROWS" as const,
+        startIndex: rowNum - 1, // 0-indexed
+        endIndex: rowNum, // exclusive
+      },
+    },
+  }));
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests },
+  });
+
+  const notFound = ids.filter((id) => !matchedIds.has(id));
+  return {
+    deleted: matchedRowNums.length,
+    matchedIds: Array.from(matchedIds),
+    notFound,
+  };
+}
+
+/**
  * 시트가 정상 연결됐는지 헬스체크.
  */
 export async function sheetsHealthCheck() {
