@@ -298,11 +298,12 @@ function CoverCardRender({ card }: { card: CoverCard }) {
             display: "inline-block",
             background: "#9DC91A",
             color: "white",
-            padding: "10px 22px",
+            padding: "12px 22px 10px",
             borderRadius: 999,
             fontSize: 22,
             fontWeight: 800,
             marginBottom: 28,
+            lineHeight: 1,
           }}
         >
           {card.category}
@@ -335,6 +336,7 @@ function CoverCardRender({ card }: { card: CoverCard }) {
             fontSize: 28,
             fontWeight: 700,
             color: "#5F7C0E",
+            lineHeight: 1,
           }}
         >
           # {card.keyword}
@@ -345,9 +347,10 @@ function CoverCardRender({ card }: { card: CoverCard }) {
             fontWeight: 800,
             color: "#191F28",
             background: "white",
-            padding: "12px 22px",
+            padding: "14px 22px 12px",
             borderRadius: 14,
             boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+            lineHeight: 1,
           }}
         >
           앤텔레콤 안심개통
@@ -405,8 +408,11 @@ function SectionCardRender({ card }: { card: SectionCard }) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 28,
+                fontSize: 32,
                 fontWeight: 900,
+                lineHeight: 1,
+                // Pretendard의 라틴 숫자 baseline 보정
+                paddingTop: 4,
               }}
             >
               {num.replace(")", "")}
@@ -420,8 +426,9 @@ function SectionCardRender({ card }: { card: SectionCard }) {
               fontWeight: 800,
               color: "#5F7C0E",
               background: "rgba(255,255,255,0.7)",
-              padding: "8px 18px",
+              padding: "10px 18px 8px",
               borderRadius: 999,
+              lineHeight: 1,
             }}
           >
             {card.pageNum} / {card.totalPages}
@@ -453,20 +460,36 @@ function SectionCardRender({ card }: { card: SectionCard }) {
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-          {/* Hook — 강조 한 줄 (부제 또는 hook) */}
+          {/* Hook — 강조 한 줄 (부제 또는 hook). border-left와 텍스트 정렬 일치. */}
           {(card.subtitle || card.hook) && (
             <div
               style={{
-                borderLeft: "5px solid #9DC91A",
-                paddingLeft: 20,
-                fontSize: 26,
-                lineHeight: 1.5,
-                color: "#191F28",
-                fontWeight: 700,
-                wordBreak: "keep-all",
+                display: "flex",
+                alignItems: "center",
+                gap: 18,
               }}
             >
-              {card.subtitle || card.hook}
+              <div
+                style={{
+                  width: 5,
+                  alignSelf: "stretch",
+                  background: "#9DC91A",
+                  borderRadius: 3,
+                  minHeight: 40,
+                }}
+              />
+              <div
+                style={{
+                  fontSize: 26,
+                  lineHeight: 1.45,
+                  color: "#191F28",
+                  fontWeight: 700,
+                  wordBreak: "keep-all",
+                  flex: 1,
+                }}
+              >
+                {card.subtitle || card.hook}
+              </div>
             </div>
           )}
 
@@ -510,8 +533,9 @@ function SectionCardRender({ card }: { card: SectionCard }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            paddingTop: 28,
+            paddingTop: 24,
             borderTop: "1px solid #E5E8EB",
+            lineHeight: 1,
           }}
         >
           <span
@@ -519,6 +543,7 @@ function SectionCardRender({ card }: { card: SectionCard }) {
               fontSize: 20,
               fontWeight: 800,
               color: "#191F28",
+              lineHeight: 1,
             }}
           >
             앤텔레콤 안심개통
@@ -528,6 +553,7 @@ function SectionCardRender({ card }: { card: SectionCard }) {
               fontSize: 18,
               fontWeight: 700,
               color: "#5F7C0E",
+              lineHeight: 1,
             }}
           >
             ntelecomsafe.com
@@ -551,28 +577,32 @@ function BulletRow({
     <div
       style={{
         display: "flex",
-        alignItems: "flex-start",
+        alignItems: "center", // ← 정중앙 정렬 (text 1줄 가정)
         gap: 16,
         background: "#F8FBE8",
         border: "1px solid #E1EFA8",
         borderRadius: 14,
-        padding: "16px 20px",
+        padding: "14px 20px",
+        minHeight: 72, // ← 일관된 높이 (텍스트 1줄이든 짧든)
       }}
     >
       {style === "steps" ? (
         <div
           style={{
             flexShrink: 0,
-            width: 40,
-            height: 40,
+            width: 44,
+            height: 44,
             borderRadius: 10,
             background: "linear-gradient(135deg,#9DC91A 0%,#7FA512 100%)",
             color: "white",
-            fontSize: 22,
+            fontSize: 24,
             fontWeight: 900,
+            lineHeight: 1, // ← 글자 박스 = 정확한 폰트 크기
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            // 한글 폰트의 라틴 숫자 baseline 보정 (Pretendard에서 미세하게 위로 떠 보임)
+            paddingTop: 3,
           }}
         >
           {index + 1}
@@ -581,20 +611,31 @@ function BulletRow({
         <div
           style={{
             flexShrink: 0,
-            width: 36,
-            height: 36,
+            width: 40,
+            height: 40,
             borderRadius: "50%",
             background: "#9DC91A",
-            color: "white",
-            fontSize: 20,
-            fontWeight: 900,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            marginTop: 2,
           }}
         >
-          ✓
+          {/* ✓ 유니코드는 폰트마다 metric이 다르므로 SVG로 정중앙 보장 */}
+          <svg
+            width={22}
+            height={22}
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M5 12.5L10 17.5L19.5 7"
+              stroke="white"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </div>
       )}
       <div
@@ -602,10 +643,9 @@ function BulletRow({
           fontSize: 24,
           color: "#191F28",
           fontWeight: 600,
-          lineHeight: 1.45,
+          lineHeight: 1.4,
           wordBreak: "keep-all",
           flex: 1,
-          paddingTop: 4,
         }}
       >
         {text.length > 48 ? text.slice(0, 48) + "…" : text}
