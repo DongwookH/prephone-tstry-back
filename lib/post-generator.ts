@@ -116,9 +116,11 @@ ${personaDesc}
 ## 인라인 스타일 HTML (티스토리는 JS 안 되므로 details/summary 활용)
 
 ⚠️ **티스토리 sanitizer 안전 규칙 (절대 어기지 말 것):**
-- \`<summary>\` 안에는 **블록 요소(\`<div>\`, \`<p>\`, \`<h1~6>\`) 절대 금지**.
-  티스토리는 summary 안 div를 평탄화시켜 summary 바깥으로 빼버립니다.
-  → 제목/부제는 \`<span style="display:block">\` 으로만 작성.
+- \`<summary>\` 안에는 **자식 태그(\`<div>\`, \`<span>\`, \`<p>\`, \`<b>\` 등) 일체 금지**.
+  티스토리 기본 모드(WYSIWYG)는 summary 안 자식 태그를 모두 제거하여 빈 박스만 남깁니다.
+  → summary 안에는 **plain 텍스트 한 줄만** (스타일은 summary 자체에 인라인으로).
+- 부제가 필요하면 details **본문 영역(<div>)의 첫 자식**으로 넣고,
+  헤더 배경색(라임 그라데이션)을 동일하게 적용해서 시각적으로 헤더의 연속처럼 보이게 함.
 - \`<summary>\` 안에 임의의 마커 기호(\`<span>−</span>\` 등) 넣지 말 것.
   → 티스토리가 자체 ▶/▼ marker를 자동 추가합니다.
 - 첫 번째 \`<details>\`만 \`open\` 속성 부여, 나머지는 닫힌 상태로 시작.
@@ -179,12 +181,11 @@ ${personaDesc}
 </div>
 
 <!-- ④ 각 H2 섹션 (5~6개) — 토글 details, 옅은 라임 헤더 -->
-<!-- ✅ 첫 번째 섹션만 open. summary 안엔 <span style="display:block"> 만 사용 (div 절대 X). 마커 span도 넣지 X. -->
+<!-- ✅ 첫 번째 섹션만 open. summary 안엔 plain 텍스트만 (자식 태그 절대 X). 부제는 본문 영역 첫 자식으로. -->
 <details id="section-1" open style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
-  <summary style="cursor:pointer;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);">
-    <span style="display:block;font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">1) {H2 제목 — 예: 준비물 - 유심부터 인증까지 한 번에}</span>
-    <span style="display:block;font-size:13px;color:#5F7C0E;margin-top:4px;font-weight:600;">{한 줄 부제 — 예: 비대면 개통은 "준비물"에서 승부가 납니다}</span>
-  </summary>
+  <summary style="cursor:pointer;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">1) {H2 제목 — 예: 준비물 - 유심부터 인증까지 한 번에}</summary>
+  <!-- 부제 띠 (라임 그라데이션 연속) — summary 직후 헤더의 일부처럼 보이게 -->
+  <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">{한 줄 부제 — 예: 비대면 개통은 "준비물"에서 승부가 납니다}</div>
   <div style="padding:24px 28px;">
     <!-- 라임 세로선 부제목 (H3 대신) -->
     <div style="border-left:3px solid #9DC91A;padding-left:12px;font-weight:800;font-size:15px;margin-bottom:12px;color:#191F28;">{H3 부제목}</div>
@@ -207,10 +208,8 @@ ${personaDesc}
 
 <!-- 2번째 이후 섹션은 open 없음 — 토글 닫힌 상태로 시작 -->
 <details id="section-3" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
-  <summary style="cursor:pointer;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);">
-    <span style="display:block;font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">3) 개통 절차 - 승인 후 충전하기가 진짜 끝!</span>
-    <span style="display:block;font-size:13px;color:#5F7C0E;margin-top:4px;font-weight:600;">{한 줄 부제 — 5분 흐름}</span>
-  </summary>
+  <summary style="cursor:pointer;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">3) 개통 절차 - 승인 후 충전하기가 진짜 끝!</summary>
+  <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">{한 줄 부제 — 5분 흐름}</div>
   <div style="padding:24px 28px;">
     <div style="border-left:3px solid #9DC91A;padding-left:12px;font-weight:800;font-size:15px;margin-bottom:12px;color:#191F28;">비대면 개통 6단계(웹페이지 기준)</div>
     <p style="font-size:15px;line-height:1.8;margin:0 0 16px;color:#333D4B;">아래 순서대로만 하면 어렵지 않아요.</p>
@@ -228,17 +227,15 @@ ${personaDesc}
 
 <!-- ⑤ Q&A 섹션 — 각 Q를 details로, 옅은 라임 헤더 -->
 <details id="section-6" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
-  <summary style="cursor:pointer;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);">
-    <span style="display:block;font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">6) Q&amp;A - {키워드} 자주 묻는 질문</span>
-    <span style="display:block;font-size:13px;color:#5F7C0E;margin-top:4px;font-weight:600;">개통 과정에서 생기는 질문 5가지</span>
-  </summary>
+  <summary style="cursor:pointer;padding:20px 24px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">6) Q&amp;A - {키워드} 자주 묻는 질문</summary>
+  <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">개통 과정에서 생기는 질문 5가지</div>
   <div style="padding:24px 28px;">
     <details style="margin-bottom:16px;border-bottom:1px solid #E5E8EB;padding-bottom:16px;">
-      <summary style="cursor:pointer;padding:4px 0;"><span style="font-weight:700;font-size:15px;color:#191F28;">Q1. {질문}</span></summary>
+      <summary style="cursor:pointer;padding:4px 0;font-weight:700;font-size:15px;color:#191F28;">Q1. {질문}</summary>
       <p style="margin:12px 0 0;font-size:14px;line-height:1.8;color:#4E5968;">{답변 2~3문장}</p>
     </details>
     <details style="margin-bottom:16px;border-bottom:1px solid #E5E8EB;padding-bottom:16px;">
-      <summary style="cursor:pointer;padding:4px 0;"><span style="font-weight:700;font-size:15px;color:#191F28;">Q2. {질문}</span></summary>
+      <summary style="cursor:pointer;padding:4px 0;font-weight:700;font-size:15px;color:#191F28;">Q2. {질문}</summary>
       <p style="margin:12px 0 0;font-size:14px;line-height:1.8;color:#4E5968;">{답변}</p>
     </details>
     <!-- ... Q3, Q4, Q5 동일 패턴 -->
@@ -296,69 +293,84 @@ function htmlTextLength(html: string): number {
 /**
  * 티스토리 sanitizer 안전 후처리 — Gemini가 prompt 규칙을 어겨도 자동 복구.
  *
+ * 티스토리는 두 모드가 있고 강도가 다름:
+ *  - HTML 모드: 거의 그대로 저장
+ *  - 기본 모드(WYSIWYG): <summary> 안 자식 태그를 모두 제거하여 빈 박스만 남김
+ * → 양쪽 모두 안전하려면 <summary> 안에는 plain text만 둬야 함.
+ *
  * 변환 규칙:
- *  1) <summary>...</summary> 안의 <div ...>...</div> → <span style="display:block;...">...</span>
- *     (티스토리가 summary 안 div를 평탄화시켜 외부로 빼버리는 문제 방지)
- *  2) <summary> 안의 마지막 인라인 마커 span (텍스트가 "−" "+" "▼" "▲" "▾" "▿" 1글자) 제거
- *     (티스토리 기본 marker가 자동 추가됨)
- *  3) <details ... open ...> 첫 번째만 유지, 2번째부터 open 속성 제거
- *     (전부 펼치면 토글 의미 없음)
+ *  1) <details>를 단위로 처리:
+ *     - summary 안에 자식 태그가 있으면, 첫 자식의 텍스트만 summary에 남기고
+ *       나머지 자식들은 텍스트 추출 후 details 본문 영역 첫 자식 위치에 띠 div로 삽입
+ *       (라임 그라데이션 헤더의 연속처럼 보이게)
+ *     - summary 안 마지막 마커 텍스트(±/−/+/▼/▲)는 제거
+ *  2) <details ... open ...> 첫 번째만 유지, 2번째부터 open 속성 제거
  *
  * 정규식 기반이라 100% 완벽하진 않지만 우리 prompt 패턴에는 안전하게 동작.
  */
 export function sanitizeForTistory(html: string): string {
   if (!html) return html;
-  let out = html;
 
-  // (1) summary 안의 <div ...>...</div> → <span style="display:block;...">...</span>
-  //     summary 내부에 한해서만 적용. summary 내부 div가 중첩이면 가장 안쪽부터 변환되도록 반복.
-  out = out.replace(
+  // (1) 모든 <summary>를 단위로 처리 — 중첩 details도 안전
+  //     summary 안 자식 태그를 텍스트만 추출 + 부제는 summary 직후 div 띠로 삽입
+  let out = html.replace(
     /<summary\b([^>]*)>([\s\S]*?)<\/summary>/gi,
-    (_full, summaryAttrs, summaryInner) => {
-      // div 안의 div도 처리하기 위해 변환 후 다시 검사 (최대 5회)
-      let inner = summaryInner;
-      for (let i = 0; i < 5; i++) {
-        const before = inner;
-        // <div ...> → <span style="display:block;...">
-        inner = inner.replace(
-          /<div(\s[^>]*style="([^"]*)"[^>]*)?>/gi,
-          (_m: string, _attrs: string | undefined, style: string | undefined) => {
-            const styleStr = style ? `display:block;${style}` : "display:block;";
-            return `<span style="${styleStr}">`;
-          },
-        );
-        // 속성 없는 <div> 도 처리
-        inner = inner.replace(/<div>/gi, '<span style="display:block;">');
-        // </div> → </span>
-        inner = inner.replace(/<\/div>/gi, "</span>");
-        if (inner === before) break;
-      }
-      return `<summary${summaryAttrs}>${inner}</summary>`;
-    },
-  );
-
-  // (2) summary 안 마지막 위치의 marker span (1글자 텍스트가 ±/−/+/▼ 등) 제거
-  //     예: <summary>...<span style="...">−</span></summary>
-  out = out.replace(
-    /<summary\b([^>]*)>([\s\S]*?)<\/summary>/gi,
-    (_full, summaryAttrs, summaryInner) => {
-      // 안쪽 끝에서 공백 + 마커 span 패턴 찾기
-      const inner = summaryInner.replace(
-        /\s*<span\b[^>]*>\s*[−–—+\-▼▲▾▿]\s*<\/span>\s*$/i,
+    (full, summaryAttrs: string, summaryInner: string) => {
+      // 끝의 마커 (±/−/+/▼/▲) 제거 — 태그 안이든 밖이든
+      let cleaned = summaryInner.replace(
+        /\s*<[^>]+>\s*[−–—+\-▼▲▾▿]\s*<\/[^>]+>\s*$/i,
         "",
       );
-      return `<summary${summaryAttrs}>${inner}</summary>`;
+      cleaned = cleaned.replace(/\s*[−–—+\-▼▲▾▿]\s*$/, "");
+
+      // 자식 태그 있나?
+      const hasChildTags = /<[a-z][^>]*>/i.test(cleaned);
+      if (!hasChildTags) {
+        // 이미 plain text — 마커만 제거된 상태로 반환
+        if (cleaned === summaryInner) return full;
+        return `<summary${summaryAttrs}>${cleaned.trim()}</summary>`;
+      }
+
+      // 자식 태그 텍스트 분리 — 텍스트 블록 단위로 모음
+      const textBlocks: string[] = [];
+      const tagPattern =
+        /<(?:span|div|b|i|strong|em|small|p)\b[^>]*>([\s\S]*?)<\/(?:span|div|b|i|strong|em|small|p)>/gi;
+      const parts = cleaned.split(tagPattern);
+      for (const part of parts) {
+        const txt = part
+          ?.replace(/<[^>]+>/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (txt) textBlocks.push(txt);
+      }
+
+      if (textBlocks.length === 0) return full;
+
+      const mainText = textBlocks[0];
+      const subTexts = textBlocks.slice(1);
+
+      let result = `<summary${summaryAttrs}>${mainText}</summary>`;
+      if (subTexts.length > 0) {
+        // summary 배경 그라데이션을 동일하게 적용 (헤더 연속처럼 보이게)
+        const bgMatch = summaryAttrs.match(
+          /background:\s*(linear-gradient\([^;)]+\)[^;]*)/i,
+        );
+        const bg = bgMatch
+          ? bgMatch[1]
+          : "linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%)";
+        result += `<div style="background:${bg};padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">${subTexts.join(" ")}</div>`;
+      }
+      return result;
     },
   );
 
-  // (3) <details ... open ...> 첫 번째만 유지, 그 다음부터는 open 제거
+  // (2) <details ... open ...> 첫 번째만 유지, 그 다음부터는 open 제거
   let detailsCount = 0;
   out = out.replace(
     /<details\b([^>]*)>/gi,
     (_match, attrs: string) => {
       detailsCount += 1;
       if (detailsCount === 1) return `<details${attrs}>`;
-      // open 속성 제거 (\\sopen\\s, ' open', 'open '등)
       const cleaned = attrs
         .replace(/\sopen(?=[\s>=])/gi, "")
         .replace(/\sopen$/gi, "")
