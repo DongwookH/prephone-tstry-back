@@ -5,6 +5,7 @@ import { getPostByIdFromSheet } from "@/lib/sheets";
 import { CheckCircle2, Link2 } from "lucide-react";
 import { PostContentViewer } from "@/components/post-content-viewer";
 import { ImageDownloadCards } from "@/components/image-download-cards";
+import { CardNewsCards } from "@/components/card-news-cards";
 
 export const revalidate = 60;
 
@@ -173,7 +174,16 @@ export default async function PostDetail({
               </div>
             </div>
 
-            {/* Image Download */}
+            {/* 카드뉴스 (H2 섹션별 1080x1080) */}
+            <CardNewsCards
+              title={post.title}
+              keyword={post.keyword}
+              category={post.category}
+              contentHtml={post.content_html || ""}
+              idForFilename={post.id}
+            />
+
+            {/* 기존 5종 이미지 (썸네일/CTA 배너 등) */}
             <ImageDownloadCards
               title={post.title}
               keyword={post.keyword}
