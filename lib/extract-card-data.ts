@@ -141,33 +141,68 @@ export function extractCardData(opts: {
     category: opts.category,
   });
 
-  // 2. 모든 details 추출
-  const detailsPattern = /<details\b([^>]*)>([\s\S]*?)<\/details>/gi;
+  // 2. 모든 H2 섹션 블록 추출
+  //    새 구조: <section id="section-N">...<div(라임 헤더)>제목</div><div(라임 띠)>부제</div>...</section>
+  //    옛 구조: <details><summary>제목</summary><div(라임 띠)>부제</div>...</details>
+  //    두 패턴 모두 지원.
   const sections: Omit<SectionCard, "pageNum" | "totalPages">[] = [];
 
+  // section 블록 + details 블록 양쪽 매치
+  const blockPattern =
+    /<(section|details)\b([^>]*)>([\s\S]*?)<\/\1>/gi;
+
   let match: RegExpExecArray | null;
-  while ((match = detailsPattern.exec(opts.contentHtml)) !== null) {
-    const attrs = match[1];
-    const inner = match[2];
+  while ((match = blockPattern.exec(opts.contentHtml)) !== null) {
+    const tagName = match[1].toLowerCase();
+    const attrs = match[2];
+    const inner = match[3];
 
-    // summary 텍스트 추출
-    const summaryMatch = inner.match(
-      /<summary\b[^>]*>([\s\S]*?)<\/summary>/i,
-    );
-    if (!summaryMatch) continue;
+    // section id가 section-N 형태인 것만 (CTA 영역 등의 다른 section 제외 가능)
+    // 또는 details 자체
+    if (tagName === "section" && !/id\s*=\s*["']section-/i.test(attrs)) {
+      continue;
+    }
 
-    let title = stripTags(summaryMatch[1]);
-    // ▼ / ▶ / 숫자) 마커 제거하지 말고 ▼만
-    title = title.replace(/^[▼▶▽▸]\s*/, "");
+    // 제목 추출 — 두 패턴 모두 지원:
+    //   A) details: <summary>제목</summary>
+    //   B) section: 첫 자식 <div style="...background:linear-gradient..."> 제목 </div>
+    let title = "";
+    if (tagName === "details") {
+      const summaryMatch = inner.match(
+        /<summary\b[^>]*>([\s\S]*?)<\/summary>/i,
+      );
+      if (!summaryMatch) continue;
+      title = stripTags(summaryMatch[1]).replace(/^[▼▶▽▸]\s*/, "");
+    } else {
+      // section의 첫 자식 div (라임 그라데이션 배경)
+      const headerDivMatch = inner.match(
+        /<div\b[^>]*background[^>]*linear-gradient[^>]*>([\s\S]*?)<\/div>/i,
+      );
+      if (!headerDivMatch) continue;
+      title = stripTags(headerDivMatch[1]);
+    }
 
     if (!title) continue;
     if (isQASummary(title, attrs)) continue;
 
-    // 부제 — summary 직후 background 있는 div (sanitize가 자동 삽입한 띠)
-    const subMatch = inner.match(
-      /<\/summary>\s*<div\b[^>]*background[^>]*>([\s\S]*?)<\/div>/i,
-    );
-    const subtitle = subMatch ? stripTags(subMatch[1]) : undefined;
+    // 부제 추출 — 헤더 다음 background 있는 두 번째 div (라임 띠 연속)
+    let subtitle: string | undefined;
+    if (tagName === "details") {
+      const subMatch = inner.match(
+        /<\/summary>\s*<div\b[^>]*background[^>]*>([\s\S]*?)<\/div>/i,
+      );
+      subtitle = subMatch ? stripTags(subMatch[1]) : undefined;
+    } else {
+      // section: 헤더 div 다음의 두 번째 background div
+      const allHeaderDivs = [
+        ...inner.matchAll(
+          /<div\b[^>]*background[^>]*linear-gradient[^>]*>([\s\S]*?)<\/div>/gi,
+        ),
+      ];
+      if (allHeaderDivs.length >= 2) {
+        subtitle = stripTags(allHeaderDivs[1][1]);
+      }
+    }
 
     // 인포그래픽 추출: 체크리스트 > 단계 > hook 우선순위
     let bullets: string[] = extractChecklist(inner);
@@ -193,7 +228,6 @@ export function extractCardData(opts: {
       bulletStyle,
     });
 
-    // 최대 4장까지만 추출 — 이미 4장 모았으면 종료
     if (sections.length >= MAX_SECTION_CARDS) break;
   }
 
