@@ -1,18 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Copy, Check, Code2, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { sanitizeForTistory } from "@/lib/sanitize-html";
 
 type Tab = "html" | "preview";
 
 export function PostContentViewer({
-  contentHtml,
+  contentHtml: rawContentHtml,
   charCount,
 }: {
   contentHtml: string;
   charCount: number;
 }) {
+  // 시트의 옛 details/summary 구조 글도 자동으로 section + div 평탄 구조로 변환.
+  // sanitizeForTistory는 idempotent — 이미 변환된 글에 호출해도 안전.
+  const contentHtml = useMemo(
+    () => sanitizeForTistory(rawContentHtml || ""),
+    [rawContentHtml],
+  );
+
   const [tab, setTab] = useState<Tab>("html");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
