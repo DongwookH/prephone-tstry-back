@@ -173,17 +173,26 @@ export async function getActiveKeywords(opts?: {
 }
 
 /**
- * priority(high>normal>low) → used_count 낮은 순 → search_volume 높은 순으로 정렬 후 N개 선택.
+ * 키워드 N개 선택. 다양성 + 안전망 우선.
  *
- * 안전망:
- *  - last_used가 오늘(KST) 인 키워드는 제외 (동일 cron 재실행 대비)
- *  - 최근 7일 내 사용한 키워드는 후순위 (used_count 가산)
+ * 정렬 기준 (위에서 아래로):
+ *  1. priority (high > normal > low)
+ *  2. used_count 낮은 순 (덜 쓴 키워드 우선)
+ *  3. 동률이면 무작위 shuffle — 매일 다른 키워드 보장
+ *
+ * 필터:
+ *  - 최근 N일(default 7) 내 사용한 키워드는 1차 후보에서 제외
+ *  - 후보가 부족하면 (count보다 적으면) 제외 풀어서 다시 시도
  */
 export function pickKeywordsForToday(
   keywords: KeywordRow[],
   count: number,
+  options: { excludeRecentDays?: number } = {},
 ): KeywordRow[] {
+  const excludeRecentDays = options.excludeRecentDays ?? 7;
   const order = { high: 0, normal: 1, low: 2 };
+
+  // KST 기준 today
   const todayKST = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
     year: "numeric",
@@ -191,20 +200,61 @@ export function pickKeywordsForToday(
     day: "2-digit",
   }).format(new Date());
 
-  return [...keywords]
-    .filter((k) => k.last_used !== todayKST) // 오늘 이미 사용한 키워드는 후보에서 제외
-    .sort((a, b) => {
+  // N일 전 KST 날짜 (cutoff) — last_used 이게 이거보다 새것이면 "최근 사용"
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - excludeRecentDays);
+  const cutoffKST = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(cutoffDate);
+
+  function isRecentlyUsed(k: KeywordRow): boolean {
+    const lu = (k.last_used || "").slice(0, 10);
+    if (!lu) return false;
+    // YYYY-MM-DD 형식 문자열 비교 (사전순 = 시간순)
+    return lu >= cutoffKST;
+  }
+
+  // 동률 시 deterministic 순서 X → seeded 해시로 매일 다르게
+  // 키워드 문자열 + 오늘 날짜로 해시 → 같은 날엔 안정적이지만 매일 다른 순서
+  function tiebreakHash(kw: string): number {
+    const s = `${kw}-${todayKST}`;
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+      h = (h * 31 + s.charCodeAt(i)) | 0;
+    }
+    return h;
+  }
+
+  function sortPool(pool: KeywordRow[]): KeywordRow[] {
+    return [...pool].sort((a, b) => {
       const pa = order[(a.priority || "normal") as keyof typeof order] ?? 1;
       const pb = order[(b.priority || "normal") as keyof typeof order] ?? 1;
       if (pa !== pb) return pa - pb;
       const ua = parseInt(a.used_count || "0", 10);
       const ub = parseInt(b.used_count || "0", 10);
       if (ua !== ub) return ua - ub;
-      const sa = parseInt(a.search_volume || "0", 10);
-      const sb = parseInt(b.search_volume || "0", 10);
-      return sb - sa;
-    })
-    .slice(0, count);
+      // 동률 — 매일 다른 순서 (date 기반 hash로 결정)
+      return tiebreakHash(a.keyword) - tiebreakHash(b.keyword);
+    });
+  }
+
+  // 1차: 최근 N일 사용한 키워드 제외
+  const freshPool = keywords.filter((k) => !isRecentlyUsed(k));
+  const fresh = sortPool(freshPool).slice(0, count);
+
+  if (fresh.length >= count) {
+    return fresh;
+  }
+
+  // 부족하면 풀 풀기 — 최근 사용 키워드도 후보로 (단 우선순위 떨어지게)
+  const usedKwSet = new Set(fresh.map((k) => k.keyword));
+  const restPool = keywords.filter((k) => !usedKwSet.has(k.keyword));
+  const filler = sortPool(restPool).slice(0, count - fresh.length);
+
+  return [...fresh, ...filler];
 }
 
 // ─── posts ────────────────────────────────────────────
@@ -400,7 +450,16 @@ export async function bumpKeywordsUsage(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  // KST 기준 today (pickKeywordsForToday와 비교 시점이 일치해야 함)
+  // ⚠️ 이전엔 toISOString() = UTC date 였는데, cron이 UTC 23:45에 실행되면
+  //    저장 날짜는 어제(UTC), 비교 날짜는 오늘(KST)로 1일 차이가 나서
+  //    "오늘 이미 사용한 키워드 제외" 필터가 작동 안 했음.
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
   const norm = (s: string) => s.replace(/\s+/g, "").toLowerCase();
   const targetSet = new Set(keywords.map(norm));
 
