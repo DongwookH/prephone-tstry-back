@@ -11,7 +11,7 @@ export { sanitizeForTistory };
  *  - 상단 그라데이션 히어로 블록 (제목 + 도입부 + 4개 CTA 그리드)
  *  - 핵심 정보 박스 (흰 카드 + 강조 텍스트)
  *  - 📌 목차 박스 (2x3 anchor 그리드)
- *  - 각 H2가 <section> 블록 (그라데이션 헤더 + 본문 카드, 평탄 구조)
+ *  - 각 H2가 <div class="ntc-section"> 블록 (그라데이션 헤더 + 본문 카드, 평탄 구조)
  *  - 빨간 세로선 부제목 (border-left), 체크리스트/단계 박스
  *  - Q&A 5개 (각 Q는 div + 라벨, 평탄 구조)
  *  - 친근한 존댓말 + 이모지 (📌 ✅ 💬 📱 🔍)
@@ -28,6 +28,7 @@ export type GeneratedPost = {
   seo_score: number;
   utm_campaign: string;
   sub_keywords_used?: string[];
+  tags?: string[];
 };
 
 const PERSONAS: Record<string, string> = {
@@ -111,17 +112,20 @@ ${personaDesc}
 1) **히어로 박스** — 그라데이션 배경 + 제목 + 도입부 2문단 + CTA 2x2 그리드
 2) **핵심 정보 박스** — 흰 카드 + "핵심" 라벨 + 한 줄 강조
 3) **📌 목차 박스** — 2x3 anchor 그리드 (각 H2 섹션으로 이동)
-4) **H2 섹션 5~6개** — 각 섹션은 <section> 블록 (평탄 구조, 토글 X)
+4) **H2 섹션 5~6개** — 각 섹션은 \`<div class="ntc-section">\` 블록 (평탄 구조, 토글 X)
    - 권장 섹션: 도입부(왜 필요한가) / 준비물 / 개통절차 / 요금제 / 비용 / Q&A
 5) **Q&A 섹션** — Q1~Q5 (각 Q는 div + 라벨)
 6) **마무리 + 최종 CTA**
 
-## 인라인 스타일 HTML — 평탄한 section + div 구조 (details/summary 사용 금지)
+## 인라인 스타일 HTML — 평탄한 div 구조 (details/summary, section 모두 사용 금지)
 
-⚠️ **각 H2 섹션을 \`<details>\`/\`<summary>\` 대신 \`<section>\` + 헤더 div + 본문 div 로 만들 것.**
-사용자가 티스토리 비주얼 에디터에서 본문 영역에 자유롭게 이미지/표/추가 콘텐츠를
-삽입할 수 있어야 하므로 details/summary 같은 토글 컨테이너 사용 금지.
-모든 콘텐츠는 default로 펼쳐진 상태.
+⚠️ **각 H2 섹션은 \`<div class="ntc-section" id="section-N">\` + 헤더 div + 본문 div 구조로.**
+- \`<details>\`/\`<summary>\`/\`<section>\` 같은 시멘틱/토글 컨테이너 사용 금지.
+  티스토리 비주얼 에디터가 section/details를 "한 덩어리"로 인식해
+  내부에 이미지 삽입을 막아버립니다. 일반 div가 가장 자유롭게 편집됩니다.
+- 사용자가 티스토리 비주얼 에디터에서 본문 영역에 자유롭게 이미지/표/추가 콘텐츠를
+  삽입할 수 있어야 함.
+- 모든 콘텐츠는 default로 펼쳐진 상태 (토글 X).
 
 ⚠️ **섹션 제목 규칙:**
 - 헤더 div는 라임 그라데이션 배경 + 18px 볼드.
@@ -193,9 +197,9 @@ ${personaDesc}
   </div>
 </div>
 
-<!-- ④ 각 H2 섹션 (5~6개) — section + 헤더 div + 본문 div 평탄 구조 -->
-<!-- ✅ details/summary 사용 금지. 사용자가 본문 영역에 이미지를 자유롭게 추가할 수 있어야 함. -->
-<section id="section-1" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
+<!-- ④ 각 H2 섹션 (5~6개) — div + 헤더 div + 본문 div 평탄 구조 -->
+<!-- ✅ details/summary/section 사용 금지. 사용자가 본문 영역에 이미지를 자유롭게 추가할 수 있어야 함. -->
+<div class="ntc-section" id="section-1" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
   <div style="padding:20px 24px 6px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">1) {H2 제목 — 예: 준비물 - 유심부터 인증까지 한 번에}</div>
   <!-- 부제 띠 (헤더 그라데이션 연속) -->
   <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">{한 줄 부제 — 예: 비대면 개통은 "준비물"에서 승부가 납니다}</div>
@@ -217,10 +221,10 @@ ${personaDesc}
     <div style="border-left:3px solid #9DC91A;padding-left:12px;font-weight:800;font-size:15px;margin:24px 0 12px;color:#191F28;">{다음 H3}</div>
     <p style="font-size:15px;line-height:1.8;margin:0;color:#333D4B;">{본문}</p>
   </div>
-</section>
+</div>
 
 <!-- 다음 H2 섹션 — 동일한 section + 헤더 div + 본문 div 패턴 -->
-<section id="section-3" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
+<div class="ntc-section" id="section-3" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
   <div style="padding:20px 24px 6px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">3) 개통 절차 - 승인 후 충전하기가 진짜 끝!</div>
   <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">{한 줄 부제 — 5분 흐름}</div>
   <div style="padding:24px 28px;">
@@ -236,10 +240,10 @@ ${personaDesc}
       <div style="margin-top:14px;color:#5F7C0E;"><strong>6. 승인 후 충전하기</strong></div>
     </div>
   </div>
-</section>
+</div>
 
 <!-- ⑤ Q&A 섹션 — Q/A 모두 평탄 div (이전엔 details 내 details, 이젠 div + 라벨) -->
-<section id="section-6" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
+<div class="ntc-section" id="section-6" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
   <div style="padding:20px 24px 6px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">6) Q&amp;A - {키워드} 자주 묻는 질문</div>
   <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">개통 과정에서 생기는 질문 5가지</div>
   <div style="padding:24px 28px;">
@@ -253,7 +257,7 @@ ${personaDesc}
     </div>
     <!-- ... Q3, Q4, Q5 동일 패턴 -->
   </div>
-</section>
+</div>
 
 <!-- ⑥ 최종 CTA (흰 카드 + 라임 강조) -->
 <div style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;padding:24px 28px;margin-top:24px;">
@@ -329,10 +333,11 @@ ${personaDesc}
 {
   "title": "{25~45자 — 위 후킹 규칙 따라. 브랜드 접미사 절대 X.}",
   "meta_description": "{100~160자 — 첫 50자 안에 주 키워드}",
-  "content_html": "{HTML 본문 — 위 인라인 스타일 패턴을 그대로 따라 작성. <section> 5~6개 (details/summary 사용 금지). 본문 2,500~3,500자.}",
+  "content_html": "{HTML 본문 — 위 인라인 스타일 패턴을 그대로 따라 작성. <div class=\\"ntc-section\\"> 5~6개 (details/summary/section 사용 금지). 본문 2,500~3,500자.}",
   "char_count": {본문 글자 수 — 공백 제외, HTML 태그 제외},
   "seo_score": {자가 평가 60~100 — 키워드 밀도/구조/링크/Q&A/이미지 모두 충족시 90+},
-  "sub_keywords_used": ["{본문에 녹여 쓴 서브 키워드 목록}"]
+  "sub_keywords_used": ["{본문에 녹여 쓴 서브 키워드 목록}"],
+  "tags": ["{티스토리 발행용 태그 5~8개. 주 키워드 + 관련 검색 키워드 + 타겟·상황·브랜드. 한국어, 공백 X, 하이픈 또는 한 단어. 너무 길지 않게 (2~10자). 예: 선불폰, 비대면개통, KT바로유심, 신용불량OK, 5분개통, 미성년자, 외국인등록증}"]
 }`;
 }
 
@@ -425,6 +430,26 @@ export async function generatePost(opts: {
       ? Math.max(0, Math.min(100, result.seo_score))
       : 75;
 
+  // 태그 정리 — 공백 제거, 중복 제거, 길이 제한
+  const rawTags = Array.isArray(result.tags) ? result.tags : [];
+  const cleanTags = Array.from(
+    new Set(
+      rawTags
+        .map((t) =>
+          typeof t === "string"
+            ? t.trim().replace(/[#,\s]+/g, "").slice(0, 20)
+            : "",
+        )
+        .filter((t) => t.length >= 2 && t.length <= 20),
+    ),
+  ).slice(0, 8);
+
+  // 메인 키워드를 첫 태그로 보장 (없으면 추가)
+  const mainTagNormalized = opts.keyword.replace(/\s+/g, "");
+  if (!cleanTags.some((t) => t === mainTagNormalized)) {
+    cleanTags.unshift(mainTagNormalized);
+  }
+
   return {
     title:
       stripBrandSuffix(result.title?.trim() || "") ||
@@ -435,6 +460,7 @@ export async function generatePost(opts: {
     seo_score: seoScore,
     utm_campaign: utmCampaign,
     sub_keywords_used: result.sub_keywords_used || [],
+    tags: cleanTags.slice(0, 8),
   };
 }
 

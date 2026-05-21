@@ -282,6 +282,7 @@ export type PostRow = {
   utm_campaign: string;
   created_at: string;
   updated_at: string;
+  tags?: string; // 쉼표 구분 문자열 ("선불폰, 비대면개통, KT바로유심" 등)
 };
 
 /** posts 시트 전체 (예시/빈 행 자동 필터). */
@@ -389,6 +390,7 @@ export async function appendPosts(
     utm_campaign?: string;
     created_at?: string;
     updated_at?: string;
+    tags?: string | string[]; // 쉼표 구분 문자열 또는 배열
   }>,
 ): Promise<void> {
   if (posts.length === 0) return;
@@ -414,6 +416,7 @@ export async function appendPosts(
     p.utm_campaign ?? "",
     p.created_at ?? now,
     p.updated_at ?? now,
+    Array.isArray(p.tags) ? p.tags.join(", ") : (p.tags ?? ""),
   ]);
   await appendRows(mainSheetId(), "posts", rows);
 }

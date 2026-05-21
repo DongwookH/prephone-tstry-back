@@ -5,6 +5,7 @@ import { getPostByIdFromSheet } from "@/lib/sheets";
 import { CheckCircle2, Link2 } from "lucide-react";
 import { PostContentViewer } from "@/components/post-content-viewer";
 import { CardNewsCards } from "@/components/card-news-cards";
+import { TagsBlock } from "@/components/tags-block";
 
 export const revalidate = 60;
 
@@ -172,6 +173,11 @@ export default async function PostDetail({
                 </div>
               </div>
             </div>
+
+            {/* 태그 (티스토리 발행용) */}
+            {post.tags && post.tags.trim() && (
+              <TagsBlock tagsRaw={post.tags} />
+            )}
 
             {/* 카드뉴스 (1080×1080 5장: 표지 + 섹션 4) */}
             <CardNewsCards

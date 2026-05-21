@@ -76,6 +76,30 @@ export function sanitizeForTistory(html: string): string {
     pass += 1;
   }
 
+  // (2) <section id="section-N"> → <div class="ntc-section" id="section-N">
+  //     티스토리 비주얼 에디터가 <section>을 한 덩어리로 인식해
+  //     내부 이미지 삽입을 막는 문제 회피.
+  out = out.replace(
+    /<section\b([^>]*)>/gi,
+    (_match, attrs: string) => {
+      // 이미 ntc-section class 있으면 그대로
+      if (/class\s*=\s*["'][^"']*ntc-section/i.test(attrs)) {
+        return `<div${attrs}>`;
+      }
+      // class 속성 있으면 ntc-section 추가
+      if (/class\s*=\s*["']([^"']*)["']/i.test(attrs)) {
+        const newAttrs = attrs.replace(
+          /class\s*=\s*["']([^"']*)["']/i,
+          (_m, c) => `class="ntc-section ${c}"`,
+        );
+        return `<div${newAttrs}>`;
+      }
+      // class 없으면 추가
+      return `<div class="ntc-section"${attrs}>`;
+    },
+  );
+  out = out.replace(/<\/section>/gi, "</div>");
+
   return out;
 }
 

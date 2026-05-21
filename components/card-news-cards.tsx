@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useMemo } from "react";
-import { Download, Loader2, Check, Images } from "lucide-react";
+import { Download, Loader2, Check, Images, Copy } from "lucide-react";
 import html2canvas from "html2canvas";
 import { cn } from "@/lib/utils";
 import {
@@ -38,6 +38,25 @@ export function CardNewsCards({
       }),
     [title, keyword, category, contentHtml],
   );
+
+  /** SEO 친화 alt 텍스트 생성 — 키워드 + 카드 번호 + 섹션 제목 조합 */
+  const altFor = (card: CardData, idx: number): string => {
+    if (card.type === "cover") {
+      return `${keyword} - ${title}`;
+    }
+    return `${keyword} ${card.pageNum}/${card.totalPages} - ${card.title.replace(/^\d+\)\s*/, "")}`;
+  };
+
+  const [copiedAlt, setCopiedAlt] = useState<number | null>(null);
+  const copyAlt = async (idx: number) => {
+    try {
+      await navigator.clipboard.writeText(altFor(cards[idx], idx));
+      setCopiedAlt(idx);
+      setTimeout(() => setCopiedAlt(null), 1500);
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const refs = useRef<Record<string, HTMLDivElement | null>>({});
   const [busy, setBusy] = useState<number | null>(null);
@@ -176,6 +195,43 @@ export function CardNewsCards({
               </div>
             </button>
           ))}
+        </div>
+
+        {/* Alt 텍스트 리스트 — 티스토리 첨부 시 복사 사용 */}
+        <div className="mt-4 pt-4 border-t border-ink-100">
+          <div className="text-[11px] font-bold text-ink-700 mb-2">
+            📷 이미지 alt 텍스트 (SEO + 접근성용)
+          </div>
+          <p className="text-[10px] text-ink-500 mb-2 leading-relaxed">
+            티스토리에 이미지 첨부 시 alt 입력란에 붙여넣으세요. 클릭 → 복사.
+          </p>
+          <div className="space-y-1.5">
+            {cards.map((card, idx) => (
+              <button
+                key={idx}
+                onClick={() => copyAlt(idx)}
+                className={cn(
+                  "w-full text-left flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] transition",
+                  copiedAlt === idx
+                    ? "bg-mint-50 text-mint-700"
+                    : "bg-ink-50 hover:bg-brand-50 text-ink-700",
+                )}
+                title="클릭해서 복사"
+              >
+                <span className="font-bold text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded bg-white">
+                  {card.type === "cover"
+                    ? "표지"
+                    : `${card.pageNum}/${card.totalPages}`}
+                </span>
+                <span className="flex-1 truncate">{altFor(card, idx)}</span>
+                {copiedAlt === idx ? (
+                  <Check size={11} strokeWidth={3} className="text-mint-700 flex-shrink-0" />
+                ) : (
+                  <Copy size={11} className="text-ink-400 flex-shrink-0" />
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

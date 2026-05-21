@@ -74,6 +74,7 @@ export async function POST(req: Request) {
         utm_campaign: post.utm_campaign,
         created_at: now,
         updated_at: now,
+        tags: post.tags,
       },
     ]);
 

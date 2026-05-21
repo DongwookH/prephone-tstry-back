@@ -54,6 +54,60 @@ function stripTags(s: string): string {
     .trim();
 }
 
+/**
+ * <div class="ntc-section" ...>...</div> 블록을 balanced parsing으로 추출.
+ * div 중첩이 있으므로 정규식 lazy match만으론 부정확.
+ */
+function extractNtcSectionDivs(
+  html: string,
+): { tagName: string; attrs: string; inner: string }[] {
+  const blocks: { tagName: string; attrs: string; inner: string }[] = [];
+  // ntc-section 시작 div 또는 id="section-N" div
+  const startRe =
+    /<div\b([^>]*(?:class\s*=\s*["'][^"']*ntc-section[^"']*["']|id\s*=\s*["']section-[^"']*["'])[^>]*)>/gi;
+  let sm: RegExpExecArray | null;
+  while ((sm = startRe.exec(html)) !== null) {
+    const startIdx = sm.index;
+    const headerEnd = startRe.lastIndex;
+    const attrs = sm[1];
+
+    // balanced </div> 찾기 — depth 카운터
+    let depth = 1;
+    const tagRe = /<(\/?)div\b[^>]*>/gi;
+    tagRe.lastIndex = headerEnd;
+    let tm: RegExpExecArray | null;
+    while ((tm = tagRe.exec(html)) !== null) {
+      if (tm[1]) {
+        // </div>
+        depth--;
+        if (depth === 0) {
+          const innerStart = headerEnd;
+          const innerEnd = tm.index;
+          blocks.push({
+            tagName: "div",
+            attrs,
+            inner: html.slice(innerStart, innerEnd),
+          });
+          // 다음 ntc-section 검색은 이 닫는 태그 다음부터
+          startRe.lastIndex = tagRe.lastIndex;
+          break;
+        }
+      } else {
+        // <div>
+        depth++;
+      }
+    }
+    if (depth !== 0) {
+      // 균형 안 맞으면 종료
+      break;
+    }
+    // startIdx 변수 — 위 break이 outer를 빠져나가지 않게 안전하게.
+    // (linter 경고 방지용 dummy 사용)
+    void startIdx;
+  }
+  return blocks;
+}
+
 /** summary 텍스트가 Q&A 섹션인지 판별. */
 function isQASummary(title: string, attrs: string): boolean {
   if (/Q\s*\d+\s*\.|Q\s*&\s*A|자주\s*묻는/i.test(title)) return true;
@@ -142,26 +196,34 @@ export function extractCardData(opts: {
   });
 
   // 2. 모든 H2 섹션 블록 추출
-  //    새 구조: <section id="section-N">...<div(라임 헤더)>제목</div><div(라임 띠)>부제</div>...</section>
-  //    옛 구조: <details><summary>제목</summary><div(라임 띠)>부제</div>...</details>
-  //    두 패턴 모두 지원.
+  //    새 구조: <div class="ntc-section" id="section-N">...</div>
+  //    중간 구조: <section id="section-N">...</section>
+  //    옛 구조: <details><summary>제목</summary>...</details>
+  //    세 패턴 모두 지원.
   const sections: Omit<SectionCard, "pageNum" | "totalPages">[] = [];
+  const allBlocks: { tagName: string; attrs: string; inner: string }[] = [];
 
-  // section 블록 + details 블록 양쪽 매치
-  const blockPattern =
-    /<(section|details)\b([^>]*)>([\s\S]*?)<\/\1>/gi;
-
-  let match: RegExpExecArray | null;
-  while ((match = blockPattern.exec(opts.contentHtml)) !== null) {
-    const tagName = match[1].toLowerCase();
-    const attrs = match[2];
-    const inner = match[3];
-
-    // section id가 section-N 형태인 것만 (CTA 영역 등의 다른 section 제외 가능)
-    // 또는 details 자체
-    if (tagName === "section" && !/id\s*=\s*["']section-/i.test(attrs)) {
-      continue;
+  // details: lazy match로 OK (안에 details 또 있으면 별도 매치)
+  for (const m of opts.contentHtml.matchAll(
+    /<details\b([^>]*)>([\s\S]*?)<\/details>/gi,
+  )) {
+    allBlocks.push({ tagName: "details", attrs: m[1], inner: m[2] });
+  }
+  // section: lazy match
+  for (const m of opts.contentHtml.matchAll(
+    /<section\b([^>]*)>([\s\S]*?)<\/section>/gi,
+  )) {
+    if (/id\s*=\s*["']section-/i.test(m[1])) {
+      allBlocks.push({ tagName: "section", attrs: m[1], inner: m[2] });
     }
+  }
+  // div.ntc-section: balanced div parsing (안에 div 여러개 있으므로)
+  allBlocks.push(...extractNtcSectionDivs(opts.contentHtml));
+
+  for (const block of allBlocks) {
+    const tagName = block.tagName;
+    const attrs = block.attrs;
+    const inner = block.inner;
 
     // 제목 추출 — 두 패턴 모두 지원:
     //   A) details: <summary>제목</summary>
