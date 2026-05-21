@@ -179,42 +179,83 @@ function extractSteps(inner: string): string[] {
   return items;
 }
 
+/** strong 라벨이 추출 조건을 만족하면 정리해서 반환, 아니면 null. */
+function normalizeLabel(raw: string): string | null {
+  let label = stripTags(raw).trim();
+  label = label.replace(/[:：]\s*$/, "").trim();
+  if (!label) return null;
+  if (label.length < 2 || label.length > 50) return null;
+  // 숫자.로 시작하는 건 단계 (extractSteps에서 처리)
+  if (/^\d+\./.test(label)) return null;
+  return label;
+}
+
 /**
- * key-value 반복 패턴 추출 — 평이한 <p> 목록도 bullets로 자동 인식.
+ * key-value 반복 패턴 추출 — 평이한 <p>/<div> 목록도 bullets로 자동 인식.
  *
  * 인식 패턴 (2개 이상 반복되면 list로 간주):
- *  A) <p><strong>이름</strong>: 설명</p>  ← :가 strong 밖
- *  B) <p><strong>이름:</strong> 설명</p>  ← :가 strong 안
- *  C) <p><strong>이름 (조건)</strong></p> ← :없이 라벨만
+ *  A) <p><strong>이름:</strong> 설명</p>  ← <p> 안
+ *  B) <li><strong>이름</strong>: 설명</li> ← <li> 안
+ *  C) <div><strong>A</strong>설명<br/><strong>B</strong>설명...</div>  ← <div> 안 strong + <br/>
  *
- * 추출 우선순위: 짧은 이름(label)만 사용 (50자 이내).
- * 같은 섹션 안에 동일 패턴이 2개 이상 반복되어야 list 인정 (오탐 방지).
+ * 시도 순서:
+ *  1차 — <p>/<li> 블록 안 첫 strong (가장 명확한 의도)
+ *  2차 — 같은 <div> 안에 strong이 2개 이상 인접 (br 구분 패턴)
+ *  3차 — inner 전체 strong 매치 — 4개 이상이면 list로 인정
+ *
+ * 추출 시 숫자.로 시작하는 건 skip (단계 패턴은 extractSteps가 처리).
  */
 function extractKeyValueList(inner: string): string[] {
-  // <p> 또는 <li> 안의 <strong>...</strong> 추출
-  const items: string[] = [];
+  // === 1차: <p>/<li> 안 첫 strong ===
+  const items1: string[] = [];
   const blockPattern = /<(?:p|li)\b[^>]*>([\s\S]*?)<\/(?:p|li)>/gi;
   let bm: RegExpExecArray | null;
   while ((bm = blockPattern.exec(inner)) !== null) {
-    const block = bm[1];
-    // 블록 안 첫 <strong>...</strong> 추출
-    const strongMatch = block.match(/<strong\b[^>]*>([\s\S]*?)<\/strong>/i);
+    const strongMatch = bm[1].match(/<strong\b[^>]*>([\s\S]*?)<\/strong>/i);
     if (!strongMatch) continue;
-    let label = stripTags(strongMatch[1]).trim();
-    // 끝 ':' 제거 (패턴 A vs B 통일)
-    label = label.replace(/[:：]\s*$/, "").trim();
+    const label = normalizeLabel(strongMatch[1]);
     if (!label) continue;
-    // 숫자.로 시작하는 건 단계로 보고 skip (extractSteps에서 처리)
-    if (/^\d+\./.test(label)) continue;
-    // 너무 길면 skip
-    if (label.length > 50) continue;
-    // 너무 짧으면 skip
-    if (label.length < 2) continue;
-    items.push(label);
-    if (items.length >= 4) break;
+    items1.push(label);
+    if (items1.length >= 4) break;
   }
-  // 2개 미만이면 list로 인정하지 않음 (오탐 방지)
-  return items.length >= 2 ? items : [];
+  if (items1.length >= 2) return items1;
+
+  // === 2차: 같은 <div> 안 strong이 2개 이상 인접 (<br/>로 구분된 list) ===
+  // lazy match로 div 추출하고 그 안에 strong이 몇 개 있는지 확인
+  const divPattern = /<div\b[^>]*>([\s\S]*?)<\/div>/gi;
+  let dm: RegExpExecArray | null;
+  while ((dm = divPattern.exec(inner)) !== null) {
+    const divInner = dm[1];
+    const strongs = [
+      ...divInner.matchAll(/<strong\b[^>]*>([\s\S]*?)<\/strong>/gi),
+    ];
+    if (strongs.length < 2) continue;
+    const items2: string[] = [];
+    for (const sm of strongs) {
+      const label = normalizeLabel(sm[1]);
+      if (!label) continue;
+      items2.push(label);
+      if (items2.length >= 4) break;
+    }
+    if (items2.length >= 2) return items2;
+  }
+
+  // === 3차: inner 전체에 strong 매치 — 4개 이상이면 list 인정 ===
+  const allStrongs = [
+    ...inner.matchAll(/<strong\b[^>]*>([\s\S]*?)<\/strong>/gi),
+  ];
+  if (allStrongs.length >= 4) {
+    const items3: string[] = [];
+    for (const sm of allStrongs) {
+      const label = normalizeLabel(sm[1]);
+      if (!label) continue;
+      items3.push(label);
+      if (items3.length >= 4) break;
+    }
+    if (items3.length >= 2) return items3;
+  }
+
+  return [];
 }
 
 export function extractCardData(opts: {
