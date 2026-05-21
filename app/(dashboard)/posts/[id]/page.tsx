@@ -175,10 +175,15 @@ export default async function PostDetail({
               </div>
             </div>
 
-            {/* 태그 (티스토리 발행용) */}
-            {post.tags && post.tags.trim() && (
-              <TagsBlock tagsRaw={post.tags} />
-            )}
+            {/* 태그 (티스토리 발행용) — tags 없으면 자동 fallback */}
+            <TagsBlock
+              tagsRaw={post.tags}
+              fallback={{
+                keyword: post.keyword,
+                category: post.category,
+                persona: post.persona,
+              }}
+            />
 
             {/* 카드뉴스 (1080×1080 5장: 표지 + 섹션 4) */}
             <CardNewsCards
