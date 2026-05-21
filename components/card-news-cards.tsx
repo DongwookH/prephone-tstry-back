@@ -40,7 +40,7 @@ export function CardNewsCards({
   );
 
   /** SEO 친화 alt 텍스트 생성 — 키워드 + 카드 번호 + 섹션 제목 조합 */
-  const altFor = (card: CardData, idx: number): string => {
+  const altFor = (card: CardData): string => {
     if (card.type === "cover") {
       return `${keyword} - ${title}`;
     }
@@ -50,7 +50,7 @@ export function CardNewsCards({
   const [copiedAlt, setCopiedAlt] = useState<number | null>(null);
   const copyAlt = async (idx: number) => {
     try {
-      await navigator.clipboard.writeText(altFor(cards[idx], idx));
+      await navigator.clipboard.writeText(altFor(cards[idx]));
       setCopiedAlt(idx);
       setTimeout(() => setCopiedAlt(null), 1500);
     } catch (e) {
@@ -223,7 +223,7 @@ export function CardNewsCards({
                     ? "표지"
                     : `${card.pageNum}/${card.totalPages}`}
                 </span>
-                <span className="flex-1 truncate">{altFor(card, idx)}</span>
+                <span className="flex-1 truncate">{altFor(card)}</span>
                 {copiedAlt === idx ? (
                   <Check size={11} strokeWidth={3} className="text-mint-700 flex-shrink-0" />
                 ) : (
@@ -502,73 +502,120 @@ function SectionCardRender({ card }: { card: SectionCard }) {
           justifyContent: "space-between",
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-          {/* Hook — 강조 한 줄 (부제 또는 hook). border-left와 텍스트 정렬 일치. */}
-          {(card.subtitle || card.hook) && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 18,
-              }}
-            >
+        {(() => {
+          const hasBullets = !!card.bullets && card.bullets.length > 0;
+          const hookText = card.subtitle || card.hook;
+
+          // 케이스 A: bullets 있음 → 상단 hook + 아래 bullets
+          if (hasBullets) {
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+                {hookText && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+                    <div
+                      style={{
+                        width: 5,
+                        alignSelf: "stretch",
+                        background: "#9DC91A",
+                        borderRadius: 3,
+                        minHeight: 40,
+                      }}
+                    />
+                    <div
+                      style={{
+                        fontSize: 26,
+                        lineHeight: 1.45,
+                        color: "#191F28",
+                        fontWeight: 700,
+                        wordBreak: "keep-all",
+                        flex: 1,
+                      }}
+                    >
+                      {hookText}
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {card.bullets!.slice(0, 4).map((b, i) => (
+                    <BulletRow
+                      key={i}
+                      index={i}
+                      text={b}
+                      style={card.bulletStyle ?? "checklist"}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          }
+
+          // 케이스 B: bullets 없음 + hook 있음 → hook을 큰 폰트로 중앙 강조
+          if (hookText) {
+            const subText = card.subtitle && card.hook ? card.hook : undefined;
+            return (
               <div
                 style={{
-                  width: 5,
-                  alignSelf: "stretch",
-                  background: "#9DC91A",
-                  borderRadius: 3,
-                  minHeight: 40,
-                }}
-              />
-              <div
-                style={{
-                  fontSize: 26,
-                  lineHeight: 1.45,
-                  color: "#191F28",
-                  fontWeight: 700,
-                  wordBreak: "keep-all",
                   flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  gap: 24,
                 }}
               >
-                {card.subtitle || card.hook}
+                <div
+                  style={{
+                    background: "linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%)",
+                    border: "1px solid #D4E89C",
+                    borderRadius: 20,
+                    padding: "40px 36px",
+                    fontSize: 32,
+                    lineHeight: 1.5,
+                    color: "#191F28",
+                    fontWeight: 800,
+                    wordBreak: "keep-all",
+                    textAlign: "left",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                  }}
+                >
+                  <span style={{ color: "#5F7C0E", marginRight: 6 }}>“</span>
+                  {hookText}
+                  <span style={{ color: "#5F7C0E", marginLeft: 6 }}>”</span>
+                </div>
+                {subText && (
+                  <div
+                    style={{
+                      fontSize: 22,
+                      lineHeight: 1.6,
+                      color: "#4E5968",
+                      fontWeight: 500,
+                      wordBreak: "keep-all",
+                      paddingLeft: 8,
+                    }}
+                  >
+                    {subText}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          }
 
-          {/* Bullets — 체크리스트 또는 단계 */}
-          {card.bullets && card.bullets.length > 0 && (
+          // 케이스 C: hook도 bullets도 없음 → 빈 공간 (drag&drop placeholder)
+          return (
             <div
               style={{
+                flex: 1,
                 display: "flex",
-                flexDirection: "column",
-                gap: 14,
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#C0C8D1",
+                fontSize: 22,
+                fontWeight: 500,
               }}
             >
-              {card.bullets.slice(0, 4).map((b, i) => (
-                <BulletRow
-                  key={i}
-                  index={i}
-                  text={b}
-                  style={card.bulletStyle ?? "checklist"}
-                />
-              ))}
+              본문 정보 부족
             </div>
-          )}
-
-          {/* fallback: bullets 없으면 hook을 큰 텍스트로 (이미 hook 위에 출력했으니 중복 X) */}
-          {!card.bullets && !card.subtitle && !card.hook && (
-            <div
-              style={{
-                fontSize: 24,
-                color: "#8B95A1",
-                fontStyle: "italic",
-              }}
-            >
-              {/* 의도적으로 비움 — 정보 부족한 카드는 깨끗하게 */}
-            </div>
-          )}
-        </div>
+          );
+        })()}
 
         {/* 푸터 */}
         <div
