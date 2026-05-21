@@ -179,6 +179,44 @@ function extractSteps(inner: string): string[] {
   return items;
 }
 
+/**
+ * key-value 반복 패턴 추출 — 평이한 <p> 목록도 bullets로 자동 인식.
+ *
+ * 인식 패턴 (2개 이상 반복되면 list로 간주):
+ *  A) <p><strong>이름</strong>: 설명</p>  ← :가 strong 밖
+ *  B) <p><strong>이름:</strong> 설명</p>  ← :가 strong 안
+ *  C) <p><strong>이름 (조건)</strong></p> ← :없이 라벨만
+ *
+ * 추출 우선순위: 짧은 이름(label)만 사용 (50자 이내).
+ * 같은 섹션 안에 동일 패턴이 2개 이상 반복되어야 list 인정 (오탐 방지).
+ */
+function extractKeyValueList(inner: string): string[] {
+  // <p> 또는 <li> 안의 <strong>...</strong> 추출
+  const items: string[] = [];
+  const blockPattern = /<(?:p|li)\b[^>]*>([\s\S]*?)<\/(?:p|li)>/gi;
+  let bm: RegExpExecArray | null;
+  while ((bm = blockPattern.exec(inner)) !== null) {
+    const block = bm[1];
+    // 블록 안 첫 <strong>...</strong> 추출
+    const strongMatch = block.match(/<strong\b[^>]*>([\s\S]*?)<\/strong>/i);
+    if (!strongMatch) continue;
+    let label = stripTags(strongMatch[1]).trim();
+    // 끝 ':' 제거 (패턴 A vs B 통일)
+    label = label.replace(/[:：]\s*$/, "").trim();
+    if (!label) continue;
+    // 숫자.로 시작하는 건 단계로 보고 skip (extractSteps에서 처리)
+    if (/^\d+\./.test(label)) continue;
+    // 너무 길면 skip
+    if (label.length > 50) continue;
+    // 너무 짧으면 skip
+    if (label.length < 2) continue;
+    items.push(label);
+    if (items.length >= 4) break;
+  }
+  // 2개 미만이면 list로 인정하지 않음 (오탐 방지)
+  return items.length >= 2 ? items : [];
+}
+
 export function extractCardData(opts: {
   title: string;
   keyword: string;
@@ -267,11 +305,18 @@ export function extractCardData(opts: {
     }
 
     // 인포그래픽 추출: 체크리스트 > 단계 > hook 우선순위
+    // 우선순위: 체크리스트(✅) > 단계(1.2.3.) > key-value 목록(strong 반복)
     let bullets: string[] = extractChecklist(inner);
     let bulletStyle: SectionCard["bulletStyle"] = "checklist";
     if (bullets.length < 2) {
       bullets = extractSteps(inner);
       bulletStyle = "steps";
+    }
+    if (bullets.length < 2) {
+      // 마지막 보루: <p><strong>이름:</strong> 설명</p> 같은 반복 패턴
+      // (Gemini가 prompt 어겨도 카드뉴스가 빈 박스로 안 나오게 보장)
+      bullets = extractKeyValueList(inner);
+      bulletStyle = "checklist"; // 시각적으로 ✓ 체크리스트와 동일하게
     }
     if (bullets.length < 2) {
       bullets = [];
