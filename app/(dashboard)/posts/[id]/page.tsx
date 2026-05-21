@@ -2,10 +2,11 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Topbar } from "@/components/topbar";
 import { getPostByIdFromSheet } from "@/lib/sheets";
-import { CheckCircle2, Link2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import { PostContentViewer } from "@/components/post-content-viewer";
 import { CardNewsCards } from "@/components/card-news-cards";
 import { TagsBlock } from "@/components/tags-block";
+import { PublishForm } from "@/components/publish-form";
 
 export const revalidate = 60;
 
@@ -188,61 +189,12 @@ export default async function PostDetail({
               idForFilename={post.id}
             />
 
-            {/* Publish */}
-            <div className="bg-white rounded-2xl shadow-card p-6">
-              <h3 className="text-[15px] font-extrabold text-ink-900 mb-4">
-                티스토리 발행
-              </h3>
-              <label className="flex items-start gap-3 cursor-pointer mb-4">
-                <span className="relative flex-shrink-0 mt-0.5">
-                  <input
-                    type="checkbox"
-                    defaultChecked={post.status === "published"}
-                    className="peer sr-only"
-                  />
-                  <span className="block w-5 h-5 rounded-md border-2 border-ink-300 peer-checked:bg-brand-500 peer-checked:border-brand-500 transition"></span>
-                  <svg
-                    className="absolute top-0 left-0 w-5 h-5 text-white opacity-0 peer-checked:opacity-100 pointer-events-none"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                  >
-                    <path
-                      d="M5 13L9 17L19 7"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </span>
-                <span>
-                  <span className="block text-[14px] font-bold text-ink-900">
-                    발행 완료
-                  </span>
-                  <span className="block text-[12px] text-ink-500 mt-0.5">
-                    티스토리에 게시한 뒤 체크하세요.
-                  </span>
-                </span>
-              </label>
-
-              <div className="mb-3">
-                <label className="block text-[11px] font-bold text-ink-500 mb-1.5">
-                  티스토리 URL
-                </label>
-                <div className="flex items-center gap-2 h-11 px-3 rounded-xl border border-ink-200 focus-within:border-brand-500 focus-within:ring-4 focus-within:ring-brand-500/10 transition">
-                  <Link2 size={14} className="text-ink-500" />
-                  <input
-                    type="url"
-                    defaultValue={post.tistory_url}
-                    placeholder="https://blog.tistory.com/entry/..."
-                    className="flex-1 bg-transparent outline-none text-[13px] font-medium text-ink-900 placeholder-ink-400"
-                  />
-                </div>
-              </div>
-              <button className="w-full h-11 rounded-xl bg-brand-500 hover:bg-brand-600 active:bg-brand-700 transition text-white text-[14px] font-bold shadow-press">
-                변경사항 저장
-              </button>
-            </div>
+            {/* Publish (client component — server action 연결) */}
+            <PublishForm
+              postId={post.id}
+              initialPublished={post.status === "published"}
+              initialUrl={post.tistory_url || ""}
+            />
 
             {/* GA stats */}
             <div className="bg-white rounded-2xl shadow-card p-6">
