@@ -1,13 +1,18 @@
 name: Generate Daily Posts
 
-# 매일 KST 08:45 부근 자동 실행 + 수동 실행 가능
+# 매일 KST 09:00 부근 발행을 목표로 cron 설정.
 #
-# 왜 UTC 23:45 (= KST 08:45)? GitHub Actions cron은 best-effort 트리거라
-# UTC 정시(특히 00:00)는 전 세계 cron이 몰려 3~4시간 지연됨.
-# 분 단위 비정시 + 9시 이전 마진으로 KST 9시 부근 안정 실행 보장.
+# GitHub Actions cron은 best-effort라 매일 ~1시간 45분 지연됨 (관측치).
+# 따라서 KST 07:15 설정(UTC 22:15) → KST 09:00 부근 실제 트리거 → 5분 내 발행 완료.
+# 비정시(분 단위)로 잡아 정시 부하 회피.
+#
+# 관측 데이터 (이전 cron `45 23 * * *` UTC):
+#   5/19 → 01:32 UTC (KST 10:32) — 1h 47m 지연
+#   5/20 → 01:34 UTC (KST 10:34) — 1h 49m 지연
+#   5/21 → 01:33 UTC (KST 10:33) — 1h 48m 지연
 on:
   schedule:
-    - cron: "45 23 * * *"
+    - cron: "15 22 * * *"
   workflow_dispatch:
     inputs:
       reason:
