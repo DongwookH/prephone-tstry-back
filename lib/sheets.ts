@@ -148,11 +148,66 @@ export type KeywordRow = {
   competition?: string;
   used_count?: string;
   last_used?: string;
-  status?: "active" | "paused" | "archived" | "used" | "";
+  status?: "active" | "paused" | "archived" | "used" | "blacklisted" | "";
   notes?: string;
   source?: "manual" | "auto" | "";
   created_at?: string;
 };
+
+/**
+ * keywords 시트에서 특정 키워드의 status를 'blacklisted'로 변경.
+ * 같은 키워드가 여러 row면 모두 처리. 다음 cron부터 픽 안 됨.
+ *
+ * @returns 변경된 row 개수
+ */
+export async function blacklistKeyword(
+  keyword: string,
+): Promise<{ updated: number }> {
+  if (!keyword.trim()) return { updated: 0 };
+  const sheets = getClient();
+  const id = keywordsSheetId();
+
+  const raw = await readRange(id, "keywords!A1:Z");
+  if (raw.length < 2) return { updated: 0 };
+
+  // 헤더 위치 (💡 코멘트 행 자동 감지)
+  let headerRowIdx = 0;
+  if (raw[0]?.[0]?.startsWith("💡")) headerRowIdx = 1;
+  const headers = raw[headerRowIdx] ?? [];
+
+  const kwCol = headers.findIndex((h) => h === "keyword");
+  const statusCol = headers.findIndex((h) => h === "status");
+  if (kwCol < 0 || statusCol < 0) {
+    throw new Error(
+      `keywords 시트 헤더에 keyword/status 컬럼 없음: keyword(${kwCol}) status(${statusCol})`,
+    );
+  }
+  const statusColLetter = String.fromCharCode(
+    "A".charCodeAt(0) + statusCol,
+  );
+
+  const norm = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+  const target = norm(keyword);
+
+  const requests: { range: string; values: string[][] }[] = [];
+  for (let i = headerRowIdx + 1; i < raw.length; i++) {
+    const row = raw[i];
+    const cellKw = (row[kwCol] ?? "").toString();
+    if (!cellKw || norm(cellKw) !== target) continue;
+    const sheetRow = i + 1;
+    requests.push({
+      range: `keywords!${statusColLetter}${sheetRow}`,
+      values: [["blacklisted"]],
+    });
+  }
+
+  if (requests.length === 0) return { updated: 0 };
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { valueInputOption: "USER_ENTERED", data: requests },
+  });
+  return { updated: requests.length };
+}
 
 /**
  * keywords 시트에서 status=active(또는 비어있음) + keyword 비어있지 않은 행만.

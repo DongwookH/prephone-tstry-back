@@ -1,8 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { updatePostStatus } from "@/lib/sheets";
+import {
+  updatePostStatus,
+  deletePostsByIds,
+  blacklistKeyword,
+} from "@/lib/sheets";
 
 /**
  * 글의 발행 상태를 토글.
@@ -37,6 +42,50 @@ export async function togglePublishedAction(
       error: (err as Error).message,
     };
   }
+}
+
+/**
+ * 글 삭제 + (선택) 키워드 블랙리스트 등록.
+ *  - 시트에서 글 row 삭제
+ *  - blacklistKeywordToo=true 면 해당 키워드 status='blacklisted' → 다음 cron부터 픽 안 됨
+ *  - 삭제 후 /posts 목록으로 redirect
+ */
+export async function deletePostWithBlacklistAction(input: {
+  postId: string;
+  keyword: string;
+  blacklistKeywordToo: boolean;
+}): Promise<{ ok: boolean; error?: string }> {
+  const session = await auth();
+  if (!session?.user) {
+    return { ok: false, error: "로그인 필요" };
+  }
+
+  try {
+    // 1) 글 삭제
+    const delResult = await deletePostsByIds([input.postId]);
+    if (delResult.deleted === 0) {
+      return { ok: false, error: "글을 찾을 수 없습니다" };
+    }
+
+    // 2) 키워드 블랙리스트 (옵션)
+    if (input.blacklistKeywordToo && input.keyword?.trim()) {
+      try {
+        await blacklistKeyword(input.keyword);
+      } catch (err) {
+        // 블랙리스트 실패해도 글은 이미 삭제됐으니 ok로 진행 — 경고만
+        console.warn("[deletePost] 블랙리스트 실패:", err);
+      }
+    }
+
+    revalidatePath("/");
+    revalidatePath("/posts");
+    revalidatePath("/analytics");
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+
+  // redirect는 try/catch 밖에서 — Next.js redirect는 throw 기반
+  redirect("/posts");
 }
 
 /**

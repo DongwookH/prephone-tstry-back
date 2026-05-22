@@ -7,6 +7,7 @@ import { PostContentViewer } from "@/components/post-content-viewer";
 import { CardNewsCards } from "@/components/card-news-cards";
 import { TagsBlock } from "@/components/tags-block";
 import { PublishForm } from "@/components/publish-form";
+import { DangerZone } from "@/components/danger-zone";
 
 export const revalidate = 60;
 
@@ -199,6 +200,13 @@ export default async function PostDetail({
               postId={post.id}
               initialPublished={post.status === "published"}
               initialUrl={post.tistory_url || ""}
+            />
+
+            {/* 위험 영역 — 글 삭제 + 키워드 블랙리스트 */}
+            <DangerZone
+              postId={post.id}
+              keyword={post.keyword || ""}
+              title={post.title}
             />
 
             {/* GA stats */}
