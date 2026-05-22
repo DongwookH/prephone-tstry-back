@@ -5,6 +5,8 @@ import {
   getDailyTrend,
   getTopPages,
   getChannels,
+  getRealtimeOverview,
+  getRealtimeTopPages,
   GA4Error,
 } from "@/lib/ga4";
 
@@ -63,18 +65,25 @@ export async function GET() {
 
   const t0 = Date.now();
   try {
-    const [overview, daily, topPages, channels] = await Promise.all([
-      getOverview(accessToken, 7),
-      getDailyTrend(accessToken, 7),
-      getTopPages(accessToken, 7, 10),
-      getChannels(accessToken, 7),
-    ]);
+    const [overview, daily, topPages, channels, realtime, realtimeTopPages] =
+      await Promise.all([
+        getOverview(accessToken, 7),
+        getDailyTrend(accessToken, 7),
+        getTopPages(accessToken, 7, 10),
+        getChannels(accessToken, 7),
+        getRealtimeOverview(accessToken),
+        getRealtimeTopPages(accessToken, 5),
+      ]);
 
     return NextResponse.json({
       ok: true,
       durationMs: Date.now() - t0,
       propertyId: process.env.GA_PROPERTY_ID,
       user: session.user?.email,
+      realtime: {
+        ...realtime,
+        topPages: realtimeTopPages,
+      },
       overview,
       daily,
       topPages,

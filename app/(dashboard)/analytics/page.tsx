@@ -6,10 +6,14 @@ import {
   getDailyTrend,
   getTopPages,
   getChannels,
+  getRealtimeOverview,
+  getRealtimeTopPages,
   type GAOverview,
   type GADailyRow,
   type GATopPage,
   type GAChannelRow,
+  type GARealtimeOverview,
+  type GARealtimeTopPage,
 } from "@/lib/ga4";
 import Link from "next/link";
 import { ExternalLink, AlertTriangle, LogIn } from "lucide-react";
@@ -24,6 +28,8 @@ interface GAState {
   daily?: GADailyRow[];
   topPages?: GATopPage[];
   channels?: GAChannelRow[];
+  realtime?: GARealtimeOverview;
+  realtimeTopPages?: GARealtimeTopPage[];
 }
 
 async function loadGA(): Promise<GAState> {
@@ -52,13 +58,35 @@ async function loadGA(): Promise<GAState> {
     };
   }
   try {
+    // 일반 API + 실시간 API 병렬 호출
+    // 실시간 실패해도 일반은 보여줘야 하니 별도 try
     const [overview, daily, topPages, channels] = await Promise.all([
       getOverview(session.accessToken, 7),
       getDailyTrend(session.accessToken, 7),
       getTopPages(session.accessToken, 7, 7),
       getChannels(session.accessToken, 7),
     ]);
-    return { ok: true, overview, daily, topPages, channels };
+
+    let realtime: GARealtimeOverview | undefined;
+    let realtimeTopPages: GARealtimeTopPage[] | undefined;
+    try {
+      [realtime, realtimeTopPages] = await Promise.all([
+        getRealtimeOverview(session.accessToken),
+        getRealtimeTopPages(session.accessToken, 5),
+      ]);
+    } catch {
+      // 실시간 API 실패해도 일반 데이터는 표시
+    }
+
+    return {
+      ok: true,
+      overview,
+      daily,
+      topPages,
+      channels,
+      realtime,
+      realtimeTopPages,
+    };
   } catch (err) {
     return {
       ok: false,
@@ -187,6 +215,14 @@ export default async function AnalyticsPage() {
         </section>
 
         {!ga.ok && <GANotConnected state={ga} />}
+
+        {/* 실시간 (지난 30분) — GA4 일반 보고서 24h 지연 회피용 */}
+        {ga.ok && ga.realtime && (
+          <RealtimeBlock
+            overview={ga.realtime}
+            topPages={ga.realtimeTopPages ?? []}
+          />
+        )}
 
         <section className="grid grid-cols-4 gap-4 mb-6">
           <KPI label="총 글 수" value={`${totalPosts}`} sub="발행 + 대기 합계" />
@@ -438,6 +474,80 @@ function formatDuration(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}분 ${s}초`;
+}
+
+function RealtimeBlock({
+  overview,
+  topPages,
+}: {
+  overview: GARealtimeOverview;
+  topPages: GARealtimeTopPage[];
+}) {
+  return (
+    <section className="bg-gradient-to-br from-mint-50 to-brand-50/40 border border-mint-200 rounded-2xl p-5 mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-mint-500 opacity-70"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-mint-500"></span>
+          </span>
+          <h3 className="text-[15px] font-extrabold text-ink-900">
+            지금 실시간
+          </h3>
+          <span className="text-[11px] text-ink-500 font-bold">
+            (지난 30분)
+          </span>
+        </div>
+        <span className="text-[10px] text-mint-700 font-bold bg-white rounded-full px-2 py-0.5">
+          GA4 Realtime API
+        </span>
+      </div>
+
+      <div className="grid grid-cols-[200px_1fr] gap-5 items-stretch">
+        {/* 좌측: 큰 활성 사용자 카운트 */}
+        <div className="bg-white rounded-xl p-4 flex flex-col justify-center items-center text-center shadow-card">
+          <div className="text-[40px] font-extrabold tabular-nums text-mint-700 leading-none">
+            {overview.activeUsers}
+          </div>
+          <div className="text-[11px] font-bold text-ink-700 mt-1.5">
+            활성 사용자
+          </div>
+          <div className="text-[10px] text-ink-500 mt-0.5">
+            페이지뷰 {overview.pageviews}
+          </div>
+        </div>
+
+        {/* 우측: 인기 페이지 TOP 5 */}
+        <div className="bg-white rounded-xl p-4 shadow-card">
+          <div className="text-[11px] font-bold text-ink-500 tracking-wider mb-2">
+            지금 사람들이 보는 페이지
+          </div>
+          {topPages.length > 0 ? (
+            <ul className="space-y-1.5">
+              {topPages.slice(0, 5).map((p, i) => (
+                <li
+                  key={i}
+                  className="flex items-center gap-2 text-[12px]"
+                >
+                  <span className="font-extrabold text-mint-700 tabular-nums w-6 text-right">
+                    {p.activeUsers}
+                  </span>
+                  <span className="text-ink-700 truncate flex-1 font-medium">
+                    {p.path}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="py-3 text-[12px] text-ink-500 italic">
+              지난 30분간 방문자 없음. 사이트 방문 후 1-2분 뒤 다시
+              확인하세요.
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function Legend({ color, label }: { color: string; label: string }) {

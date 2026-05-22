@@ -89,14 +89,42 @@ async function runReport(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
-    // GA Data API는 캐싱 X
     cache: "no-store",
   });
   if (!res.ok) {
     const text = await res.text();
     throw new GA4Error(
       res.status,
-      `GA Data API 실패 (HTTP ${res.status}): ${text.slice(0, 300)}`,
+      `GA Data API runReport 실패 (HTTP ${res.status}): ${text.slice(0, 300)}`,
+      text,
+    );
+  }
+  return (await res.json()) as RunReportResponse;
+}
+
+/**
+ * 실시간 데이터 — 지난 30분 내 활성 사용자/이벤트.
+ * 일반 runReport는 24-48시간 지연되지만, runRealtimeReport는 거의 즉시 (1-2분 내).
+ */
+async function runRealtimeReport(
+  accessToken: string,
+  body: Record<string, unknown>,
+): Promise<RunReportResponse> {
+  const url = `${GA_API_BASE}/properties/${propertyId()}:runRealtimeReport`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new GA4Error(
+      res.status,
+      `GA Data API runRealtimeReport 실패 (HTTP ${res.status}): ${text.slice(0, 300)}`,
       text,
     );
   }
@@ -220,6 +248,52 @@ export async function getPagePathPageviews(
     if (path) out[path] = pv;
   }
   return out;
+}
+
+// ─── 실시간 (Realtime) API ─────────────────────────
+// 지난 30분 내 데이터만 가능하지만 거의 즉시 (1-2분 내 반영).
+// 일반 runReport의 24-48시간 지연 회피.
+
+export interface GARealtimeOverview {
+  activeUsers: number;
+  /** 지난 30분 총 페이지뷰 (event count from page_view) */
+  pageviews: number;
+}
+
+export interface GARealtimeTopPage {
+  path: string;
+  activeUsers: number;
+}
+
+/** 지난 30분 활성 사용자 + 페이지뷰. */
+export async function getRealtimeOverview(
+  accessToken: string,
+): Promise<GARealtimeOverview> {
+  const data = await runRealtimeReport(accessToken, {
+    metrics: [{ name: "activeUsers" }, { name: "screenPageViews" }],
+  });
+  const m = data.rows?.[0]?.metricValues ?? [];
+  return {
+    activeUsers: parseInt(m[0]?.value ?? "0", 10),
+    pageviews: parseInt(m[1]?.value ?? "0", 10),
+  };
+}
+
+/** 지난 30분 활성 사용자가 본 인기 페이지. */
+export async function getRealtimeTopPages(
+  accessToken: string,
+  limit = 5,
+): Promise<GARealtimeTopPage[]> {
+  const data = await runRealtimeReport(accessToken, {
+    dimensions: [{ name: "unifiedScreenName" }],
+    metrics: [{ name: "activeUsers" }],
+    orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+    limit: String(limit),
+  });
+  return (data.rows ?? []).map((r) => ({
+    path: r.dimensionValues?.[0]?.value ?? "(unknown)",
+    activeUsers: parseInt(r.metricValues?.[0]?.value ?? "0", 10),
+  }));
 }
 
 export { GA4Error };
