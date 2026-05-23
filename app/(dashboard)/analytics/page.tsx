@@ -1,5 +1,5 @@
 import { Topbar } from "@/components/topbar";
-import { getAllPosts } from "@/lib/sheets";
+import { getAllPosts, toKstDate } from "@/lib/sheets";
 import { auth } from "@/auth";
 import {
   getOverview,
@@ -126,12 +126,15 @@ export default async function AnalyticsPage() {
   for (let i = 6; i >= 0; i--) {
     const date = new Date(now);
     date.setDate(date.getDate() - i);
-    const dStr = date.toISOString().slice(0, 10);
+    // KST 기준 날짜로 비교 (created_at은 UTC ISO이라 변환 필요)
+    const dStr = toKstDate(date);
     const label =
       i === 0
         ? "오늘"
         : ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
-    const dayPosts = all.filter((p) => p.created_at?.slice(0, 10) === dStr);
+    const dayPosts = all.filter(
+      (p) => p.created_at && toKstDate(p.created_at) === dStr,
+    );
     days.push({
       label,
       published: dayPosts.filter((p) => p.status === "published").length,

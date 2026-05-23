@@ -579,16 +579,33 @@ export async function getSidebarCounts(): Promise<{
   }
 }
 
-/** KST 기준 오늘 created_at인 글만. */
-export async function getTodayPosts(): Promise<PostRow[]> {
-  const all = await getAllPosts();
-  const todayKST = new Intl.DateTimeFormat("en-CA", {
+/** 임의의 Date를 KST 기준 YYYY-MM-DD 문자열로. */
+export function toKstDate(d: Date | string): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  if (isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date()); // YYYY-MM-DD
-  return all.filter((p) => (p.created_at || "").slice(0, 10) === todayKST);
+  }).format(date);
+}
+
+/**
+ * KST 기준 오늘 created_at인 글만.
+ *
+ * ⚠️ created_at은 UTC ISO 문자열로 저장됨 (예: "2026-05-22T23:23:00.000Z").
+ * 그냥 slice(0,10) 비교하면 UTC 날짜와 KST 오늘이 안 맞음.
+ * (cron이 UTC 22~23시 = KST 07~08시에 실행될 때 UTC 날짜는 어제로 표시됨)
+ * → Date 객체로 파싱 후 KST timezone으로 변환해서 비교.
+ */
+export async function getTodayPosts(): Promise<PostRow[]> {
+  const all = await getAllPosts();
+  const todayKST = toKstDate(new Date());
+  return all.filter((p) => {
+    if (!p.created_at) return false;
+    return toKstDate(p.created_at) === todayKST;
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
