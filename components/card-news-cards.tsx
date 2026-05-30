@@ -19,7 +19,15 @@ type Props = {
   idForFilename: string;
 };
 
-const CARD_SIZE = 1080; // 1080x1080 인스타 정사각형
+// 카드 비율별 사이즈 — 콘텐츠 양 기반 자동 선택
+const SIZE_MAP = {
+  square: { width: 1080, height: 1080 }, // 인스타 피드 기본, OG 호환
+  portrait: { width: 1080, height: 1350 }, // 인스타 권장 4:5 — 풍부한 콘텐츠
+} as const;
+
+function sizeFor(ratio: "square" | "portrait") {
+  return SIZE_MAP[ratio];
+}
 
 export function CardNewsCards({
   title,
@@ -137,7 +145,7 @@ export function CardNewsCards({
               카드뉴스
             </h3>
             <p className="text-[11px] text-ink-500 mt-0.5">
-              {cards.length}장 (표지 1 + 섹션 {cards.length - 1}) · 1080×1080 · Q&A 제외
+              {cards.length}장 (표지 1 + 섹션 {cards.length - 1}) · 콘텐츠 양에 맞춰 1080×1080 또는 1080×1350 자동 선택 · Q&A 제외
             </p>
           </div>
           <button
@@ -164,14 +172,16 @@ export function CardNewsCards({
           </button>
         </div>
 
-        <div className="grid grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-3 gap-2.5 items-end">
           {cards.map((card, idx) => (
             <button
               key={idx}
               onClick={() => downloadOne(idx)}
               disabled={busy !== null}
               className={cn(
-                "relative aspect-square rounded-xl overflow-hidden group cursor-pointer transition border-2 bg-ink-50",
+                "relative rounded-xl overflow-hidden group cursor-pointer transition border-2 bg-ink-50",
+                // 카드 비율을 미리보기에도 반영 — square / portrait
+                card.ratio === "portrait" ? "aspect-[4/5]" : "aspect-square",
                 done.has(idx)
                   ? "border-mint-500"
                   : "border-transparent hover:border-brand-300",
@@ -179,10 +189,17 @@ export function CardNewsCards({
               )}
             >
               <CardThumbnail card={card} />
-              <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/60 text-white text-[10px] font-bold">
-                {card.type === "cover"
-                  ? "표지"
-                  : `${card.pageNum}/${card.totalPages}`}
+              <div className="absolute top-1.5 left-1.5 flex gap-1">
+                <span className="px-1.5 py-0.5 rounded-md bg-black/60 text-white text-[10px] font-bold">
+                  {card.type === "cover"
+                    ? "표지"
+                    : `${card.pageNum}/${card.totalPages}`}
+                </span>
+                {card.ratio === "portrait" && (
+                  <span className="px-1.5 py-0.5 rounded-md bg-brand-500 text-white text-[10px] font-bold">
+                    4:5
+                  </span>
+                )}
               </div>
               <div className="absolute top-1.5 right-1.5 w-7 h-7 rounded-lg bg-white/95 backdrop-blur flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
                 {busy === idx ? (
@@ -245,15 +262,17 @@ export function CardNewsCards({
         }}
         aria-hidden="true"
       >
-        {cards.map((card, idx) => (
+        {cards.map((card, idx) => {
+          const size = sizeFor(card.ratio);
+          return (
           <div
             key={idx}
             ref={(el) => {
               refs.current[`card-${idx}`] = el;
             }}
             style={{
-              width: CARD_SIZE,
-              height: CARD_SIZE,
+              width: size.width,
+              height: size.height,
               fontFamily:
                 "Pretendard Variable, Pretendard, -apple-system, system-ui, sans-serif",
               letterSpacing: "-0.02em",
@@ -267,7 +286,8 @@ export function CardNewsCards({
               <SectionCardRender card={card} />
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );
