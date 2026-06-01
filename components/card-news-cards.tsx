@@ -19,15 +19,8 @@ type Props = {
   idForFilename: string;
 };
 
-// 카드 비율별 사이즈 — 콘텐츠 양 기반 자동 선택
-const SIZE_MAP = {
-  square: { width: 1080, height: 1080 }, // 인스타 피드 기본, OG 호환
-  portrait: { width: 1080, height: 1350 }, // 인스타 권장 4:5 — 풍부한 콘텐츠
-} as const;
-
-function sizeFor(ratio: "square" | "portrait") {
-  return SIZE_MAP[ratio];
-}
+// 카드 너비만 고정 (1080px). 높이는 콘텐츠에 맞춰 자동 — 하단 여백 0.
+const CARD_WIDTH = 1080;
 
 export function CardNewsCards({
   title,
@@ -145,7 +138,7 @@ export function CardNewsCards({
               카드뉴스
             </h3>
             <p className="text-[11px] text-ink-500 mt-0.5">
-              {cards.length}장 (표지 1 + 섹션 {cards.length - 1}) · 콘텐츠 양에 맞춰 1080×1080 또는 1080×1350 자동 선택 · Q&A 제외
+              {cards.length}장 (표지 1 + 섹션 {cards.length - 1}) · 너비 1080px 고정, 높이는 콘텐츠에 맞춰 자동 · Q&A 제외
             </p>
           </div>
           <button
@@ -172,16 +165,14 @@ export function CardNewsCards({
           </button>
         </div>
 
-        <div className="grid grid-cols-3 gap-2.5 items-end">
+        <div className="grid grid-cols-3 gap-2.5 items-start">
           {cards.map((card, idx) => (
             <button
               key={idx}
               onClick={() => downloadOne(idx)}
               disabled={busy !== null}
               className={cn(
-                "relative rounded-xl overflow-hidden group cursor-pointer transition border-2 bg-ink-50",
-                // 카드 비율을 미리보기에도 반영 — square / portrait
-                card.ratio === "portrait" ? "aspect-[4/5]" : "aspect-square",
+                "relative rounded-xl overflow-hidden group cursor-pointer transition border-2 bg-ink-50 aspect-[4/5]",
                 done.has(idx)
                   ? "border-mint-500"
                   : "border-transparent hover:border-brand-300",
@@ -195,11 +186,6 @@ export function CardNewsCards({
                     ? "표지"
                     : `${card.pageNum}/${card.totalPages}`}
                 </span>
-                {card.ratio === "portrait" && (
-                  <span className="px-1.5 py-0.5 rounded-md bg-brand-500 text-white text-[10px] font-bold">
-                    4:5
-                  </span>
-                )}
               </div>
               <div className="absolute top-1.5 right-1.5 w-7 h-7 rounded-lg bg-white/95 backdrop-blur flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
                 {busy === idx ? (
@@ -262,17 +248,15 @@ export function CardNewsCards({
         }}
         aria-hidden="true"
       >
-        {cards.map((card, idx) => {
-          const size = sizeFor(card.ratio);
-          return (
+        {cards.map((card, idx) => (
           <div
             key={idx}
             ref={(el) => {
               refs.current[`card-${idx}`] = el;
             }}
             style={{
-              width: size.width,
-              height: size.height,
+              width: CARD_WIDTH,
+              // height 지정 X — 콘텐츠 길이에 따라 자동 결정 (하단 여백 0)
               fontFamily:
                 "Pretendard Variable, Pretendard, -apple-system, system-ui, sans-serif",
               letterSpacing: "-0.02em",
@@ -286,8 +270,7 @@ export function CardNewsCards({
               <SectionCardRender card={card} />
             )}
           </div>
-          );
-        })}
+        ))}
       </div>
     </>
   );
@@ -341,19 +324,20 @@ function CardThumbnail({ card }: { card: CardData }) {
   );
 }
 
-// ─── 표지 카드 (1080×1080) ─────────────────────
+// ─── 표지 카드 (너비 1080, 높이 가변) ─────────────────────
 function CoverCardRender({ card }: { card: CoverCard }) {
   return (
     <div
       style={{
         width: "100%",
-        height: "100%",
+        // height 가변 — 콘텐츠에 맞춤
         background: "linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%)",
         padding: 80,
         display: "flex",
         flexDirection: "column",
-        justifyContent: "space-between",
+        gap: 100, // 제목 ↔ 키워드/브랜드 사이 명확한 호흡
         position: "relative",
+        overflow: "hidden",
       }}
     >
       {/* 우상단 라임 원 */}
@@ -436,7 +420,7 @@ function CoverCardRender({ card }: { card: CoverCard }) {
   );
 }
 
-// ─── 섹션 카드 (1080×1080) — 인포그래픽 스타일 ─────────────────────
+// ─── 섹션 카드 (너비 1080, 높이 가변) — 인포그래픽 스타일 ─────────────────────
 function SectionCardRender({ card }: { card: SectionCard }) {
   // 제목에서 숫자) 부분 분리
   const numberMatch = card.title.match(/^(\d+\))\s*(.+)$/);
@@ -451,7 +435,7 @@ function SectionCardRender({ card }: { card: SectionCard }) {
     <div
       style={{
         width: "100%",
-        height: "100%",
+        // height 가변 — 콘텐츠 길이에 맞춤
         background: "white",
         display: "flex",
         flexDirection: "column",
@@ -512,14 +496,13 @@ function SectionCardRender({ card }: { card: SectionCard }) {
         </h2>
       </div>
 
-      {/* 본문 영역 — 인포그래픽 (hook + bullets) */}
+      {/* 본문 영역 — 인포그래픽 (hook + bullets), 콘텐츠 직후 자연 종료 */}
       <div
         style={{
-          flex: 1,
           padding: "44px 70px 40px",
           display: "flex",
           flexDirection: "column",
-          justifyContent: "space-between",
+          gap: 36, // 콘텐츠 ↔ 푸터 사이 호흡
         }}
       >
         {(() => {
@@ -569,16 +552,14 @@ function SectionCardRender({ card }: { card: SectionCard }) {
             );
           }
 
-          // 케이스 B: bullets 없음 + hook 있음 → hook을 큰 폰트로 중앙 강조
+          // 케이스 B: bullets 없음 + hook 있음 → hook을 큰 박스로 강조
           if (hookText) {
             const subText = card.subtitle && card.hook ? card.hook : undefined;
             return (
               <div
                 style={{
-                  flex: 1,
                   display: "flex",
                   flexDirection: "column",
-                  justifyContent: "center",
                   gap: 24,
                 }}
               >
@@ -619,14 +600,12 @@ function SectionCardRender({ card }: { card: SectionCard }) {
             );
           }
 
-          // 케이스 C: hook도 bullets도 없음 → 빈 공간 (drag&drop placeholder)
+          // 케이스 C: hook도 bullets도 없음 → placeholder (정보 부족)
           return (
             <div
               style={{
-                flex: 1,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                padding: "60px 0",
+                textAlign: "center",
                 color: "#C0C8D1",
                 fontSize: 22,
                 fontWeight: 500,
@@ -637,7 +616,7 @@ function SectionCardRender({ card }: { card: SectionCard }) {
           );
         })()}
 
-        {/* 푸터 */}
+        {/* 푸터 — 콘텐츠 직후 자연스럽게 위치 */}
         <div
           style={{
             display: "flex",

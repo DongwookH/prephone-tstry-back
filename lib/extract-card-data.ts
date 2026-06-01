@@ -14,18 +14,16 @@ export const CARDNEWS_MAX = 5;
 const MAX_SECTION_CARDS = CARDNEWS_MAX - 1; // 4
 
 /**
- * 카드 비율 — 콘텐츠 양에 따라 자동 결정.
- *  - square: 1080×1080 (인스타 피드 기본, OG 호환). 짧은 콘텐츠.
- *  - portrait: 1080×1350 (인스타 권장 4:5). 풍부한 콘텐츠 — 빈 공간 X.
+ * 카드 이미지 너비는 1080px 고정.
+ * 높이는 콘텐츠 길이에 맞춰 자동 결정 — 하단 여백 발생 방지.
+ * (이전: 1080×1080 / 1080×1350 비율 선택 → 빈 공간 발생 → 폐기)
  */
-export type CardRatio = "square" | "portrait";
 
 export type CoverCard = {
   type: "cover";
   title: string;
   keyword: string;
   category: string;
-  ratio: CardRatio;
 };
 
 export type SectionCard = {
@@ -40,8 +38,6 @@ export type SectionCard = {
   bullets?: string[];
   /** 불릿 스타일 — checklist(✅), steps(1️⃣2️⃣3️⃣). 없으면 fallback. */
   bulletStyle?: "checklist" | "steps";
-  /** 카드 비율 — 콘텐츠 양 자동 결정. */
-  ratio: CardRatio;
 };
 
 export type CardData = CoverCard | SectionCard;
@@ -276,13 +272,12 @@ export function extractCardData(opts: {
 }): CardData[] {
   const cards: CardData[] = [];
 
-  // 1. 표지 — 정사각형 default (인스타 피드 기본, OG 호환)
+  // 1. 표지 — 너비 1080 고정, 높이 가변
   cards.push({
     type: "cover",
     title: opts.title,
     keyword: opts.keyword,
     category: opts.category,
-    ratio: "square",
   });
 
   // 2. 모든 H2 섹션 블록 추출
@@ -378,15 +373,6 @@ export function extractCardData(opts: {
     // 한 줄 hook (본문 첫 문장, 60자 이내)
     const hook = extractHook(inner);
 
-    // 비율 자동 결정 — 콘텐츠 양 기반
-    //  - 풍부 (bullets >= 3 또는 hook+subtitle+bullets 모두 있음): portrait 1080×1350
-    //  - 빈약 (hook만 또는 bullets 2개 이하): square 1080×1080
-    const contentScore =
-      (bullets.length >= 3 ? 2 : 0) +
-      (hook ? 1 : 0) +
-      (subtitle ? 1 : 0);
-    const ratio: CardRatio = contentScore >= 3 ? "portrait" : "square";
-
     sections.push({
       type: "section",
       title,
@@ -394,7 +380,6 @@ export function extractCardData(opts: {
       hook,
       bullets: bullets.length > 0 ? bullets : undefined,
       bulletStyle,
-      ratio,
     });
 
     if (sections.length >= MAX_SECTION_CARDS) break;
