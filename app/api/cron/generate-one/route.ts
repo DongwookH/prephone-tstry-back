@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { appendPosts, bumpKeywordsUsage } from "@/lib/sheets";
+import { appendPosts, bumpKeywordsUsage, getRecentPostTitles } from "@/lib/sheets";
 import { generatePost } from "@/lib/post-generator";
 
 export const maxDuration = 60;
@@ -47,11 +47,15 @@ export async function POST(req: Request) {
 
   const t0 = Date.now();
   try {
+    // 최근 25개 제목 — Gemini가 클리셰 패턴 회피하도록 프롬프트에 주입
+    const recentTitles = await getRecentPostTitles(25).catch(() => []);
+
     const post = await generatePost({
       keyword: body.keyword,
       category: body.category || "일반",
       subKeywords: body.subKeywords || [],
       persona: body.persona || "일반",
+      recentTitles,
     });
 
     const now = new Date().toISOString();

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { generatePost } from "@/lib/post-generator";
+import { getRecentPostTitles } from "@/lib/sheets";
 
 /**
  * POST /api/posts/test
@@ -28,7 +29,14 @@ async function generateOne(req: Request, body: Record<string, unknown>) {
     : [];
 
   try {
-    const post = await generatePost({ keyword, category, persona, subKeywords });
+    const recentTitles = await getRecentPostTitles(25).catch(() => []);
+    const post = await generatePost({
+      keyword,
+      category,
+      persona,
+      subKeywords,
+      recentTitles,
+    });
     const url = new URL(req.url);
     const previewUrl = `${url.origin}/api/posts/preview?id=last`;
 

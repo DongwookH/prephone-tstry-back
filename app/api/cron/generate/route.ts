@@ -6,6 +6,7 @@ import {
   appendPosts,
   bumpKeywordsUsage,
   keywordsSheetId,
+  getRecentPostTitles,
   type KeywordRow,
 } from "@/lib/sheets";
 import { discoverKeywords } from "@/lib/keyword-discovery";
@@ -163,10 +164,14 @@ export async function POST(req: Request) {
     });
   }
 
+  // 최근 25개 제목 — Gemini가 클리셰 패턴 회피하도록 프롬프트에 주입
+  const recentTitles = await getRecentPostTitles(25).catch(() => []);
+
   const generated = await generatePosts(inputs, {
     onProgress: (i, total, kw) => {
       console.log(`[cron] ${i}/${total} 생성 중: ${kw}`);
     },
+    recentTitles,
   });
 
   // ─── 5. posts 시트에 저장 ────────────────────────────

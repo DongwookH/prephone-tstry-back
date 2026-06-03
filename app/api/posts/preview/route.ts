@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { generatePost } from "@/lib/post-generator";
+import { getRecentPostTitles } from "@/lib/sheets";
 
 /**
  * GET /api/posts/preview?keyword=선불폰개통방법&category=개통핵심&persona=IT
@@ -32,7 +33,14 @@ export async function GET(req: Request) {
   const t0 = Date.now();
   let post;
   try {
-    post = await generatePost({ keyword, category, persona, subKeywords });
+    const recentTitles = await getRecentPostTitles(25).catch(() => []);
+    post = await generatePost({
+      keyword,
+      category,
+      persona,
+      subKeywords,
+      recentTitles,
+    });
   } catch (err) {
     return new NextResponse(
       `<h1>생성 실패</h1><pre>${(err as Error).message}</pre>`,

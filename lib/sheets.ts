@@ -346,6 +346,20 @@ export async function getAllPosts(): Promise<PostRow[]> {
   return all.filter((p) => p.id?.trim() && p.title?.trim());
 }
 
+/**
+ * 최근 글 N개의 제목을 반환 (제목 클리셰 회피용 — Gemini 프롬프트에 주입).
+ * 최신순 정렬 (id desc 가정).
+ */
+export async function getRecentPostTitles(limit = 25): Promise<string[]> {
+  const all = await getAllPosts();
+  // id는 p-YYYYMMDD-NNN 형태 — 단순 sort로 최신순
+  const sorted = all.slice().sort((a, b) => (b.id || "").localeCompare(a.id || ""));
+  return sorted
+    .map((p) => (p.title || "").trim())
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
 export async function getPostByIdFromSheet(
   id: string,
 ): Promise<PostRow | null> {
