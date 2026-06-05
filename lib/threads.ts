@@ -28,6 +28,7 @@ export const THREADS_SCOPES = [
   "threads_basic",
   "threads_content_publish",
   "threads_manage_insights",
+  "threads_keyword_search", // 키워드 검색 (경쟁 글 리서치)
 ].join(",");
 
 export interface ThreadsToken {
@@ -213,4 +214,44 @@ export async function postToThreads(opts: {
     throw new Error(`Threads publish 실패 (${p.status}): ${t.slice(0, 200)}`);
   }
   return (await p.json()) as { id: string };
+}
+
+export interface ThreadsSearchPost {
+  id: string;
+  text?: string;
+  username?: string;
+  permalink?: string;
+  timestamp?: string;
+  media_type?: string;
+}
+
+/**
+ * Threads 키워드 검색 — 공개 글 리서치용.
+ * threads_keyword_search 권한 필요.
+ *
+ * @param keyword 검색어
+ * @param searchType TOP(인기순) | RECENT(최신순)
+ * @param limit 최대 결과 수 (기본 25)
+ */
+export async function searchThreadsKeyword(opts: {
+  accessToken: string;
+  keyword: string;
+  searchType?: "TOP" | "RECENT";
+  limit?: number;
+}): Promise<ThreadsSearchPost[]> {
+  const fields = "id,text,username,permalink,timestamp,media_type";
+  const params = new URLSearchParams({
+    q: opts.keyword,
+    search_type: opts.searchType ?? "TOP",
+    fields,
+    limit: String(opts.limit ?? 25),
+    access_token: opts.accessToken,
+  });
+  const res = await fetch(`${THREADS_API}/keyword_search?${params.toString()}`);
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Threads 키워드 검색 실패 (${res.status}): ${t.slice(0, 200)}`);
+  }
+  const data = (await res.json()) as { data?: ThreadsSearchPost[] };
+  return data.data ?? [];
 }
