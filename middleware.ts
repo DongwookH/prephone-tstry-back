@@ -16,6 +16,7 @@ export default auth((req) => {
     pathname.startsWith("/api/threads/callback") ||
     pathname.startsWith("/api/threads/deauthorize") ||
     pathname.startsWith("/api/threads/data-deletion") ||
+    pathname.startsWith("/api/threads/research/ingest") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon");
 

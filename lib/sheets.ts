@@ -959,3 +959,154 @@ export async function sheetsHealthCheck() {
     sheets: meta.data.sheets?.map((s) => s.properties?.title) ?? [],
   };
 }
+
+// ─── Threads 리서치 초안 (threads_drafts 시트) ──────────────────
+
+export type ThreadsDraftRow = {
+  id: string;
+  created_at: string;
+  keyword: string;
+  draft_text: string;
+  source_posts: string; // JSON 문자열
+  insight: string;
+  status: "pending" | "published" | "rejected" | "";
+  published_id: string;
+  published_at: string;
+};
+
+const THREADS_DRAFTS_SHEET = "threads_drafts";
+const THREADS_DRAFTS_HEADERS = [
+  "id",
+  "created_at",
+  "keyword",
+  "draft_text",
+  "source_posts",
+  "insight",
+  "status",
+  "published_id",
+  "published_at",
+];
+
+/** threads_drafts 시트가 없으면 생성 + 헤더. */
+export async function ensureThreadsDraftsSheet(): Promise<void> {
+  const sheets = getClient();
+  const id = mainSheetId();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: id,
+    fields: "sheets.properties.title",
+  });
+  const exists = meta.data.sheets?.some(
+    (s) => s.properties?.title === THREADS_DRAFTS_SHEET,
+  );
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: id,
+      requestBody: {
+        requests: [
+          { addSheet: { properties: { title: THREADS_DRAFTS_SHEET } } },
+        ],
+      },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: id,
+      range: `${THREADS_DRAFTS_SHEET}!A1:I1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [THREADS_DRAFTS_HEADERS] },
+    });
+  }
+}
+
+/** 초안 1건 추가. */
+export async function appendThreadsDraft(d: {
+  keyword: string;
+  draft_text: string;
+  source_posts: unknown;
+  insight: string;
+}): Promise<{ id: string }> {
+  await ensureThreadsDraftsSheet();
+  const id = `td-${Date.now()}-${Math.floor(performance.now()) % 1000}`;
+  const now = new Date().toISOString();
+  await appendRow(mainSheetId(), THREADS_DRAFTS_SHEET, [
+    id,
+    now,
+    d.keyword,
+    d.draft_text,
+    JSON.stringify(d.source_posts ?? []),
+    d.insight,
+    "pending",
+    "",
+    "",
+  ]);
+  return { id };
+}
+
+/** 초안 목록. status 지정 시 필터. */
+export async function getThreadsDrafts(
+  status?: ThreadsDraftRow["status"],
+): Promise<ThreadsDraftRow[]> {
+  let all: ThreadsDraftRow[] = [];
+  try {
+    all = await readSheetAsObjects<ThreadsDraftRow>(
+      mainSheetId(),
+      THREADS_DRAFTS_SHEET,
+    );
+  } catch {
+    return [];
+  }
+  const valid = all.filter((r) => r.id?.trim());
+  const filtered = status ? valid.filter((r) => r.status === status) : valid;
+  // 최신순
+  return filtered.sort((a, b) =>
+    (b.created_at || "").localeCompare(a.created_at || ""),
+  );
+}
+
+/** 초안 갱신 — 부분 패치 (draft_text / status / published_*). */
+export async function updateThreadsDraft(
+  id: string,
+  patch: Partial<
+    Pick<
+      ThreadsDraftRow,
+      "draft_text" | "status" | "published_id" | "published_at"
+    >
+  >,
+): Promise<boolean> {
+  const sheets = getClient();
+  const spreadsheetId = mainSheetId();
+  const rows = await readRange(spreadsheetId, `${THREADS_DRAFTS_SHEET}!A:I`);
+  if (rows.length < 2) return false;
+  let headerIdx = 0;
+  if (rows[0]?.[0]?.startsWith("💡")) headerIdx = 1;
+  // 컬럼 인덱스: D=draft_text(3), G=status(6), H=published_id(7), I=published_at(8)
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    if (rows[i]?.[0] !== id) continue;
+    const rowNum = i + 1;
+    const updates: { range: string; value: string }[] = [];
+    if (patch.draft_text !== undefined)
+      updates.push({ range: `D${rowNum}`, value: patch.draft_text });
+    if (patch.status !== undefined)
+      updates.push({ range: `G${rowNum}`, value: patch.status });
+    if (patch.published_id !== undefined)
+      updates.push({ range: `H${rowNum}`, value: patch.published_id });
+    if (patch.published_at !== undefined)
+      updates.push({ range: `I${rowNum}`, value: patch.published_at });
+    for (const u of updates) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${THREADS_DRAFTS_SHEET}!${u.range}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [[u.value]] },
+      });
+    }
+    return true;
+  }
+  return false;
+}
+
+/** 초안 단건 조회. */
+export async function getThreadsDraftById(
+  id: string,
+): Promise<ThreadsDraftRow | null> {
+  const all = await getThreadsDrafts();
+  return all.find((r) => r.id === id) ?? null;
+}

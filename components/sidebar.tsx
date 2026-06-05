@@ -9,6 +9,7 @@ import {
   LineChart,
   Settings,
   HelpCircle,
+  AtSign,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "./user-menu";
@@ -61,6 +62,7 @@ export function Sidebar({
       count: counts?.keywordsCount,
     },
     { href: "/analytics", label: "분석", icon: LineChart },
+    { href: "/threads", label: "Threads", icon: AtSign },
   ];
 
   if (variant === "compact") {
