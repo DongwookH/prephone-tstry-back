@@ -113,9 +113,9 @@ export async function saveThreadsToken(token: ThreadsToken): Promise<void> {
     for (let i = headerIdx + 1; i < raw.length; i++) {
       if (raw[i]?.[1] === "threads_token") {
         const rowNum = i + 1; // 1-indexed
-        // 컬럼 C(value) = index 2
+        // 컬럼: C=value, E=enabled, G=last_used
         await updateCell(mainSheetId(), `settings!C${rowNum}`, value);
-        await updateCell(mainSheetId(), `settings!F${rowNum}`, now);
+        await updateCell(mainSheetId(), `settings!E${rowNum}`, "1"); // 재연결 시 다시 활성화
         await updateCell(mainSheetId(), `settings!G${rowNum}`, now);
         return;
       }
@@ -134,10 +134,13 @@ export async function saveThreadsToken(token: ThreadsToken): Promise<void> {
   ]);
 }
 
-/** 저장된 Threads 토큰 가져오기. 없으면 null. */
+/** 저장된 Threads 토큰 가져오기. 없거나 비활성(enabled=0)이면 null. */
 export async function getThreadsToken(): Promise<ThreadsToken | null> {
   const all = await readSettings();
-  const row = all.find((r) => r.type === "threads_token" && r.value);
+  // enabled !== "0" 인 가장 최근 토큰. (해제 시 enabled=0 → null 반환되어야 함)
+  const row = all.find(
+    (r) => r.type === "threads_token" && r.value && r.enabled !== "0",
+  );
   if (!row) return null;
   try {
     return JSON.parse(row.value) as ThreadsToken;
