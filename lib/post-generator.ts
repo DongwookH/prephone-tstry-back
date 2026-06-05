@@ -1,6 +1,13 @@
 import { generateJSON } from "./gemini";
 import { getGlobalContext, getCategoryContext } from "./knowledge";
 import { sanitizeForTistory } from "./sanitize-html";
+import {
+  HOOK_PATTERNS,
+  type HookPatternId,
+  analyzeOverusedWords,
+  pickLeastUsedPattern,
+  containsBannedWords,
+} from "./title-diversity";
 
 export { sanitizeForTistory };
 
@@ -49,9 +56,18 @@ function buildPrompt(opts: {
   persona: string;
   utmCampaign: string;
   recentTitles?: string[];
+  /** 이번 글이 사용해야 할 후킹 패턴 (1~8) — round-robin 또는 least-used로 지정. */
+  forcedPattern?: HookPatternId;
+  /** 제목에 절대 쓰면 안 되는 단어 (과사용된 단어 목록). */
+  bannedTitleWords?: string[];
+  /** 재시도 회차 (0=첫 시도, 1=재시도). 재시도 시 더 강한 압박 문구. */
+  retryAttempt?: number;
 }): string {
   const { keyword, category, subKeywords, persona, utmCampaign } = opts;
   const recentTitles = opts.recentTitles ?? [];
+  const forcedPattern = opts.forcedPattern;
+  const bannedTitleWords = opts.bannedTitleWords ?? [];
+  const retryAttempt = opts.retryAttempt ?? 0;
   const personaDesc = PERSONAS[persona] || PERSONAS["일반"];
   const subList = subKeywords.length
     ? subKeywords.map((k, i) => `   ${i + 1}. ${k}`).join("\n")
@@ -298,7 +314,7 @@ ${personaDesc}
 - 첫 문단 첫 문장에 주 키워드 1회 등장
 - 서브 키워드는 본문에 자연스럽게 (강제 X)
 
-## 📚 지난 25개 글 제목 (참고 — 이것들과 **다른 각도**로 작성)
+## 📚 지난 25개 글 제목 (참고)
 
 ${
   recentTitles.length > 0
@@ -306,10 +322,38 @@ ${
     : "(없음 — 첫 글)"
 }
 
-→ 위 제목을 살펴보고 **가장 자주 등장한 패턴/표현은 이번엔 피하세요**.
-→ 같은 키워드 시리즈라도 후킹 각도는 매번 달라야 합니다 (돈/심사/위험/타겟/숨겨진/질문/비교/수치 8개 중 회전).
-→ 시간 단축 패턴이 이미 많다면 이번엔 다른 후크로, 반대로 다른 패턴이 너무 많다면 시간 단축도 OK.
-→ **다양성**이 핵심. 똑같은 표현 반복 자제.
+${
+  bannedTitleWords.length > 0
+    ? `## 🚫 이번 제목에서 절대 사용 금지인 단어 (지난 25개 글에서 과사용된 것들)
+
+다음 단어들은 지난 글들에서 ${bannedTitleWords.length}회 이상 반복되어 검색 결과에서 우리 글들이 모두 똑같아 보입니다. **이번 제목에는 단 하나도 포함하면 안 됩니다:**
+
+${bannedTitleWords.map((w) => `- ❌ \`${w}\``).join("\n")}
+
+위 단어들 없이 같은 의도를 전달하세요. 동의어/돌려 말하기/완전 다른 후킹 사용.
+
+`
+    : ""
+}${
+    forcedPattern
+      ? `## 🎯 이번 글 강제 후킹 패턴: **#${forcedPattern} - ${HOOK_PATTERNS.find((p) => p.id === forcedPattern)?.name}**
+
+지난 글들 패턴 분포를 분석한 결과, 이번엔 패턴 #${forcedPattern}을 사용해야 합니다.
+힌트: ${HOOK_PATTERNS.find((p) => p.id === forcedPattern)?.hint}
+
+이 패턴 외 다른 패턴은 사용 금지. 아래 8가지 패턴 설명에서 #${forcedPattern}번을 정확히 따르세요.
+
+`
+      : ""
+  }${
+    retryAttempt > 0
+      ? `## ⚠️ 재시도 (${retryAttempt}회차)
+
+이전 시도에서 금지어 또는 클리셰가 포함되어 거절됐습니다. 위 금지어 목록을 다시 확인하고 **완전히 다른 표현**으로 다시 작성하세요.
+
+`
+      : ""
+  }
 
 ## 🎯 제목(title) 규칙 — 클릭 유도 후킹 + SEO 균형
 
@@ -446,6 +490,8 @@ export async function generatePost(opts: {
   persona?: string;
   /** 최근 글 제목 (클리셰 회피용 — Gemini 프롬프트에 주입). */
   recentTitles?: string[];
+  /** 이번 글 강제 후킹 패턴 (1~8). 미지정 시 recentTitles 분석으로 자동 결정. */
+  forcedPattern?: HookPatternId;
 }): Promise<GeneratedPost> {
   const category = opts.category || "일반";
   const subKeywords = opts.subKeywords?.slice(0, 5) || [];
@@ -454,22 +500,64 @@ export async function generatePost(opts: {
     .replace(/[\s\W]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 60);
+  const recentTitles = opts.recentTitles ?? [];
 
-  const prompt = buildPrompt({
-    keyword: opts.keyword,
-    category,
-    subKeywords,
-    persona,
-    utmCampaign,
-    recentTitles: opts.recentTitles,
-  });
+  // 과사용 단어 분석 → 이번 제목에서 금지
+  const overused = analyzeOverusedWords(recentTitles, opts.keyword, 3, 8);
+  const bannedTitleWords = overused.map((o) => o.word);
 
-  const result = await generateJSON<GeneratedPost>(prompt, {
-    generationConfig: {
-      temperature: 0.85,
-      maxOutputTokens: 16384,
-    },
-  });
+  // 패턴 결정 — 명시 안 했으면 가장 안 쓴 패턴 자동 선택
+  const forcedPattern =
+    opts.forcedPattern ??
+    (recentTitles.length > 0 ? pickLeastUsedPattern(recentTitles) : undefined);
+
+  // 최대 2회 시도 — 금지어 포함되면 1회 재시도
+  let result: GeneratedPost | undefined;
+  let attempt = 0;
+  const maxAttempts = 2;
+
+  while (attempt < maxAttempts) {
+    const prompt = buildPrompt({
+      keyword: opts.keyword,
+      category,
+      subKeywords,
+      persona,
+      utmCampaign,
+      recentTitles,
+      forcedPattern,
+      bannedTitleWords,
+      retryAttempt: attempt,
+    });
+
+    const r = await generateJSON<GeneratedPost>(prompt, {
+      generationConfig: {
+        temperature: 0.85,
+        maxOutputTokens: 16384,
+      },
+    });
+
+    const cleanTitle = stripBrandSuffix(r.title?.trim() || "");
+    const hit = containsBannedWords(cleanTitle, bannedTitleWords);
+
+    if (!hit) {
+      result = r;
+      break;
+    }
+
+    console.log(
+      `[generate] 재시도 — 제목에 금지어 "${hit}" 포함: ${cleanTitle.slice(0, 60)}`,
+    );
+    attempt++;
+    if (attempt >= maxAttempts) {
+      // 최대 시도 후에도 실패하면 그대로 채택 (블로킹 X)
+      result = r;
+      break;
+    }
+  }
+
+  if (!result) {
+    throw new Error("제목 생성 실패 (재시도 후에도 결과 없음)");
+  }
 
   // 티스토리 sanitizer 안전 후처리 — summary 안 div를 span으로, 마커 제거, open 첫개만
   const safeHtml = sanitizeForTistory(result.content_html || "");
@@ -543,6 +631,10 @@ export async function generatePosts(
   // 이번 배치에서 이미 생성된 제목을 누적 → 다음 글에 전달 (배치 내 자기복제 방지)
   const sessionTitles: string[] = [];
 
+  // 패턴 round-robin 시작점을 매번 다르게 (시드처럼)
+  // — 같은 시점에 여러 배치 돌아도 골고루 분포되도록 시간 기반 오프셋
+  const patternOffset = (new Date().getUTCHours() + new Date().getUTCDate()) % 8;
+
   for (let i = 0; i < inputs.length; i++) {
     const it = inputs[i];
     options.onProgress?.(i + 1, inputs.length, it.keyword);
@@ -552,7 +644,10 @@ export async function generatePosts(
         ...(options.recentTitles ?? []), // 시트 과거분
       ].slice(0, 30);
 
-      const post = await generatePost({ ...it, recentTitles });
+      // round-robin 패턴 할당 (1~8)
+      const forcedPattern = (((i + patternOffset) % 8) + 1) as HookPatternId;
+
+      const post = await generatePost({ ...it, recentTitles, forcedPattern });
       sessionTitles.unshift(post.title); // 최신부터 prepend
       results.push({ ok: true, keyword: it.keyword, post });
     } catch (err) {
