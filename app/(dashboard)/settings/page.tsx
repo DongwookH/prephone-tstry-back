@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { Topbar } from "@/components/topbar";
 import { auth } from "@/auth";
 import { geminiKeyStatus } from "@/lib/gemini";
@@ -5,8 +6,10 @@ import {
   getGeminiKeysFromSheet,
   getGeminiUsage,
 } from "@/lib/sheets";
+import { getThreadsToken } from "@/lib/threads";
 import { GeminiKeyManager, type GeminiKeyItem } from "@/components/gemini-key-manager";
 import { UsageChart } from "@/components/usage-chart";
+import { ThreadsCard, type ThreadsCardData } from "@/components/threads-card";
 import {
   Settings2,
   Shield,
@@ -18,6 +21,7 @@ import {
   Users,
   KeyRound,
   Database,
+  AtSign,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -29,11 +33,34 @@ function maskKeyPartial(key: string): string {
 
 export default async function SettingsPage() {
   const session = await auth();
-  const [keyStatus, sheetKeys, usage] = await Promise.all([
+  const [keyStatus, sheetKeys, usage, threadsToken] = await Promise.all([
     geminiKeyStatus(),
     getGeminiKeysFromSheet(),
     getGeminiUsage(14),
+    getThreadsToken().catch(() => null),
   ]);
+
+  // Threads 카드 데이터 준비
+  const threadsEnvReady = Boolean(
+    process.env.THREADS_APP_ID &&
+      process.env.THREADS_APP_SECRET &&
+      process.env.THREADS_REDIRECT_URI,
+  );
+  const threadsData: ThreadsCardData = threadsToken
+    ? {
+        connected: true,
+        userId: threadsToken.user_id,
+        expiresAt: threadsToken.expires_at,
+        refreshedAt: threadsToken.refreshed_at,
+        daysLeft: Math.max(
+          0,
+          Math.floor(
+            (new Date(threadsToken.expires_at).getTime() - Date.now()) /
+              86_400_000,
+          ),
+        ),
+      }
+    : { connected: false, envReady: threadsEnvReady };
 
   // 시트 키들을 상세 표시 + env 키들도 마스킹해서 표시
   const sheetKeyItems: GeminiKeyItem[] = sheetKeys.map((k) => ({
@@ -120,6 +147,7 @@ export default async function SettingsPage() {
             <NavItem href="#account" Icon={Users} label="내 계정" />
             <NavItem href="#gemini" Icon={KeyRound} label="Gemini API" />
             <NavItem href="#usage" Icon={LineChart} label="API 사용량" />
+            <NavItem href="#threads" Icon={AtSign} label="Threads 연동" />
             <NavItem href="#integrations" Icon={Shield} label="연동 상태" />
             <NavItem href="#schedule" Icon={Clock} label="자동 생성" />
           </nav>
@@ -261,6 +289,21 @@ export default async function SettingsPage() {
             </div>
           </Card>
 
+          {/* ─── Threads 연동 ─── */}
+          <Card
+            id="threads"
+            title="Threads 연동"
+            desc="Meta Threads 자동 포스팅 — 글 발행 후 Threads에 자동 공유"
+          >
+            <Suspense
+              fallback={
+                <div className="h-32 rounded-xl bg-ink-50 animate-pulse" />
+              }
+            >
+              <ThreadsCard data={threadsData} />
+            </Suspense>
+          </Card>
+
           {/* ─── 연동 상태 ─── */}
           <Card
             id="integrations"
@@ -295,6 +338,26 @@ export default async function SettingsPage() {
                   gaConnected ? "https://analytics.google.com" : "/analytics"
                 }
                 actionLabel={gaConnected ? "GA 열기" : "분석 페이지"}
+              />
+              <IntegrationRow
+                Icon={AtSign}
+                name="Threads"
+                status={
+                  threadsData.connected
+                    ? "connected"
+                    : threadsData.envReady
+                      ? "pending"
+                      : "missing"
+                }
+                detail={
+                  threadsData.connected
+                    ? `User ${threadsData.userId} · D-${threadsData.daysLeft}`
+                    : threadsData.envReady
+                      ? "env OK · 연결 필요"
+                      : "env 미설정"
+                }
+                actionHref="#threads"
+                actionLabel="설정으로"
               />
               <IntegrationRow
                 Icon={Shield}

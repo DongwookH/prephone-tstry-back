@@ -7,6 +7,11 @@ import {
   disableGeminiKey,
 } from "@/lib/sheets";
 import { invalidateGeminiKeyCache } from "@/lib/gemini";
+import {
+  getThreadsToken,
+  disableThreadsToken,
+  postToThreads,
+} from "@/lib/threads";
 
 async function requireAuth(): Promise<{ ok: boolean; error?: string }> {
   const session = await auth();
@@ -55,6 +60,54 @@ export async function disableGeminiKeyAction(
     invalidateGeminiKeyCache();
     revalidatePath("/settings");
     return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+// ─── Threads ──────────────────────────────────────
+
+/** Threads 연결 해제 — settings 시트 토큰 enabled=0. */
+export async function disconnectThreadsAction(): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  const a = await requireAuth();
+  if (!a.ok) return { ok: false, error: a.error! };
+
+  try {
+    const tok = await getThreadsToken();
+    if (!tok) return { ok: false, error: "연결된 Threads 계정이 없습니다" };
+    await disableThreadsToken(tok.user_id);
+    revalidatePath("/settings");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/** Threads 테스트 글 발행 — "{기본 텍스트} - {ISO}" 형태. */
+export async function testPostThreadsAction(
+  text?: string,
+): Promise<
+  { ok: true; id: string } | { ok: false; error: string }
+> {
+  const a = await requireAuth();
+  if (!a.ok) return { ok: false, error: a.error! };
+
+  try {
+    const tok = await getThreadsToken();
+    if (!tok) return { ok: false, error: "Threads 연결이 없습니다" };
+
+    const defaultText = `테스트 발행 (${new Date().toLocaleString("ko-KR", {
+      timeZone: "Asia/Seoul",
+    })}) — 앤텔레콤 안심개통 백오피스 연동 확인용`;
+
+    const { id } = await postToThreads({
+      accessToken: tok.access_token,
+      userId: tok.user_id,
+      text: (text?.trim() || defaultText).slice(0, 500),
+    });
+    return { ok: true, id };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }
