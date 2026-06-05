@@ -658,7 +658,7 @@ const SETTINGS_HEADERS = [
 /**
  * settings 시트가 없으면 만들고 헤더 채워둠. 1회 호출로 충분.
  */
-async function ensureSettingsSheet(): Promise<void> {
+export async function ensureSettingsSheet(): Promise<void> {
   const sheets = getClient();
   const id = mainSheetId();
   const meta = await sheets.spreadsheets.get({

@@ -14,6 +14,7 @@ import {
   appendRow,
   mainSheetId,
   updateCell,
+  ensureSettingsSheet,
 } from "./sheets";
 
 const THREADS_API = "https://graph.threads.net/v1.0";
@@ -91,8 +92,8 @@ export async function exchangeForLongLivedToken(
 
 /** settings 시트에 threads_token 저장. 이미 있으면 갱신. */
 export async function saveThreadsToken(token: ThreadsToken): Promise<void> {
-  const sheets = await import("googleapis").then((m) => m.google.sheets);
-  void sheets; // placeholder — 아래서 직접 readSettings/append/update 사용
+  // settings 탭이 없으면 먼저 생성 (없으면 append/read가 "Unable to parse range" 에러)
+  await ensureSettingsSheet();
 
   const all = await readSettings();
   const existing = all.findIndex((r) => r.type === "threads_token");
@@ -147,6 +148,7 @@ export async function getThreadsToken(): Promise<ThreadsToken | null> {
 /** Threads 사용자가 권한 취소 시 시트의 토큰 삭제 마킹 (settings row enabled=0). */
 export async function disableThreadsToken(userId: string): Promise<boolean> {
   const { readRange } = await import("./sheets");
+  await ensureSettingsSheet();
   const raw = await readRange(mainSheetId(), "settings!A:H");
   let headerIdx = 0;
   if (raw[0]?.[0]?.startsWith("💡")) headerIdx = 1;
