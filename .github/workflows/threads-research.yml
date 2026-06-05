@@ -1,0 +1,67 @@
+name: Threads Research Drafts
+
+# 매일 전날 인기글을 수집해 초안 생성.
+# GHA cron은 best-effort(~1h45m 지연). UTC 20:00 → KST 05:00 목표 → 실제 ~06:45 KST.
+on:
+  schedule:
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+    inputs:
+      keywords:
+        description: "검색 키워드 (쉼표구분, 비우면 기본값)"
+        required: false
+        default: ""
+
+concurrency:
+  group: threads-research
+  cancel-in-progress: false
+
+jobs:
+  research:
+    name: Scrape + Draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 환경 검증
+        env:
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          THREADS_SESSION_COOKIES: ${{ secrets.THREADS_SESSION_COOKIES }}
+        run: |
+          [ -n "${PRODUCTION_URL}" ] || { echo "::error::PRODUCTION_URL 미설정"; exit 1; }
+          [ -n "${CRON_SECRET}" ] || { echo "::error::CRON_SECRET 미설정"; exit 1; }
+          [ -n "${THREADS_SESSION_COOKIES}" ] || { echo "::warning::THREADS_SESSION_COOKIES 미설정 — 스크레이핑 skip됨"; }
+          echo "✓ 환경 확인"
+
+      - name: Playwright 설치
+        run: |
+          npm install --no-save playwright@1.49.1
+          npx playwright install --with-deps chromium
+
+      - name: 리서치 실행
+        env:
+          THREADS_SESSION_COOKIES: ${{ secrets.THREADS_SESSION_COOKIES }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          INGEST_URL: ${{ secrets.PRODUCTION_URL }}/api/threads/research/ingest
+          RESEARCH_KEYWORDS: ${{ github.event.inputs.keywords }}
+          OUR_USERNAME: safe_ntel
+        run: node scripts/threads-research.mjs
+
+      - name: 요약
+        if: always()
+        run: |
+          {
+            echo "## 🔎 Threads Research"
+            echo ""
+            echo "**실행:** $(date -u '+%Y-%m-%d %H:%M:%S UTC') · 트리거 \`${{ github.event_name }}\`"
+            echo ""
+            echo "👉 검토: https://prephone-tstry-back.vercel.app/threads"
+          } >> "$GITHUB_STEP_SUMMARY"

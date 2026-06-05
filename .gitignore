@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Threads 세션 (절대 커밋 금지)
+scripts/threads-session.json
