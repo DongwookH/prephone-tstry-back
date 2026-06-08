@@ -4,6 +4,8 @@ import { sanitizeForTistory } from "./sanitize-html";
 import {
   HOOK_PATTERNS,
   PATTERN_COUNT,
+  MONEY_ALLOWED_PATTERNS,
+  isMoneyHookTitle,
   type HookPatternId,
   analyzeOverusedWords,
   pickLeastUsedPattern,
@@ -342,7 +344,13 @@ ${bannedTitleWords.map((w) => `- ❌ \`${w}\``).join("\n")}
 지난 글들 패턴 분포를 분석한 결과, 이번엔 패턴 #${forcedPattern}을 사용해야 합니다.
 힌트: ${HOOK_PATTERNS.find((p) => p.id === forcedPattern)?.hint}
 
-이 패턴 외 다른 패턴은 사용 금지. 아래 8가지 패턴 설명에서 #${forcedPattern}번을 정확히 따르세요.
+이 패턴 외 다른 패턴은 사용 금지. 아래 20가지 패턴 설명에서 #${forcedPattern}번을 정확히 따르세요.
+
+${
+  MONEY_ALLOWED_PATTERNS.includes(forcedPattern)
+    ? `🚨 **돈/금액 후크 과사용 경고:** 최근 글의 절반 이상이 "월 통신비 8만→1만, 144만원" 같은 똑같은 금액 템플릿입니다. 이 패턴(#${forcedPattern})은 금액을 써도 되지만 **"144만원", "8만→1만", "무제한"이라는 표현·숫자는 절대 재사용 금지.** 완전히 다른 금액 표현/각도(예: 일 단위 비용, 커피 한 잔 값, 연간 환산, 특정 요금제 단가)로 신선하게.`
+    : `🚨 **이번 패턴은 돈/금액 후크 금지:** 제목에 "통신비", "X만원", "X만→Y만", "144만원", "무제한", "절약", "아끼는", "얼마" 등 **금액·요금 절약 관련 표현을 절대 넣지 마세요.** 최근 글의 절반이 돈 얘기라 식상합니다. 이번엔 오직 #${forcedPattern} 각도(${HOOK_PATTERNS.find((p) => p.id === forcedPattern)?.name})로만, 돈과 무관한 후킹으로 작성하세요.`
+}
 
 `
       : ""
@@ -378,9 +386,9 @@ ${bannedTitleWords.map((w) => `- ❌ \`${w}\``).join("\n")}
 
 ✅ **후킹 패턴 20가지 — 강제 할당된 패턴 #번호를 정확히 따를 것:**
 
-1. **돈/절약** — 통신비 절약 액수 강조
-   예) \`월 통신비 5만→1만, 3년 안 갈아탔으면 144만원 손해\`
-   예) \`알뜰폰 잘못 고르면 연 24만원 더, 진짜 싼 요금제 고르는 법\`
+1. **돈/절약** — 요금 절약 (※ "144만원", "8만→1만", "무제한" 표현은 식상하니 매번 다른 금액·각도로)
+   예) \`커피 두 잔 값이면 한 달 데이터 다 쓰는 요금제\`
+   예) \`알뜰폰 잘못 고르면 연 24만원 더 내는 함정\`
 
 2. **신용/심사** — 거절 경험자 타겟
    예) \`신용불량이라 통신사 다 거절? KT망 선불폰은 왜 그냥 통과될까\`
@@ -441,10 +449,10 @@ ${bannedTitleWords.map((w) => `- ❌ \`${w}\``).join("\n")}
 
 16. **자격/조건 진단** — 당신도 해당, 진단 N가지
     예) \`이 조건 하나라도 해당하면 알뜰폰이 답 — 진단 체크리스트\`
-    예) \`당신이 통신비 호구인지 판별하는 5가지 질문\`
+    예) \`외국인·미성년·신용불량 — 내가 개통 되는 케이스인지 3초 진단\`
 
-17. **Before-After** — N만→N만, N개월 후기, 바꾼 후 효과
-    예) \`월 통신비 8만→1만, 알뜰폰 6개월 사용 후 만족도 정리\`
+17. **Before-After** — 바꾼 후 효과, N개월 후기 (※ "8만→1만", "144만원" 표현은 식상)
+    예) \`매장만 다니던 내가 비대면으로 바꾼 뒤 생긴 변화\`
     예) \`갈아탄 뒤 한 달, 변한 것과 변하지 않은 것\`
 
 18. **FOMO/마감** — 단종, 마지노선, 곧 종료
@@ -455,9 +463,9 @@ ${bannedTitleWords.map((w) => `- ❌ \`${w}\``).join("\n")}
     예) \`통신사 매장 가지 마세요 — 비대면이 진짜 답인 이유\`
     예) \`알뜰폰 가입 전 절대 클릭하지 마세요, 이 사이트만큼은\`
 
-20. **극단/충격 단정** — 호구입니다, 폭리, 충격 가격
-    예) \`월 통신비 8만원 내면 호구입니다 — 진짜 적정가\`
-    예) \`알고 보면 충격, 같은 KT망인데 가격 차이가 이만큼\`
+20. **극단/충격 단정** — 호구입니다, 폭리, 충격, 진실
+    예) \`아직도 매장에서 개통? 호구 잡히는 줄도 모르는 사람들\`
+    예) \`알고 보면 충격, 같은 KT망인데 이렇게까지 다릅니다\`
 
 ✅ **길이 25-45자** (검색결과에 잘리지 않음, 모바일에서도 한눈에)
 ✅ **주 키워드는 제목 시작 부분**에 배치 (SEO)
@@ -557,10 +565,20 @@ export async function generatePost(opts: {
     opts.forcedPattern ??
     (recentTitles.length > 0 ? pickLeastUsedPattern(recentTitles) : undefined);
 
-  // 최대 2회 시도 — 금지어 포함되면 1회 재시도
+  // 이번 패턴이 돈/금액 후크 허용 패턴인지
+  const moneyAllowed =
+    forcedPattern == null || MONEY_ALLOWED_PATTERNS.includes(forcedPattern);
+
+  // 돈-허용 패턴이면 금지어에서 '돈 관련 단어'는 빼준다
+  // (안 그러면 #1/#13/#17이 정당한 금액 후크를 못 써서 무한 재시도)
+  const effectiveBanned = moneyAllowed
+    ? bannedTitleWords.filter((w) => !isMoneyHookTitle(w))
+    : bannedTitleWords;
+
+  // 최대 3회 시도 — 금지어/금액후크 위반 시 재시도
   let result: GeneratedPost | undefined;
   let attempt = 0;
-  const maxAttempts = 2;
+  const maxAttempts = 3;
 
   while (attempt < maxAttempts) {
     const prompt = buildPrompt({
@@ -571,7 +589,7 @@ export async function generatePost(opts: {
       utmCampaign,
       recentTitles,
       forcedPattern,
-      bannedTitleWords,
+      bannedTitleWords: effectiveBanned,
       retryAttempt: attempt,
     });
 
@@ -583,15 +601,18 @@ export async function generatePost(opts: {
     });
 
     const cleanTitle = stripBrandSuffix(r.title?.trim() || "");
-    const hit = containsBannedWords(cleanTitle, bannedTitleWords);
+    const bannedHit = containsBannedWords(cleanTitle, effectiveBanned);
+    // 돈 안 되는 패턴인데 금액 후크 썼으면 위반
+    const moneyViolation = !moneyAllowed && isMoneyHookTitle(cleanTitle);
+    const violation = bannedHit || (moneyViolation ? "금액/통신비 후크" : null);
 
-    if (!hit) {
+    if (!violation) {
       result = r;
       break;
     }
 
     console.log(
-      `[generate] 재시도 — 제목에 금지어 "${hit}" 포함: ${cleanTitle.slice(0, 60)}`,
+      `[generate] 재시도(${attempt + 1}/${maxAttempts}) — 위반 "${violation}": ${cleanTitle.slice(0, 60)}`,
     );
     attempt++;
     if (attempt >= maxAttempts) {

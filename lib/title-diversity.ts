@@ -39,6 +39,25 @@ export type HookPatternId = (typeof HOOK_PATTERNS)[number]["id"];
 export const PATTERN_COUNT = HOOK_PATTERNS.length; // 20
 
 /**
+ * 돈/금액(통신비 절약) 후크를 허용하는 패턴.
+ * 1(돈/절약)·13(무료/혜택)·17(Before-After)에서만 금액 후크 OK.
+ * 나머지 17개 패턴에선 통신비/금액 절약 언급 금지 (과사용 방지).
+ */
+export const MONEY_ALLOWED_PATTERNS: HookPatternId[] = [1, 13, 17];
+
+/**
+ * 제목이 '통신비/금액 절약' 후크인지 감지.
+ * (월 통신비, X만→Y만, 144만원, 무제한, 절약/아끼는 등)
+ * 무료/0원/공짜(=혜택 후크)는 별개라 제외.
+ */
+const MONEY_SIGNAL_RE =
+  /통신비|만\s*원|만\s*→|→\s*\d|[0-9]\s*만\b|무제한|아끼|절약|얼마|할인|반값/;
+
+export function isMoneyHookTitle(title: string): boolean {
+  return MONEY_SIGNAL_RE.test(title);
+}
+
+/**
  * 니치 필수 단어 — 과사용 분석에서 제외 (어쩔 수 없이 반복됨).
  * 추가로 현재 키워드도 동적 추가.
  */
