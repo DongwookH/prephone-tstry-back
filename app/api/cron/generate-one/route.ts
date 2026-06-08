@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { appendPosts, bumpKeywordsUsage, getRecentPostTitles } from "@/lib/sheets";
 import { generatePost } from "@/lib/post-generator";
+import { PATTERN_COUNT, type HookPatternId } from "@/lib/title-diversity";
 
 export const maxDuration = 60;
 
@@ -36,6 +37,7 @@ export async function POST(req: Request) {
     subKeywords?: string[];
     persona?: string;
     slot?: number;
+    forcedPattern?: number; // plan이 슬롯별로 배정한 후킹 패턴 (1~20)
   };
 
   if (!body.keyword) {
@@ -50,12 +52,22 @@ export async function POST(req: Request) {
     // 최근 25개 제목 — Gemini가 클리셰 패턴 회피하도록 프롬프트에 주입
     const recentTitles = await getRecentPostTitles(25).catch(() => []);
 
+    // plan이 배정한 슬롯별 distinct 패턴 사용 (하루 안 패턴 중복 방지).
+    // 없으면(수동 호출 등) generatePost가 자동으로 least-used 패턴 선택.
+    const fp =
+      typeof body.forcedPattern === "number" &&
+      body.forcedPattern >= 1 &&
+      body.forcedPattern <= PATTERN_COUNT
+        ? (body.forcedPattern as HookPatternId)
+        : undefined;
+
     const post = await generatePost({
       keyword: body.keyword,
       category: body.category || "일반",
       subKeywords: body.subKeywords || [],
       persona: body.persona || "일반",
       recentTitles,
+      forcedPattern: fp,
     });
 
     const now = new Date().toISOString();

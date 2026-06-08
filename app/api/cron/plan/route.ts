@@ -7,6 +7,7 @@ import {
   type KeywordRow,
 } from "@/lib/sheets";
 import { discoverKeywords } from "@/lib/keyword-discovery";
+import { PATTERN_COUNT } from "@/lib/title-diversity";
 
 export const maxDuration = 60;
 
@@ -158,6 +159,7 @@ export async function POST(req: Request) {
     subKeywords: string[];
     persona: string;
     slot: number;
+    forcedPattern: number;
   }> = [];
 
   // slot은 plan에 들어가는 순서대로 1부터 부여 — 보강 픽도 빈 슬롯 자동 사용
@@ -169,6 +171,7 @@ export async function POST(req: Request) {
       subKeywords: pickSubKeywords(k.keyword, k.category || "일반"),
       persona: personas[plan.length % personas.length],
       slot: plan.length + 1,
+      forcedPattern: 0, // 아래서 일괄 배정
     });
   });
   track2Picks.forEach((k) => {
@@ -179,7 +182,17 @@ export async function POST(req: Request) {
       subKeywords: pickSubKeywords(k.keyword, k.category),
       persona: personas[plan.length % personas.length],
       slot: plan.length + 1,
+      forcedPattern: 0,
     });
+  });
+
+  // 후킹 패턴을 슬롯별로 distinct 배정 → 하루 안에 같은 패턴 2개 이상 금지.
+  // 날짜 오프셋으로 매일 다른 패턴 세트 사용 (KST 기준 일 단위 회전).
+  // plan 길이 ≤ 10 ≤ PATTERN_COUNT(20) 이므로 모두 서로 다른 패턴 보장.
+  const kstDayIndex = Math.floor((Date.now() + 9 * 3600 * 1000) / 86400000);
+  const dayOffset = kstDayIndex % PATTERN_COUNT;
+  plan.forEach((item, i) => {
+    item.forcedPattern = ((i + dayOffset) % PATTERN_COUNT) + 1;
   });
 
   return NextResponse.json({
