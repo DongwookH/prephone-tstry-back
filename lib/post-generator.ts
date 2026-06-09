@@ -7,6 +7,7 @@ import {
   MONEY_ALLOWED_PATTERNS,
   isMoneyHookTitle,
   titleMatchesKeyword,
+  titleStartsWithKeyword,
   type HookPatternId,
   analyzeOverusedWords,
   pickLeastUsedPattern,
@@ -367,10 +368,14 @@ ${
 
 ## 🎯 제목(title) 규칙 — 클릭 유도 후킹 + SEO 균형
 
-🚨🚨🚨 **제목에 반드시 주 키워드 "${keyword}"가 포함되어야 합니다.** 🚨🚨🚨
-- 제목 안에 **"${keyword}" 그대로** 또는 그 핵심 단어가 들어가야 합니다.
+🚨🚨🚨 **제목은 반드시 주 키워드 "${keyword}"로 시작해야 합니다.** 🚨🚨🚨
+- 제목 **맨 앞**(첫 단어)이 "${keyword}" 그대로 또는 공백 풀이형이어야 합니다.
 - 키워드가 복합어(예: "알뜰폰선불폰무약정장점")면 띄어서 풀어 써도 OK ("알뜰폰 선불폰 무약정 장점")
-- **검증:** 제목을 다 쓴 뒤 "${keyword}"의 핵심 단어가 들어 있는지 직접 확인하세요. 없으면 다시 쓰세요.
+- ✅ 예) 키워드 "편의점선불유심" → 제목 "편의점선불유심 이렇게 개통하면 5분이면 끝나요"
+- ✅ 예) 키워드 "춘천선불폰" → 제목 "춘천 선불폰, 신용조회 없이 통과되는 방법"
+- ❌ 예) 키워드 "춘천선불폰" → 제목 "신용불량도 OK, 춘천선불폰 통과되는 이유" (앞에 다른 단어)
+- ❌ 예) 키워드 "선불폰" → 제목 "약정 없이 선불폰 사용법" (선불폰이 중간에 있음 — 금지)
+- **검증:** 제목 첫 단어가 "${keyword}"인지 확인. 아니면 다시 쓰세요.
 
 🚨 **제목 ↔ 본문 주제 일치 — 어기면 클릭 사기:**
 - 제목의 주제·소재는 **본문 내용과 일치**해야 합니다.
@@ -626,10 +631,18 @@ export async function generatePost(opts: {
     const moneyViolation = !moneyAllowed && isMoneyHookTitle(cleanTitle);
     // 제목이 키워드와 매칭 안 되면 위반 (클릭 사기 방지)
     const keywordMismatch = !titleMatchesKeyword(cleanTitle, opts.keyword);
+    // 키워드가 제목 맨 앞에 없으면 위반 (SEO + 가독성)
+    const keywordNotFirst =
+      !keywordMismatch && !titleStartsWithKeyword(cleanTitle, opts.keyword);
     const violation =
       bannedHit ||
       (moneyViolation ? "금액/통신비 후크" : null) ||
-      (keywordMismatch ? `제목-키워드 불일치(키워드 "${opts.keyword}" 없음)` : null);
+      (keywordMismatch
+        ? `제목-키워드 불일치(키워드 "${opts.keyword}" 없음)`
+        : null) ||
+      (keywordNotFirst
+        ? `키워드 "${opts.keyword}"가 제목 맨 앞에 없음`
+        : null);
 
     if (!violation) {
       result = r;

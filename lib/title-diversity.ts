@@ -130,6 +130,31 @@ export function extractKeywordTerms(keyword: string): string[] {
 }
 
 /**
+ * 제목이 메인 키워드로 "시작"하는지 검증.
+ *
+ * 규칙: 제목 맨 앞이 키워드(또는 공백 풀이형)로 시작해야 OK.
+ *  - 키워드 "편의점선불유심" → 제목 "편의점선불유심 이렇게…" ✓
+ *  - 키워드 "편의점선불유심" → 제목 "편의점 선불 유심 이렇게…" ✓ (공백 풀이)
+ *  - 키워드 "춘천선불폰" → 제목 "춘천 선불폰, …" ✓ (공백 정규화 후 비교)
+ *  - 키워드 "선불폰" → 제목 "약정 없이 선불폰 사용법" ✗ (앞에 다른 단어)
+ *
+ * SEO + 사용자 인지 모두 키워드 prefix가 가장 강력.
+ */
+export function titleStartsWithKeyword(title: string, keyword: string): boolean {
+  const t = (title || "").trim();
+  const compact = keyword.replace(/\s+/g, "");
+  if (!t || compact.length < 2) return true;
+
+  // 1) 원형 그대로 시작
+  if (t.startsWith(compact)) return true;
+  // 2) 공백 풀이형 시작 (예: "알뜰폰 선불폰 무약정 장점")
+  const tCompact = t.replace(/[\s,·:/]+/g, "").toLowerCase();
+  const kCompact = compact.toLowerCase();
+  if (tCompact.startsWith(kCompact)) return true;
+  return false;
+}
+
+/**
  * 제목이 키워드와 매칭되는지 검증.
  *
  * 규칙:
