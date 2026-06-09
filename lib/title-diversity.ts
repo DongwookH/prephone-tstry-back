@@ -39,11 +39,22 @@ export type HookPatternId = (typeof HOOK_PATTERNS)[number]["id"];
 export const PATTERN_COUNT = HOOK_PATTERNS.length; // 20
 
 /**
- * 돈/금액(통신비 절약) 후크를 허용하는 패턴.
- * 1(돈/절약)·13(무료/혜택)·17(Before-After)에서만 금액 후크 OK.
- * 나머지 17개 패턴에선 통신비/금액 절약 언급 금지 (과사용 방지).
+ * 사용 금지 패턴 — 너무 자극적/클릭베이트라 제외 (사용자 요청).
+ *  1(돈/절약), 3(위험/위약금), 18(FOMO/마감), 20(극단/충격)
  */
-export const MONEY_ALLOWED_PATTERNS: HookPatternId[] = [1, 13, 17];
+export const EXCLUDED_PATTERNS: HookPatternId[] = [1, 3, 18, 20];
+
+/** 실제로 사용할 패턴 id 목록 (제외 패턴 뺀 것). */
+export const ACTIVE_PATTERN_IDS: HookPatternId[] = HOOK_PATTERNS.map(
+  (p) => p.id,
+).filter((id) => !EXCLUDED_PATTERNS.includes(id));
+
+/**
+ * 돈/금액(통신비 절약) 후크를 허용하는 패턴.
+ * 13(무료/혜택)·17(Before-After)에서만 금액 후크 OK.
+ * (#1 돈/절약은 EXCLUDED라 제거됨)
+ */
+export const MONEY_ALLOWED_PATTERNS: HookPatternId[] = [13, 17];
 
 /**
  * 제목이 '통신비/금액 절약' 후크인지 감지.
@@ -55,6 +66,97 @@ const MONEY_SIGNAL_RE =
 
 export function isMoneyHookTitle(title: string): boolean {
   return MONEY_SIGNAL_RE.test(title);
+}
+
+/**
+ * 키워드 핵심 용어 사전 — 제목-키워드 매칭 검증용.
+ * 복합 키워드(예: "알뜰폰선불폰무약정장점")에서 핵심어를 뽑아낸다.
+ */
+const KEYWORD_TERMS = [
+  "선불폰",
+  "알뜰폰",
+  "유심",
+  "eSIM",
+  "이심",
+  "esim",
+  "바로유심",
+  "원칩",
+  "무약정",
+  "약정",
+  "번호이동",
+  "개통",
+  "충전",
+  "요금제",
+  "로밍",
+  "데이터",
+  "공기계",
+  "법인",
+  "서브폰",
+  "세컨폰",
+  "투폰",
+  "미성년",
+  "외국인",
+  "신불자",
+  "신용",
+  "본인인증",
+  "셀프개통",
+  "비대면",
+  "KT",
+  "케이티",
+  "LG",
+  "엘지",
+  "SKT",
+  "유플러스",
+  "앤텔레콤",
+  "K망",
+  "L망",
+  "테더링",
+];
+
+/** 키워드에서 제목에 들어가야 할 핵심 용어들을 추출. */
+export function extractKeywordTerms(keyword: string): string[] {
+  const terms = new Set<string>();
+  const compact = keyword.replace(/\s+/g, "");
+  if (compact.length >= 2) terms.add(compact);
+  // 공백 분리 토큰
+  for (const t of keyword.split(/\s+/)) {
+    if (t.length >= 2) terms.add(t);
+  }
+  // 사전 스캔 (복합어 내부 핵심어)
+  for (const term of KEYWORD_TERMS) {
+    if (keyword.includes(term)) terms.add(term);
+  }
+  return [...terms];
+}
+
+/**
+ * 제목이 키워드와 매칭되는지 검증.
+ *
+ * 규칙:
+ *  1) 키워드 원형(또는 공백 풀이형)이 제목에 들어 있으면 OK.
+ *  2) 그게 아니면, 키워드의 **고유한 단어**(니치 일반어 제외) 중 하나라도 들어 있어야 OK.
+ *     - "선불폰" 같은 niche 일반어는 너무 흔해서 매칭 신호로 부족
+ *     - "무약정", "장점", "충전방법" 같은 고유 단어가 들어가야 진짜 매칭
+ */
+export function titleMatchesKeyword(title: string, keyword: string): boolean {
+  const compact = keyword.replace(/\s+/g, "");
+  if (compact.length < 2) return true;
+
+  // 1차: 키워드 원형 또는 공백 풀이형 매칭
+  if (title.includes(compact)) return true;
+  const spaced = keyword.trim();
+  if (spaced !== compact && title.includes(spaced)) return true;
+
+  // 2차: 키워드의 고유 단어 검사 (niche 일반어 제외)
+  const terms = extractKeywordTerms(keyword);
+  const uniqueTerms = terms.filter(
+    (t) => !NICHE_ALLOWLIST.has(t) && t !== compact && t !== spaced,
+  );
+  if (uniqueTerms.length === 0) {
+    // 키워드가 niche 일반어로만 구성된 경우 → 그 niche 단어 중 하나라도 있으면 OK
+    return terms.some((t) => title.includes(t));
+  }
+  return uniqueTerms.some((t) => title.includes(t));
 }
 
 /**
@@ -171,17 +273,17 @@ export function detectPatternInTitle(title: string): HookPatternId | null {
  */
 export function pickLeastUsedPattern(recentTitles: string[]): HookPatternId {
   const counts: Record<number, number> = {};
-  for (const p of HOOK_PATTERNS) counts[p.id] = 0;
+  for (const id of ACTIVE_PATTERN_IDS) counts[id] = 0;
   for (const t of recentTitles) {
     const p = detectPatternInTitle(t);
-    if (p !== null) counts[p]++;
+    if (p !== null && ACTIVE_PATTERN_IDS.includes(p)) counts[p]++;
   }
   let minCount = Infinity;
-  let minId: HookPatternId = 1;
-  for (const p of HOOK_PATTERNS) {
-    if (counts[p.id] < minCount) {
-      minCount = counts[p.id];
-      minId = p.id;
+  let minId: HookPatternId = ACTIVE_PATTERN_IDS[0];
+  for (const id of ACTIVE_PATTERN_IDS) {
+    if (counts[id] < minCount) {
+      minCount = counts[id];
+      minId = id;
     }
   }
   return minId;

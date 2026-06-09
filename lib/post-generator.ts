@@ -6,6 +6,7 @@ import {
   PATTERN_COUNT,
   MONEY_ALLOWED_PATTERNS,
   isMoneyHookTitle,
+  titleMatchesKeyword,
   type HookPatternId,
   analyzeOverusedWords,
   pickLeastUsedPattern,
@@ -366,14 +367,20 @@ ${
 
 ## 🎯 제목(title) 규칙 — 클릭 유도 후킹 + SEO 균형
 
-🚨🚨 **제목 ↔ 본문 일치 (가장 중요) — 어기면 클릭 사기가 됩니다:**
-- 제목의 주제·소재는 **반드시 주 키워드 "${keyword}"와 본문 내용**과 일치해야 합니다.
-- 제목에서 약속한 것(예: "미성년자도 OK")을 본문이 실제로 다루지 않으면 절대 안 됩니다.
-- ❌ 나쁜 예: 키워드가 "N텔레콤요금제"인데 제목은 "미성년자·외국인도 OK? 3초 진단" (본문은 요금제 얘기 → 불일치)
-- ✅ 좋은 예: 키워드가 "N텔레콤요금제"면 제목도 "N텔레콤요금제, 나에게 맞는지 3초 진단" (제목·본문 같은 주제)
-- 본문 첫 H2/히어로 제목과 글 제목이 **같은 주제**를 가리켜야 합니다.
+🚨🚨🚨 **제목에 반드시 주 키워드 "${keyword}"가 포함되어야 합니다.** 🚨🚨🚨
+- 제목 안에 **"${keyword}" 그대로** 또는 그 핵심 단어가 들어가야 합니다.
+- 키워드가 복합어(예: "알뜰폰선불폰무약정장점")면 띄어서 풀어 써도 OK ("알뜰폰 선불폰 무약정 장점")
+- **검증:** 제목을 다 쓴 뒤 "${keyword}"의 핵심 단어가 들어 있는지 직접 확인하세요. 없으면 다시 쓰세요.
 
-🚨 **아래 패턴 예시는 "문체/구조" 참고용일 뿐 — 예시의 단어·소재(미성년자/외국인/직원 등)를 그대로 복사하지 마세요.** 반드시 이번 주 키워드("${keyword}")에 맞는 소재로 바꿔 쓰세요.
+🚨 **제목 ↔ 본문 주제 일치 — 어기면 클릭 사기:**
+- 제목의 주제·소재는 **본문 내용과 일치**해야 합니다.
+- 제목에서 약속한 것(예: "미성년자도 OK")을 본문이 실제로 다루지 않으면 절대 안 됩니다.
+- ❌ 나쁜 예: 키워드 "N텔레콤요금제" → 제목 "미성년자·외국인 OK? 3초 진단" (키워드 없음 + 본문은 요금제 얘기)
+- ❌ 나쁜 예: 키워드 "알뜰폰선불폰무약정장점" → 제목 "신용불량자도 거절 없이? KT망은 왜 그냥 통과될까" (키워드 없음 + 다른 주제)
+- ✅ 좋은 예: 키워드 "N텔레콤요금제" → "N텔레콤요금제, 나에게 맞는지 3초 진단"
+- ✅ 좋은 예: 키워드 "알뜰폰선불폰무약정장점" → "알뜰폰 선불폰 무약정 장점 4가지, 가입 전 꼭 확인할 것"
+
+🚨 **아래 패턴 예시는 "문체/구조" 참고용일 뿐 — 예시의 단어·소재(미성년자/외국인/직원/신용불량 등)를 그대로 복사하지 마세요.** 반드시 이번 주 키워드("${keyword}")에 맞는 소재로 바꿔 쓰세요.
 
 ⚠️ **브랜드 접미사 절대 금지:**
 - ❌ \`| 앤텔레콤 안심개통\` \`- 앤텔레콤 안심개통\` \`· 앤텔레콤 안심개통\` 같은 brand suffix
@@ -617,7 +624,12 @@ export async function generatePost(opts: {
     const bannedHit = containsBannedWords(cleanTitle, effectiveBanned);
     // 돈 안 되는 패턴인데 금액 후크 썼으면 위반
     const moneyViolation = !moneyAllowed && isMoneyHookTitle(cleanTitle);
-    const violation = bannedHit || (moneyViolation ? "금액/통신비 후크" : null);
+    // 제목이 키워드와 매칭 안 되면 위반 (클릭 사기 방지)
+    const keywordMismatch = !titleMatchesKeyword(cleanTitle, opts.keyword);
+    const violation =
+      bannedHit ||
+      (moneyViolation ? "금액/통신비 후크" : null) ||
+      (keywordMismatch ? `제목-키워드 불일치(키워드 "${opts.keyword}" 없음)` : null);
 
     if (!violation) {
       result = r;

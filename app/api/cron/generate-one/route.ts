@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { appendPosts, bumpKeywordsUsage, getRecentPostTitles } from "@/lib/sheets";
 import { generatePost } from "@/lib/post-generator";
-import { PATTERN_COUNT, type HookPatternId } from "@/lib/title-diversity";
+import { ACTIVE_PATTERN_IDS, type HookPatternId } from "@/lib/title-diversity";
 
 export const maxDuration = 60;
 
@@ -56,8 +56,7 @@ export async function POST(req: Request) {
     // 없으면(수동 호출 등) generatePost가 자동으로 least-used 패턴 선택.
     const fp =
       typeof body.forcedPattern === "number" &&
-      body.forcedPattern >= 1 &&
-      body.forcedPattern <= PATTERN_COUNT
+      ACTIVE_PATTERN_IDS.includes(body.forcedPattern as HookPatternId)
         ? (body.forcedPattern as HookPatternId)
         : undefined;
 
