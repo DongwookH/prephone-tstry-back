@@ -39,10 +39,11 @@ export type HookPatternId = (typeof HOOK_PATTERNS)[number]["id"];
 export const PATTERN_COUNT = HOOK_PATTERNS.length; // 20
 
 /**
- * 사용 금지 패턴 — 너무 자극적/클릭베이트라 제외 (사용자 요청).
- *  1(돈/절약), 3(위험/위약금), 18(FOMO/마감), 20(극단/충격)
+ * 사용 금지 패턴 — 자극적/광고성/클릭베이트라 제외 (사용자 요청).
+ *  1(돈/절약), 3(위험/위약금), 12(시간/타이밍), 13(무료/혜택),
+ *  17(Before-After), 18(FOMO/마감), 20(극단/충격)
  */
-export const EXCLUDED_PATTERNS: HookPatternId[] = [1, 3, 18, 20];
+export const EXCLUDED_PATTERNS: HookPatternId[] = [1, 3, 12, 13, 17, 18, 20];
 
 /** 실제로 사용할 패턴 id 목록 (제외 패턴 뺀 것). */
 export const ACTIVE_PATTERN_IDS: HookPatternId[] = HOOK_PATTERNS.map(
@@ -50,11 +51,11 @@ export const ACTIVE_PATTERN_IDS: HookPatternId[] = HOOK_PATTERNS.map(
 ).filter((id) => !EXCLUDED_PATTERNS.includes(id));
 
 /**
- * 돈/금액(통신비 절약) 후크를 허용하는 패턴.
- * 13(무료/혜택)·17(Before-After)에서만 금액 후크 OK.
- * (#1 돈/절약은 EXCLUDED라 제거됨)
+ * 돈/금액(통신비 절약) 후크 허용 패턴.
+ * 돈 관련 패턴(#1·#13·#17) 전부 EXCLUDED → 빈 배열.
+ * 즉 모든 활성 패턴에서 돈/금액 후크 금지.
  */
-export const MONEY_ALLOWED_PATTERNS: HookPatternId[] = [13, 17];
+export const MONEY_ALLOWED_PATTERNS: HookPatternId[] = [];
 
 /**
  * 제목이 '통신비/금액 절약' 후크인지 감지.
