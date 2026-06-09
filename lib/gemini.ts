@@ -232,11 +232,62 @@ export async function generateJSON<T = unknown>(
 
   try {
     return JSON.parse(text) as T;
-  } catch (err) {
-    throw new Error(
-      `Gemini JSON 파싱 실패: ${(err as Error).message}\n원본: ${text.slice(0, 200)}…`,
-    );
+  } catch {
+    // Gemini가 문자열 값 안에 raw 제어문자(줄바꿈/탭 등)를 넣어서
+    // "Bad control character in string literal" 파싱 실패가 종종 발생.
+    // → 문자열 리터럴 내부의 제어문자를 escape 처리 후 재시도.
+    try {
+      return JSON.parse(sanitizeJsonControlChars(text)) as T;
+    } catch (err2) {
+      throw new Error(
+        `Gemini JSON 파싱 실패: ${(err2 as Error).message}\n원본: ${text.slice(0, 200)}…`,
+      );
+    }
   }
+}
+
+/**
+ * JSON 문자열에서 "문자열 리터럴 내부"의 raw 제어문자를 escape.
+ * 따옴표 안(in-string)일 때만 \n, \r, \t 등을 변환 — 구조용 공백은 보존.
+ */
+function sanitizeJsonControlChars(s: string): string {
+  let out = "";
+  let inStr = false;
+  let escaped = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    const code = s.charCodeAt(i);
+    if (inStr) {
+      if (escaped) {
+        out += ch;
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        out += ch;
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        out += ch;
+        inStr = false;
+        continue;
+      }
+      // 문자열 내부의 raw 제어문자 → escape
+      if (code < 0x20) {
+        if (ch === "\n") out += "\\n";
+        else if (ch === "\r") out += "\\r";
+        else if (ch === "\t") out += "\\t";
+        else out += " "; // 기타 제어문자는 공백으로
+        continue;
+      }
+      out += ch;
+    } else {
+      out += ch;
+      if (ch === '"') inStr = true;
+    }
+  }
+  return out;
 }
 
 /**

@@ -366,6 +366,15 @@ ${
 
 ## 🎯 제목(title) 규칙 — 클릭 유도 후킹 + SEO 균형
 
+🚨🚨 **제목 ↔ 본문 일치 (가장 중요) — 어기면 클릭 사기가 됩니다:**
+- 제목의 주제·소재는 **반드시 주 키워드 "${keyword}"와 본문 내용**과 일치해야 합니다.
+- 제목에서 약속한 것(예: "미성년자도 OK")을 본문이 실제로 다루지 않으면 절대 안 됩니다.
+- ❌ 나쁜 예: 키워드가 "N텔레콤요금제"인데 제목은 "미성년자·외국인도 OK? 3초 진단" (본문은 요금제 얘기 → 불일치)
+- ✅ 좋은 예: 키워드가 "N텔레콤요금제"면 제목도 "N텔레콤요금제, 나에게 맞는지 3초 진단" (제목·본문 같은 주제)
+- 본문 첫 H2/히어로 제목과 글 제목이 **같은 주제**를 가리켜야 합니다.
+
+🚨 **아래 패턴 예시는 "문체/구조" 참고용일 뿐 — 예시의 단어·소재(미성년자/외국인/직원 등)를 그대로 복사하지 마세요.** 반드시 이번 주 키워드("${keyword}")에 맞는 소재로 바꿔 쓰세요.
+
 ⚠️ **브랜드 접미사 절대 금지:**
 - ❌ \`| 앤텔레콤 안심개통\` \`- 앤텔레콤 안심개통\` \`· 앤텔레콤 안심개통\` 같은 brand suffix
 - ❌ 제목 안에 "앤텔레콤" "안심개통" 직접 노출 X (브랜드 호기심 X → 후킹 약함)
@@ -575,10 +584,14 @@ export async function generatePost(opts: {
     ? bannedTitleWords.filter((w) => !isMoneyHookTitle(w))
     : bannedTitleWords;
 
-  // 최대 3회 시도 — 금지어/금액후크 위반 시 재시도
+  // 최대 2회 시도 — 금지어/금액후크 위반 시 재시도.
+  // ⚠️ Vercel Hobby 60초 한도: 1회 생성이 ~25-50초라 3회는 504 타임아웃 유발.
+  //    → 2회로 제한 + 시간예산 가드(첫 시도가 오래 걸렸으면 재시도 생략).
+  const startedAt = Date.now();
+  const RETRY_TIME_BUDGET_MS = 25_000; // 이 시간 넘게 썼으면 재시도 안 함
   let result: GeneratedPost | undefined;
   let attempt = 0;
-  const maxAttempts = 3;
+  const maxAttempts = 2;
 
   while (attempt < maxAttempts) {
     const prompt = buildPrompt({
@@ -607,6 +620,15 @@ export async function generatePost(opts: {
     const violation = bannedHit || (moneyViolation ? "금액/통신비 후크" : null);
 
     if (!violation) {
+      result = r;
+      break;
+    }
+
+    // 시간 예산 초과 시 재시도 포기 (타임아웃 방지) — 위반이어도 채택
+    if (Date.now() - startedAt > RETRY_TIME_BUDGET_MS) {
+      console.log(
+        `[generate] 시간예산 초과 — 위반 "${violation}" 있지만 채택: ${cleanTitle.slice(0, 60)}`,
+      );
       result = r;
       break;
     }
