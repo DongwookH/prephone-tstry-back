@@ -2,11 +2,8 @@ import { NextResponse } from "next/server";
 import {
   getActiveKeywords,
   pickKeywordsForToday,
-  appendRows,
-  keywordsSheetId,
   type KeywordRow,
 } from "@/lib/sheets";
-import { discoverKeywords } from "@/lib/keyword-discovery";
 import { PATTERN_COUNT } from "@/lib/title-diversity";
 
 export const maxDuration = 60;
@@ -45,73 +42,40 @@ export async function POST(req: Request) {
     );
   }
 
-  // 2. Track 1: 사용자 키워드 5개 픽 (일단 5개)
-  const manualKeywords = allKeywords.filter((k) => k.source !== "auto");
-  let track1Picks = pickKeywordsForToday(
-    manualKeywords.length ? manualKeywords : allKeywords,
-    5,
-  );
-
-  // 3. Track 2: GSG 발굴 5개 (실패 시 errors에 기록하고 진행)
-  let track2Picks: Array<{ keyword: string; category: string }> = [];
-  try {
-    const usedKw = allKeywords.map((k) => k.keyword).filter(Boolean).slice(0, 80);
-    const discovered = await discoverKeywords({
-      count: 5,
-      excludeKeywords: usedKw,
-    });
-    track2Picks = discovered.map((d) => ({
-      keyword: d.keyword,
-      category: "auto",
-    }));
-    // keywords 시트에 자동 발굴 기록
-    if (discovered.length > 0) {
-      const now = new Date().toISOString();
-      const rows = discovered.map((d, i) => [
-        `auto-${Date.now()}-${i}`,
-        d.keyword,
-        "auto",
-        "normal",
-        "main",
-        d.monthlyVolume ?? 0,
-        d.monthlyPcVolume ?? 0,
-        d.monthlyMobileVolume ?? 0,
-        d.competition ?? "-",
-        "0",
-        "",
-        "active",
-        `[${d.intent}] ${d.reason}`.slice(0, 200),
-        "auto",
-        now,
-      ]);
-      await appendRows(keywordsSheetId(), "keywords", rows);
-    }
-  } catch (err) {
-    errors.push(`Track2 발굴 실패: ${(err as Error).message}`);
-  }
-
-  // 3-A. Track2 부족 시 Track1에서 보강 — 항상 plan을 10개로 채우는 게 목표
-  // (manualKeywords 풀에 여유가 있다면)
+  // 2. 사용자 제공 키워드(source !== "auto")만 사용 — 자동 발굴(GSG) 폐기.
+  //    제목 다양성 문제 때문에 발굴 키워드를 더 이상 쓰지 않음.
   const TARGET_TOTAL = 10;
-  const shortfall = TARGET_TOTAL - (track1Picks.length + track2Picks.length);
-  if (shortfall > 0) {
-    // 이미 픽된 키워드 제외하고 추가 픽
-    const alreadyPicked = new Set(track1Picks.map((k) => k.keyword));
-    const remaining = (manualKeywords.length ? manualKeywords : allKeywords).filter(
-      (k) => !alreadyPicked.has(k.keyword),
+  const manualKeywords = allKeywords.filter((k) => k.source !== "auto");
+
+  if (manualKeywords.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "사용 가능한 사용자 키워드가 없습니다 (source !== 'auto', status active). keywords 시트를 확인하세요.",
+      },
+      { status: 500 },
     );
-    const extraPicks = pickKeywordsForToday(remaining, shortfall);
-    if (extraPicks.length > 0) {
-      track1Picks = [...track1Picks, ...extraPicks];
-      console.info(
-        `[plan] Track2 부족(${track2Picks.length}/5) → Track1에서 ${extraPicks.length}개 보강 (총 Track1=${track1Picks.length})`,
-      );
-    } else {
-      errors.push(
-        `Track1 보강 실패 — 사용 가능한 키워드 부족 (필요: ${shortfall}, 남은: ${remaining.length})`,
-      );
-    }
   }
+
+  // 7일 제외 우선 → 부족하면 재사용까지 허용해 최대한 채움
+  let picks = pickKeywordsForToday(manualKeywords, TARGET_TOTAL);
+
+  // 고유 키워드 총량이 10개 미만이면 같은 키워드를 순환 재사용해 10개 보장.
+  if (picks.length < TARGET_TOTAL && picks.length > 0) {
+    const base = picks.length;
+    let i = 0;
+    while (picks.length < TARGET_TOTAL) {
+      picks.push(picks[i % base]);
+      i++;
+    }
+    errors.push(
+      `고유 키워드 ${base}개 < ${TARGET_TOTAL} → 일부 키워드 재사용으로 ${TARGET_TOTAL}개 채움`,
+    );
+  }
+
+  // 모두 Track 1(사용자 키워드)로 취급
+  const track1Picks = picks;
+  const track2Picks: Array<{ keyword: string; category: string }> = [];
 
   // 4. 서브 키워드 자동 매칭
   function pickSubKeywords(mainKeyword: string, mainCategory: string): string[] {

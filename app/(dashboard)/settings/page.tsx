@@ -381,7 +381,7 @@ export default async function SettingsPage() {
             desc="매일 KST 09:00에 GitHub Actions가 자동으로 10편 생성"
           >
             <ReadField label="실행 시간" value="매일 09:00 KST (UTC 00:00)" />
-            <ReadField label="생성 개수" value="10편 (Track 1 사용자 키워드 5 + Track 2 GSG 발굴 5)" />
+            <ReadField label="생성 개수" value="10편 (사용자 키워드에서만 픽 · 7일 내 미사용 우선)" />
             <ReadField
               label="워크플로우"
               value="https://github.com/DongwookH/prephone-tstry-back/actions"
