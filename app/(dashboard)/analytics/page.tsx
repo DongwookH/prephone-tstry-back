@@ -242,49 +242,69 @@ export default async function AnalyticsPage() {
             </span>
           </div>
           <h1 className="text-[28px] font-extrabold text-ink-900 tracking-tight">
-            성과 분석
+            {hasMultiBlog ? "콘텐츠 통계" : "성과 분석"}
           </h1>
           <p className="mt-1 text-[14px] text-ink-600">
-            최근 7일 GA4 데이터 + 시트 발행 추이를 한눈에 확인하세요.
+            {hasMultiBlog
+              ? "발행 글 수·추이·카테고리 분포 (위 GA4 블로그별 카드와 별개)"
+              : "최근 7일 GA4 데이터 + 시트 발행 추이를 한눈에 확인하세요."}
           </p>
         </section>
 
-        {!ga.ok && <GANotConnected state={ga} />}
+        {!hasMultiBlog && !ga.ok && <GANotConnected state={ga} />}
 
-        {/* 실시간 (지난 30분) — GA4 일반 보고서 24h 지연 회피용 */}
-        {ga.ok && ga.realtime && (
+        {/* 실시간 (지난 30분) — multi-blog 섹션에 이미 합산 실시간이 있으면 생략 */}
+        {!hasMultiBlog && ga.ok && ga.realtime && (
           <RealtimeBlock
             overview={ga.realtime}
             topPages={ga.realtimeTopPages ?? []}
           />
         )}
 
-        <section className="grid grid-cols-4 gap-4 mb-6">
-          <KPI label="총 글 수" value={`${totalPosts}`} sub="발행 + 대기 합계" />
-          <KPI
-            label="페이지뷰 (7일)"
-            value={totalPageviews.toLocaleString()}
-            sub={ga.ok ? "GA4 실시간" : "GA4 미연결"}
-          />
-          <KPI
-            label="활성 사용자 (7일)"
-            value={totalUsers.toLocaleString()}
-            sub={ga.ok ? `세션 ${totalSessions.toLocaleString()}` : "GA4 미연결"}
-          />
-          <DarkKPI
-            label="이탈률 / 체류시간"
-            value={
-              bouncePct !== null && avgDur !== null
-                ? `${bouncePct}%`
-                : "—"
-            }
-            sub={
-              avgDur !== null
-                ? `평균 체류 ${formatDuration(avgDur)}`
-                : "GA4 미연결"
-            }
-          />
-        </section>
+        {/* KPI — multi-blog일 땐 GA 의존 카드 숨김(합산은 위에 있음), 총 글 수만 단독 */}
+        {hasMultiBlog ? (
+          <section className="grid grid-cols-4 gap-4 mb-6">
+            <KPI
+              label="총 글 수"
+              value={`${totalPosts}`}
+              sub="발행 + 대기 합계"
+            />
+            <div className="col-span-3 rounded-2xl border border-dashed border-ink-200 p-4 text-[12px] text-ink-500 flex items-center justify-center">
+              GA4 KPI는 위 “전체 합계 — 최근 7일” 섹션을 참고하세요.
+            </div>
+          </section>
+        ) : (
+          <section className="grid grid-cols-4 gap-4 mb-6">
+            <KPI
+              label="총 글 수"
+              value={`${totalPosts}`}
+              sub="발행 + 대기 합계"
+            />
+            <KPI
+              label="페이지뷰 (7일)"
+              value={totalPageviews.toLocaleString()}
+              sub={ga.ok ? "GA4 실시간" : "GA4 미연결"}
+            />
+            <KPI
+              label="활성 사용자 (7일)"
+              value={totalUsers.toLocaleString()}
+              sub={
+                ga.ok ? `세션 ${totalSessions.toLocaleString()}` : "GA4 미연결"
+              }
+            />
+            <DarkKPI
+              label="이탈률 / 체류시간"
+              value={
+                bouncePct !== null && avgDur !== null ? `${bouncePct}%` : "—"
+              }
+              sub={
+                avgDur !== null
+                  ? `평균 체류 ${formatDuration(avgDur)}`
+                  : "GA4 미연결"
+              }
+            />
+          </section>
+        )}
 
         <section className="bg-white rounded-2xl shadow-card p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
@@ -304,7 +324,7 @@ export default async function AnalyticsPage() {
           <BarChart7Day days={days} maxBar={maxBar} />
         </section>
 
-        {ga.ok && ga.daily && ga.daily.length > 0 && (
+        {!hasMultiBlog && ga.ok && ga.daily && ga.daily.length > 0 && (
           <section className="bg-white rounded-2xl shadow-card p-6 mb-6">
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -321,6 +341,7 @@ export default async function AnalyticsPage() {
           </section>
         )}
 
+        {!hasMultiBlog && (
         <section className="grid grid-cols-3 gap-6">
           <div className="col-span-2 bg-white rounded-2xl shadow-card p-6">
             <div className="flex items-center justify-between mb-4">
@@ -463,6 +484,7 @@ export default async function AnalyticsPage() {
             </div>
           </div>
         </section>
+        )}
       </div>
     </>
   );
