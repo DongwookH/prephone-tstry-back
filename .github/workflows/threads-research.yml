@@ -1,10 +1,9 @@
-name: Threads Research Drafts
+name: Threads Research Drafts (Backup)
 
-# 매일 전날 인기글을 수집해 초안 생성.
-# GHA cron은 best-effort(~1h45m 지연). UTC 20:00 → KST 05:00 목표 → 실제 ~06:45 KST.
+# ⚠️ 운영은 내 Mac launchd가 매일 KST 06:00 실행.
+# 이 워크플로우는 Mac이 꺼져 있을 때 대비한 수동 백업용.
+# Azure 데이터센터 IP 때문에 봇 감지 위험이 있어 자주 쓰지 말 것.
 on:
-  schedule:
-    - cron: "0 20 * * *"
   workflow_dispatch:
     inputs:
       keywords:

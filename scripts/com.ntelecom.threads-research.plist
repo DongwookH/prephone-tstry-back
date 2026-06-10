@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Threads 인기글 리서치 — 매일 KST 06:00 자동 실행 (Mac launchd)
+
+  설치:
+    cp scripts/com.ntelecom.threads-research.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.ntelecom.threads-research.plist
+
+  해제:
+    launchctl unload ~/Library/LaunchAgents/com.ntelecom.threads-research.plist
+
+  로그:
+    tail -f /tmp/threads-research.log
+    tail -f /tmp/threads-research.err
+
+  주의:
+    - WorkingDirectory를 본인 환경에 맞게 수정 (기본 /Users/mac/Desktop/tistory-automation/web)
+    - 절전 모드여도 깨우려면 시스템 환경설정 > 배터리/에너지 절약 > "예약된 시간에 깨우기" 설정 권장
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ntelecom.threads-research</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-l</string>
+    <string>-c</string>
+    <string>cd /Users/mac/Desktop/tistory-automation/web &amp;&amp; /opt/homebrew/bin/npm run threads:research</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/mac/Desktop/tistory-automation/web</string>
+
+  <!-- 매일 KST 06:00 실행 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>6</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <!-- 부팅·로그인 직후 시각이 지났으면 한 번 catch-up 실행 -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/threads-research.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/threads-research.err</string>
+
+  <!-- PATH가 launchd 환경에선 비어있어 zsh -l(login shell)로 사용자 PATH 로드 -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>

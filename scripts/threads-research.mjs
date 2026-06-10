@@ -1,14 +1,21 @@
 /**
- * Threads 경쟁 리서치 스크레이퍼 (GitHub Actions 매일 실행).
+ * Threads 경쟁 리서치 스크레이퍼 — 내 Mac에서 launchd로 매일 실행.
+ *
+ * 봇 감지 회피:
+ *  - playwright-extra + stealth 플러그인 (navigator.webdriver 등 숨김)
+ *  - 진짜 Chrome 사용 (channel: 'chrome', 번들 chromium은 지문이 다름)
+ *  - 한국 timezone/locale/UA, 현실적 viewport
+ *  - 키워드 간 랜덤 5~15초 딜레이, 스크롤도 랜덤
  *
  * 동작:
  *  1) 저장된 로그인 세션(storageState)으로 Threads 접속
- *  2) 키워드별 검색 결과 페이지에서 네트워크 JSON 응답 캡처 (DOM 셀렉터보다 견고)
+ *  2) 키워드별 검색 결과 페이지에서 네트워크 JSON 응답 캡처
  *  3) 인기글 후보 추출 → 필터(최근/타인/참여도) → 랭킹
- *  4) 키워드별로 /api/threads/research/ingest 에 POST (Gemini 초안 생성·시트 저장)
+ *  4) 키워드별로 /api/threads/research/ingest 에 POST
  *
- * env:
+ * env (또는 .env.local 파일):
  *  THREADS_SESSION_COOKIES  storageState JSON (필수) — scripts/threads-login.mjs로 생성
+ *  THREADS_SESSION_FILE     storageState 파일 경로 (대안, 권장: scripts/threads-session.json)
  *  CRON_SECRET              ingest 인증 (필수)
  *  INGEST_URL               기본 https://prephone-tstry-back.vercel.app/api/threads/research/ingest
  *  RESEARCH_KEYWORDS        쉼표구분. 기본: 선불폰,알뜰폰,유심,비대면개통,선불유심
@@ -17,11 +24,54 @@
  *  MIN_REPLIES              기본 2
  *  MAX_AGE_HOURS            기본 48
  *  TOP_PER_KEYWORD          기본 8
+ *  HEADLESS                 기본 "true". "false"로 두면 브라우저 창 보이기 (디버그용)
  */
 
-import { chromium } from "playwright";
+import { readFileSync, existsSync } from "fs";
+import { chromium as rawChromium } from "playwright";
 
-const SESSION = process.env.THREADS_SESSION_COOKIES;
+// stealth 플러그인 — 설치돼 있으면 사용, 없으면 raw playwright 사용 (점진적 강화)
+let chromium = rawChromium;
+try {
+  const extra = await import("playwright-extra");
+  const stealth = (await import("puppeteer-extra-plugin-stealth")).default();
+  extra.chromium.use(stealth);
+  chromium = extra.chromium;
+  console.log("[threads-research] stealth plugin 적용됨");
+} catch {
+  console.log(
+    "[threads-research] stealth plugin 없음 (raw playwright 사용). " +
+      "안정성 위해 'npm run threads:setup' 한 번 실행 권장.",
+  );
+}
+
+// .env.local 자동 로드 (Mac launchd에서 환경변수 주입 편의)
+try {
+  if (existsSync(".env.local")) {
+    const env = readFileSync(".env.local", "utf8");
+    for (const line of env.split("\n")) {
+      const m = line.match(/^([A-Z_]+)=(.*)$/);
+      if (m && !process.env[m[1]]) {
+        process.env[m[1]] = m[2].replace(/^"|"$/g, "").replace(/\\n/g, "\n");
+      }
+    }
+  }
+} catch {
+  /* ignore */
+}
+
+// 세션은 (1) env JSON 또는 (2) 파일 경로 둘 다 지원.
+// Mac 운영 시엔 scripts/threads-session.json 파일 방식이 더 편함.
+let SESSION = process.env.THREADS_SESSION_COOKIES;
+const SESSION_FILE =
+  process.env.THREADS_SESSION_FILE || "scripts/threads-session.json";
+if (!SESSION && existsSync(SESSION_FILE)) {
+  try {
+    SESSION = readFileSync(SESSION_FILE, "utf8");
+  } catch {
+    /* ignore */
+  }
+}
 const CRON_SECRET = process.env.CRON_SECRET;
 const INGEST_URL =
   process.env.INGEST_URL ||
@@ -128,10 +178,12 @@ async function scrapeKeyword(context, keyword) {
     log(`  goto 타임아웃(계속): ${keyword}`);
   }
 
-  // 인기글 더 로드되도록 스크롤
-  for (let i = 0; i < 5; i++) {
-    await page.mouse.wheel(0, 3000);
-    await page.waitForTimeout(1500);
+  // 인기글 더 로드되도록 사람처럼 스크롤 — 양·간격 랜덤
+  const scrollRounds = 4 + Math.floor(Math.random() * 3); // 4~6번
+  for (let i = 0; i < scrollRounds; i++) {
+    const dy = 2200 + Math.floor(Math.random() * 1600); // 2200~3800
+    await page.mouse.wheel(0, dy);
+    await page.waitForTimeout(1200 + Math.floor(Math.random() * 1800)); // 1.2~3s
   }
   await page.waitForTimeout(1500);
 
@@ -204,14 +256,37 @@ async function ingest(keyword, posts) {
 }
 
 async function main() {
-  log(`키워드 ${KEYWORDS.length}개: ${KEYWORDS.join(", ")}`);
-  const browser = await chromium.launch({ headless: true });
+  const HEADLESS = (process.env.HEADLESS ?? "true").toLowerCase() !== "false";
+  log(`키워드 ${KEYWORDS.length}개: ${KEYWORDS.join(", ")} | headless=${HEADLESS}`);
+
+  // 진짜 Chrome 사용 시도 → 실패 시 번들 chromium fallback (지문 차이 큼)
+  let browser;
+  try {
+    browser = await chromium.launch({
+      headless: HEADLESS,
+      channel: "chrome",
+      args: [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+      ],
+    });
+  } catch {
+    log("진짜 Chrome 채널 없음 → 번들 chromium 사용");
+    browser = await chromium.launch({
+      headless: HEADLESS,
+      args: ["--disable-blink-features=AutomationControlled"],
+    });
+  }
+
   const context = await browser.newContext({
     storageState,
     locale: "ko-KR",
-    viewport: { width: 1280, height: 1800 },
+    timezoneId: "Asia/Seoul",
+    viewport: { width: 1440, height: 900 },
     userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    deviceScaleFactor: 2,
+    hasTouch: false,
   });
 
   let totalCreated = 0;
@@ -224,8 +299,9 @@ async function main() {
     } catch (err) {
       log(`  키워드 실패 (계속): ${kw} — ${err.message}`);
     }
-    // 키워드 간 텀
-    await new Promise((r) => setTimeout(r, 2000));
+    // 키워드 간 5~15초 랜덤 텀 (사람처럼)
+    const wait = 5000 + Math.floor(Math.random() * 10000);
+    await new Promise((r) => setTimeout(r, wait));
   }
 
   await browser.close();

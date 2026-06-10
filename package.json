@@ -7,8 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "threads:setup": "npm install --no-save --no-fund --no-audit playwright@1.49.1 playwright-extra@4.3.6 puppeteer-extra-plugin-stealth@2.11.2 && npx playwright install chromium",
     "threads:login": "node scripts/threads-login.mjs",
-    "threads:research": "node scripts/threads-research.mjs"
+    "threads:research": "node scripts/threads-research.mjs",
+    "threads:research:visible": "HEADLESS=false node scripts/threads-research.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
