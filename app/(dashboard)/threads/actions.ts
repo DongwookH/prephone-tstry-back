@@ -77,7 +77,12 @@ export async function approveAndPublishAction(
   topicTag?: string,
   selfReplies?: string[],
 ): Promise<
-  | { ok: true; postId: string; replyIds: string[] }
+  | {
+      ok: true;
+      postId: string;
+      replyIds: string[];
+      replyErrors: string[];
+    }
   | { ok: false; error: string }
 > {
   const a = await requireAuth();
@@ -133,7 +138,7 @@ export async function approveAndPublishAction(
     }
 
     // 메인 글 + 셀프 댓글 묶음 발행
-    const { mainId, replyIds } = await postThreadWithReplies({
+    const { mainId, replyIds, replyErrors } = await postThreadWithReplies({
       accessToken: tok.access_token,
       userId: tok.user_id,
       mainText: finalText,
@@ -148,7 +153,7 @@ export async function approveAndPublishAction(
     });
 
     revalidatePath("/threads");
-    return { ok: true, postId: mainId, replyIds };
+    return { ok: true, postId: mainId, replyIds, replyErrors };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }

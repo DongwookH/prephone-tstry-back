@@ -121,12 +121,23 @@ export function ThreadsDraftCard({
         cleaned,
       );
       if (res.ok) {
-        const replyMsg =
-          res.replyIds.length > 0 ? ` + 댓글 ${res.replyIds.length}개` : "";
-        setMsg({
-          kind: "ok",
-          text: `발행 완료${replyMsg}! (id: ${res.postId})`,
-        });
+        const wantedReplies = cleaned.length;
+        const okReplies = res.replyIds.length;
+        if (wantedReplies > 0 && okReplies < wantedReplies) {
+          // 메인은 발행됐지만 일부 댓글 실패
+          const errs = res.replyErrors.join(" / ") || "원인 불명";
+          setMsg({
+            kind: "err",
+            text: `메인 발행 OK (${res.postId}). 그러나 댓글 ${okReplies}/${wantedReplies}만 성공. 실패: ${errs}`,
+          });
+        } else {
+          const replyMsg =
+            okReplies > 0 ? ` + 댓글 ${okReplies}개` : "";
+          setMsg({
+            kind: "ok",
+            text: `발행 완료${replyMsg}! (id: ${res.postId})`,
+          });
+        }
         router.refresh();
       } else setMsg({ kind: "err", text: res.error });
     });

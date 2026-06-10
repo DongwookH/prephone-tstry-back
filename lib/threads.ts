@@ -271,7 +271,11 @@ export async function postThreadWithReplies(opts: {
   selfReplies?: string[];
   topicTag?: string;
   replyControl?: ReplyControl;
-}): Promise<{ mainId: string; replyIds: string[] }> {
+}): Promise<{
+  mainId: string;
+  replyIds: string[];
+  replyErrors: string[];
+}> {
   const { accessToken, userId, mainText, topicTag, replyControl } = opts;
   const replies = (opts.selfReplies ?? [])
     .map((r) => (r || "").trim())
@@ -286,12 +290,18 @@ export async function postThreadWithReplies(opts: {
     replyControl,
   });
 
-  // 2) 셀프 댓글들 — 직전 글에 답글로 체이닝 (스레드 형태)
+  // 2) 셀프 댓글들 — 직전 글에 답글로 체이닝.
+  //    메인글 publish 직후 잠깐 대기 (Threads가 reply 가능 상태로 인덱싱 완료까지).
+  //    너무 빠르면 reply_to_id가 invalid로 거부됨.
   const replyIds: string[] = [];
+  const replyErrors: string[] = [];
   let parentId = main.id;
-  for (const replyText of replies) {
-    // 1.5~3초 랜덤 딜레이
-    await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1500));
+
+  for (let i = 0; i < replies.length; i++) {
+    const replyText = replies[i];
+    // 첫 댓글은 5초, 이후는 3초 (Threads의 처리 시간 확보)
+    const wait = i === 0 ? 5000 : 3000 + Math.random() * 1500;
+    await new Promise((r) => setTimeout(r, wait));
     try {
       const child = await postToThreads({
         accessToken,
@@ -302,13 +312,15 @@ export async function postThreadWithReplies(opts: {
       replyIds.push(child.id);
       parentId = child.id;
     } catch (e) {
-      // 댓글 실패 시 메인은 살리고 나머지 댓글 중단
-      console.warn(`[threads] 셀프 댓글 실패 — 중단:`, (e as Error).message);
-      break;
+      const msg = (e as Error).message || "unknown";
+      console.warn(`[threads] 셀프 댓글 ${i + 1} 실패:`, msg);
+      replyErrors.push(`댓글 ${i + 1}: ${msg.slice(0, 150)}`);
+      // 한 댓글이 실패해도 다음 댓글은 시도 (메인글 id로 다시 reply)
+      parentId = main.id;
     }
   }
 
-  return { mainId: main.id, replyIds };
+  return { mainId: main.id, replyIds, replyErrors };
 }
 
 export interface ThreadsSearchPost {
