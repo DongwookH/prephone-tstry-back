@@ -725,6 +725,101 @@ export async function addGeminiKey(
   return { id: newId };
 }
 
+// ─── GA properties (블로그별 GA4) ───────────────────────────
+// settings 시트에 type=ga_property 행으로 저장.
+// value = JSON: {property_id, measurement_id, tistory_url?}
+// label = 사람이 보는 블로그 이름 (예: "메인 블로그", "서브1")
+
+export type GaPropertyRow = {
+  id: string;
+  label: string;
+  property_id: string;
+  measurement_id: string;
+  tistory_url: string;
+  enabled: boolean;
+};
+
+/** 등록된 GA properties (활성만) — 라벨 알파벳순. */
+export async function getGaProperties(): Promise<GaPropertyRow[]> {
+  const all = await readSettings();
+  const rows = all
+    .filter((r) => r.type === "ga_property" && r.enabled === "1" && r.value)
+    .map((r) => {
+      try {
+        const v = JSON.parse(r.value) as {
+          property_id?: string;
+          measurement_id?: string;
+          tistory_url?: string;
+        };
+        const row: GaPropertyRow = {
+          id: r.id,
+          label: r.label || "(이름 없음)",
+          property_id: v.property_id || "",
+          measurement_id: v.measurement_id || "",
+          tistory_url: v.tistory_url || "",
+          enabled: true,
+        };
+        return row;
+      } catch {
+        return null;
+      }
+    })
+    .filter((x): x is GaPropertyRow => x !== null && !!x.property_id);
+
+  return rows.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** GA property 추가. */
+export async function addGaProperty(opts: {
+  label: string;
+  property_id: string;
+  measurement_id?: string;
+  tistory_url?: string;
+}): Promise<{ id: string }> {
+  await ensureSettingsSheet();
+  const now = new Date().toISOString();
+  const newId = `ga-${Date.now()}`;
+  const value = JSON.stringify({
+    property_id: opts.property_id.trim(),
+    measurement_id: (opts.measurement_id || "").trim(),
+    tistory_url: (opts.tistory_url || "").trim(),
+  });
+  await appendRow(mainSheetId(), SETTINGS_SHEET, [
+    newId,
+    "ga_property",
+    value,
+    opts.label.trim(),
+    "1",
+    now,
+    "",
+    "0",
+  ]);
+  return { id: newId };
+}
+
+/** GA property 비활성화 (enabled=0). */
+export async function disableGaProperty(id: string): Promise<boolean> {
+  const sheets = getClient();
+  const spreadsheetId = mainSheetId();
+  const rows = await readRange(spreadsheetId, `${SETTINGS_SHEET}!A:H`);
+  if (rows.length < 2) return false;
+  let headerIdx = 0;
+  if (rows[0]?.[0]?.startsWith("💡")) headerIdx = 1;
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    if (rows[i]?.[0] === id) {
+      const rowNum = i + 1;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${SETTINGS_SHEET}!E${rowNum}`,
+        valueInputOption: "RAW",
+        requestBody: { values: [["0"]] },
+      });
+      return true;
+    }
+  }
+  return false;
+}
+
 /** 비활성화 (실제 삭제 X — enabled=0). */
 export async function disableGeminiKey(id: string): Promise<boolean> {
   const sheets = getClient();

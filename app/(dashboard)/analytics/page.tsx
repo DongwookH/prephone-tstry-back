@@ -1,5 +1,6 @@
 import { Topbar } from "@/components/topbar";
-import { getAllPosts, toKstDate } from "@/lib/sheets";
+import { getAllPosts, toKstDate, getGaProperties } from "@/lib/sheets";
+import { MultiBlogAnalytics } from "@/components/multi-blog-analytics";
 import { auth } from "@/auth";
 import {
   getOverview,
@@ -97,7 +98,15 @@ async function loadGA(): Promise<GAState> {
 }
 
 export default async function AnalyticsPage() {
-  const [all, ga] = await Promise.all([getAllPosts(), loadGA()]);
+  const [all, ga, gaProps] = await Promise.all([
+    getAllPosts(),
+    loadGA(),
+    getGaProperties().catch(() => []),
+  ]);
+
+  // 등록된 블로그 GA가 있으면 multi-blog 섹션을 페이지 최상단에 표시.
+  // 옛 단일 GA_PROPERTY_ID 섹션은 multi-blog 없을 때만 fallback으로 유지.
+  const hasMultiBlog = gaProps.length > 0;
 
   const totalPosts = all.length;
 
@@ -187,6 +196,29 @@ export default async function AnalyticsPage() {
       />
 
       <div className="px-8 py-8 max-w-[1400px] mx-auto">
+        {/* ─── 블로그별 GA4 멀티 분석 (등록된 경우만) ─── */}
+        {hasMultiBlog && (
+          <div className="mb-8">
+            <MultiBlogAnalytics days={7} />
+          </div>
+        )}
+
+        {!hasMultiBlog && (
+          <section className="mb-6">
+            <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-3 text-[12px] text-ink-700">
+              💡 <strong>블로그 5개 GA4를 등록</strong>하시면 여기서 합산 +
+              블로그별 비교 보기가 가능해요.{" "}
+              <Link
+                href="/settings#ga-blogs"
+                className="text-brand-700 font-bold underline"
+              >
+                설정 → GA4 블로그
+              </Link>
+              에서 추가하세요.
+            </div>
+          </section>
+        )}
+
         <section className="mb-6">
           <div className="flex items-center gap-2 mb-2">
             <span className="relative flex h-2 w-2">

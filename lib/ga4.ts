@@ -55,7 +55,7 @@ class GA4Error extends Error {
 function propertyId(): string {
   const id = process.env.GA_PROPERTY_ID;
   if (!id) {
-    throw new GA4Error(500, "GA_PROPERTY_ID env 미설정");
+    throw new GA4Error(500, "GA_PROPERTY_ID env 미설정 또는 property_id 인자 누락");
   }
   return id;
 }
@@ -80,8 +80,10 @@ interface RunReportResponse {
 async function runReport(
   accessToken: string,
   body: Record<string, unknown>,
+  propertyIdOverride?: string,
 ): Promise<RunReportResponse> {
-  const url = `${GA_API_BASE}/properties/${propertyId()}:runReport`;
+  const pid = (propertyIdOverride || propertyId()).replace(/^properties\//, "");
+  const url = `${GA_API_BASE}/properties/${pid}:runReport`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -109,8 +111,10 @@ async function runReport(
 async function runRealtimeReport(
   accessToken: string,
   body: Record<string, unknown>,
+  propertyIdOverride?: string,
 ): Promise<RunReportResponse> {
-  const url = `${GA_API_BASE}/properties/${propertyId()}:runRealtimeReport`;
+  const pid = (propertyIdOverride || propertyId()).replace(/^properties\//, "");
+  const url = `${GA_API_BASE}/properties/${pid}:runRealtimeReport`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -135,17 +139,22 @@ async function runRealtimeReport(
 export async function getOverview(
   accessToken: string,
   days = 7,
+  propertyIdOverride?: string,
 ): Promise<GAOverview> {
-  const data = await runReport(accessToken, {
-    dateRanges: [{ startDate: daysAgo(days - 1), endDate: "today" }],
-    metrics: [
-      { name: "screenPageViews" },
-      { name: "activeUsers" },
-      { name: "sessions" },
-      { name: "bounceRate" },
-      { name: "averageSessionDuration" },
-    ],
-  });
+  const data = await runReport(
+    accessToken,
+    {
+      dateRanges: [{ startDate: daysAgo(days - 1), endDate: "today" }],
+      metrics: [
+        { name: "screenPageViews" },
+        { name: "activeUsers" },
+        { name: "sessions" },
+        { name: "bounceRate" },
+        { name: "averageSessionDuration" },
+      ],
+    },
+    propertyIdOverride,
+  );
   const m = data.rows?.[0]?.metricValues ?? [];
   return {
     pageviews: parseInt(m[0]?.value ?? "0", 10),
@@ -160,13 +169,18 @@ export async function getOverview(
 export async function getDailyTrend(
   accessToken: string,
   days = 7,
+  propertyIdOverride?: string,
 ): Promise<GADailyRow[]> {
-  const data = await runReport(accessToken, {
-    dateRanges: [{ startDate: daysAgo(days - 1), endDate: "today" }],
-    dimensions: [{ name: "date" }],
-    metrics: [{ name: "screenPageViews" }, { name: "activeUsers" }],
-    orderBys: [{ dimension: { dimensionName: "date" } }],
-  });
+  const data = await runReport(
+    accessToken,
+    {
+      dateRanges: [{ startDate: daysAgo(days - 1), endDate: "today" }],
+      dimensions: [{ name: "date" }],
+      metrics: [{ name: "screenPageViews" }, { name: "activeUsers" }],
+      orderBys: [{ dimension: { dimensionName: "date" } }],
+    },
+    propertyIdOverride,
+  );
   return (data.rows ?? []).map((r) => {
     const raw = r.dimensionValues?.[0]?.value ?? ""; // YYYYMMDD
     const date =
@@ -186,16 +200,19 @@ export async function getTopPages(
   accessToken: string,
   days = 7,
   limit = 10,
+  propertyIdOverride?: string,
 ): Promise<GATopPage[]> {
-  const data = await runReport(accessToken, {
-    dateRanges: [{ startDate: daysAgo(days - 1), endDate: "today" }],
-    dimensions: [{ name: "pagePath" }, { name: "pageTitle" }],
-    metrics: [{ name: "screenPageViews" }, { name: "activeUsers" }],
-    orderBys: [
-      { metric: { metricName: "screenPageViews" }, desc: true },
-    ],
-    limit: String(limit),
-  });
+  const data = await runReport(
+    accessToken,
+    {
+      dateRanges: [{ startDate: daysAgo(days - 1), endDate: "today" }],
+      dimensions: [{ name: "pagePath" }, { name: "pageTitle" }],
+      metrics: [{ name: "screenPageViews" }, { name: "activeUsers" }],
+      orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }],
+      limit: String(limit),
+    },
+    propertyIdOverride,
+  );
   return (data.rows ?? []).map((r) => ({
     path: r.dimensionValues?.[0]?.value ?? "",
     title: r.dimensionValues?.[1]?.value ?? "",
@@ -268,10 +285,15 @@ export interface GARealtimeTopPage {
 /** 지난 30분 활성 사용자 + 페이지뷰. */
 export async function getRealtimeOverview(
   accessToken: string,
+  propertyIdOverride?: string,
 ): Promise<GARealtimeOverview> {
-  const data = await runRealtimeReport(accessToken, {
-    metrics: [{ name: "activeUsers" }, { name: "screenPageViews" }],
-  });
+  const data = await runRealtimeReport(
+    accessToken,
+    {
+      metrics: [{ name: "activeUsers" }, { name: "screenPageViews" }],
+    },
+    propertyIdOverride,
+  );
   const m = data.rows?.[0]?.metricValues ?? [];
   return {
     activeUsers: parseInt(m[0]?.value ?? "0", 10),
@@ -283,17 +305,116 @@ export async function getRealtimeOverview(
 export async function getRealtimeTopPages(
   accessToken: string,
   limit = 5,
+  propertyIdOverride?: string,
 ): Promise<GARealtimeTopPage[]> {
-  const data = await runRealtimeReport(accessToken, {
-    dimensions: [{ name: "unifiedScreenName" }],
-    metrics: [{ name: "activeUsers" }],
-    orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
-    limit: String(limit),
-  });
+  const data = await runRealtimeReport(
+    accessToken,
+    {
+      dimensions: [{ name: "unifiedScreenName" }],
+      metrics: [{ name: "activeUsers" }],
+      orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+      limit: String(limit),
+    },
+    propertyIdOverride,
+  );
   return (data.rows ?? []).map((r) => ({
     path: r.dimensionValues?.[0]?.value ?? "(unknown)",
     activeUsers: parseInt(r.metricValues?.[0]?.value ?? "0", 10),
   }));
+}
+
+// ─── Multi-property helpers ─────────────────────────────────
+// 여러 GA4 속성(블로그)을 병렬 조회 + 부분 실패 허용.
+
+export interface BlogStats {
+  propertyId: string;
+  label: string;
+  tistoryUrl: string;
+  overview: GAOverview;
+  topPages: GATopPage[];
+  daily: GADailyRow[];
+  realtimeActiveUsers: number;
+  error: string | null;
+}
+
+/** 여러 GA property를 병렬 조회 — 실패한 건 error 필드에 담아 반환. */
+export async function getMultiBlogStats(opts: {
+  accessToken: string;
+  properties: { id: string; label: string; tistory_url?: string }[];
+  days?: number;
+  topPagesLimit?: number;
+}): Promise<BlogStats[]> {
+  const { accessToken, properties } = opts;
+  const days = opts.days ?? 7;
+  const topPagesLimit = opts.topPagesLimit ?? 5;
+
+  return Promise.all(
+    properties.map(async (p): Promise<BlogStats> => {
+      try {
+        const [overview, topPages, daily, realtime] = await Promise.all([
+          getOverview(accessToken, days, p.id),
+          getTopPages(accessToken, days, topPagesLimit, p.id),
+          getDailyTrend(accessToken, days, p.id),
+          getRealtimeOverview(accessToken, p.id).catch(() => ({
+            activeUsers: 0,
+            pageviews: 0,
+          })),
+        ]);
+        return {
+          propertyId: p.id,
+          label: p.label,
+          tistoryUrl: p.tistory_url || "",
+          overview,
+          topPages,
+          daily,
+          realtimeActiveUsers: realtime.activeUsers,
+          error: null,
+        };
+      } catch (e) {
+        return {
+          propertyId: p.id,
+          label: p.label,
+          tistoryUrl: p.tistory_url || "",
+          overview: {
+            pageviews: 0,
+            activeUsers: 0,
+            sessions: 0,
+            bounceRate: 0,
+            avgSessionDuration: 0,
+          },
+          topPages: [],
+          daily: [],
+          realtimeActiveUsers: 0,
+          error: (e as Error).message.slice(0, 200),
+        };
+      }
+    }),
+  );
+}
+
+/** 블로그별 stats에서 합계 KPI. */
+export function aggregateOverview(stats: BlogStats[]): GAOverview {
+  let pageviews = 0,
+    activeUsers = 0,
+    sessions = 0;
+  let weightedBounce = 0,
+    weightedDuration = 0,
+    weightSum = 0;
+  for (const s of stats) {
+    pageviews += s.overview.pageviews;
+    activeUsers += s.overview.activeUsers;
+    sessions += s.overview.sessions;
+    weightedBounce += s.overview.bounceRate * s.overview.sessions;
+    weightedDuration += s.overview.avgSessionDuration * s.overview.sessions;
+    weightSum += s.overview.sessions;
+  }
+  return {
+    pageviews,
+    activeUsers,
+    sessions,
+    bounceRate: weightSum > 0 ? weightedBounce / weightSum : 0,
+    avgSessionDuration: weightSum > 0 ? weightedDuration / weightSum : 0,
+  };
 }
 
 export { GA4Error };

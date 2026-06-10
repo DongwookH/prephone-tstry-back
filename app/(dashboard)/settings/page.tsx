@@ -5,11 +5,13 @@ import { geminiKeyStatus } from "@/lib/gemini";
 import {
   getGeminiKeysFromSheet,
   getGeminiUsage,
+  getGaProperties,
 } from "@/lib/sheets";
 import { getThreadsToken } from "@/lib/threads";
 import { GeminiKeyManager, type GeminiKeyItem } from "@/components/gemini-key-manager";
 import { UsageChart } from "@/components/usage-chart";
 import { ThreadsCard, type ThreadsCardData } from "@/components/threads-card";
+import { GaPropertiesManager } from "@/components/ga-properties-manager";
 import {
   Settings2,
   Shield,
@@ -33,12 +35,14 @@ function maskKeyPartial(key: string): string {
 
 export default async function SettingsPage() {
   const session = await auth();
-  const [keyStatus, sheetKeys, usage, threadsToken] = await Promise.all([
-    geminiKeyStatus(),
-    getGeminiKeysFromSheet(),
-    getGeminiUsage(14),
-    getThreadsToken().catch(() => null),
-  ]);
+  const [keyStatus, sheetKeys, usage, threadsToken, gaProperties] =
+    await Promise.all([
+      geminiKeyStatus(),
+      getGeminiKeysFromSheet(),
+      getGeminiUsage(14),
+      getThreadsToken().catch(() => null),
+      getGaProperties().catch(() => []),
+    ]);
 
   // Threads 카드 데이터 준비
   const threadsEnvReady = Boolean(
@@ -146,6 +150,7 @@ export default async function SettingsPage() {
             <NavItem href="#general" Icon={Settings2} label="일반" />
             <NavItem href="#account" Icon={Users} label="내 계정" />
             <NavItem href="#gemini" Icon={KeyRound} label="Gemini API" />
+            <NavItem href="#ga-blogs" Icon={LineChart} label="GA4 블로그" />
             <NavItem href="#usage" Icon={LineChart} label="API 사용량" />
             <NavItem href="#threads" Icon={AtSign} label="Threads 연동" />
             <NavItem href="#integrations" Icon={Shield} label="연동 상태" />
@@ -225,6 +230,15 @@ export default async function SettingsPage() {
               다음 API 호출부터 자동 적용됩니다 (재배포 불필요, 60초 캐시).
               GitHub Actions cron은 영향 없음 — Vercel runtime이 키를 읽기 때문에.
             </div>
+          </Card>
+
+          {/* ─── GA4 블로그 — 5개 티스토리 분석 ─── */}
+          <Card
+            id="ga-blogs"
+            title="GA4 블로그"
+            desc={`티스토리 블로그별 GA4 속성 — 분석 페이지에서 합산·비교 표시 · ${gaProperties.length}개 등록됨`}
+          >
+            <GaPropertiesManager properties={gaProperties} />
           </Card>
 
           {/* ─── API 사용량 ─── */}

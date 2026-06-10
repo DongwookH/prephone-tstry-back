@@ -5,6 +5,8 @@ import { auth } from "@/auth";
 import {
   addGeminiKey,
   disableGeminiKey,
+  addGaProperty,
+  disableGaProperty,
 } from "@/lib/sheets";
 import { invalidateGeminiKeyCache } from "@/lib/gemini";
 import {
@@ -59,6 +61,61 @@ export async function disableGeminiKeyAction(
     if (!found) return { ok: false, error: "해당 키를 찾을 수 없습니다" };
     invalidateGeminiKeyCache();
     revalidatePath("/settings");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+// ─── GA Properties (블로그별 GA4) ──────────────
+
+/** GA4 property 추가. */
+export async function addGaPropertyAction(input: {
+  label: string;
+  property_id: string;
+  measurement_id?: string;
+  tistory_url?: string;
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const a = await requireAuth();
+  if (!a.ok) return { ok: false, error: a.error! };
+
+  const label = input.label.trim();
+  const property_id = input.property_id.replace(/\D/g, "").trim();
+  if (!label) return { ok: false, error: "블로그 이름(라벨)을 입력하세요" };
+  if (!property_id)
+    return {
+      ok: false,
+      error: "Property ID(숫자 9~12자리)를 입력하세요 — GA4 관리 > 속성 설정",
+    };
+  if (property_id.length < 8 || property_id.length > 14)
+    return { ok: false, error: "Property ID 형식 확인 — 숫자 9~12자리" };
+
+  try {
+    const { id } = await addGaProperty({
+      label,
+      property_id,
+      measurement_id: input.measurement_id,
+      tistory_url: input.tistory_url,
+    });
+    revalidatePath("/settings");
+    revalidatePath("/analytics");
+    return { ok: true, id };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/** GA4 property 비활성화. */
+export async function disableGaPropertyAction(
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const a = await requireAuth();
+  if (!a.ok) return { ok: false, error: a.error! };
+  try {
+    const ok = await disableGaProperty(id);
+    if (!ok) return { ok: false, error: "해당 항목을 찾을 수 없습니다" };
+    revalidatePath("/settings");
+    revalidatePath("/analytics");
     return { ok: true };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
