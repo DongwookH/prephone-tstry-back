@@ -19,6 +19,15 @@ function parseSource(json: string): SourcePost[] {
   }
 }
 
+function parseReplies(json: string): string[] {
+  try {
+    const arr = JSON.parse(json || "[]");
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 function toCard(r: ThreadsDraftRow): DraftCardData {
   return {
     id: r.id,
@@ -27,6 +36,8 @@ function toCard(r: ThreadsDraftRow): DraftCardData {
     draftText: r.draft_text,
     insight: r.insight,
     sourcePosts: parseSource(r.source_posts),
+    topicTag: r.topic_tag || "",
+    selfReplies: parseReplies(r.self_replies),
   };
 }
 

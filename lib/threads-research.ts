@@ -21,6 +21,8 @@ export interface ScrapedPost {
 export interface GeneratedThreadsDraft {
   draft_text: string;
   insight: string;
+  topic_tag?: string;
+  self_replies?: string[];
 }
 
 /** 참여도 점수 — 댓글(타인) 가중치 높게. */
@@ -96,18 +98,35 @@ ${sampleList}
 # 🏢 우리 회사 정보 (이 사실만 사용, 가격/정책 창작 금지)
 ${globalCtx}
 
+# 🏷️ Threads 주제 태그 (topic_tag)
+- Threads는 글에 1개의 주제를 붙일 수 있고, 같은 주제 관심사 사용자에게 우선 노출됩니다.
+- 1~50자, '.'와 '&' 사용 불가, 공백은 가능 (단 짧을수록 좋음).
+- 우리 니치에서 좋은 예: "선불폰", "알뜰폰", "유심", "통신비", "비대면개통".
+- 키워드와 가장 가까우면서 검색량이 많을 후보 1개 선택.
+
+# 💬 셀프 댓글 (self_replies) — 알고리즘 부스트
+- 글을 발행하자마자 본인이 본인 글에 댓글로 대화를 잇는 것이 Threads에서 가장 강력한 부스트.
+- 메인 글에서 못 다 한 디테일/사례/추가 정보를 1~2개 셀프 댓글로 자연스럽게 이어주세요.
+- 각 셀프 댓글: 80~200자, 광고 톤 X, "추가로 한 가지 더 알려드리면…" 같은 자연스러운 연결.
+- 마지막 셀프 댓글도 가능하면 또 질문으로 (대화 더 끌어내기).
+- 셀프 댓글이 어울리지 않는 글이면 빈 배열도 OK.
+
 # 출력 규칙
-- 각 초안은 100~280자 (절대 280 초과 X).
-- 마지막 줄은 구체적 질문으로 끝낼 것 (위 예시 참고).
+- 각 초안 메인 본문은 100~280자 (절대 280 초과 X).
+- 마지막 줄은 구체적 질문으로 끝낼 것.
 - 각 초안마다 다른 후킹 각도 (페인포인트 / 반전 / 호기심갭 / 경험담 / 의견 갈림).
 - 인기글 문장 복사·번역·재배열 절대 금지.
+- topic_tag는 매번 출력 (50자 이내, 공백 가능, '.'와 '&' 불가).
+- self_replies는 0~2개. 어울리지 않으면 빈 배열.
 
 # 출력 (JSON만, 코드펜스 X, 문자열 안 줄바꿈은 \\n으로 escape)
 {
   "drafts": [
     {
-      "draft_text": "{초안 본문 — 줄바꿈은 \\n}",
-      "insight": "{후킹 각도 + 왜 댓글 유도되는지 한 줄 설명}"
+      "draft_text": "{메인 글 본문 — 줄바꿈은 \\n}",
+      "topic_tag": "{주제 태그, 예: 선불폰}",
+      "self_replies": ["{셀프 댓글1}", "{셀프 댓글2}"],
+      "insight": "{후킹 각도 + 왜 댓글 유도되는지 한 줄}"
     }
   ]
 }`;
@@ -122,9 +141,22 @@ ${globalCtx}
   const drafts = Array.isArray(result.drafts) ? result.drafts : [];
   return drafts
     .filter((d) => d && typeof d.draft_text === "string" && d.draft_text.trim())
-    .map((d) => ({
-      draft_text: d.draft_text.trim().slice(0, 500),
-      insight: (d.insight || "").trim().slice(0, 200),
-    }))
+    .map((d) => {
+      // topic_tag 정규화: Threads 규칙 — 1~50자, '.'와 '&' 불가
+      const topic = (d.topic_tag || "").replace(/[.&]/g, "").trim().slice(0, 50);
+      const replies = Array.isArray(d.self_replies)
+        ? d.self_replies
+            .filter((r) => typeof r === "string")
+            .map((r) => r.trim().slice(0, 500))
+            .filter(Boolean)
+            .slice(0, 3)
+        : [];
+      return {
+        draft_text: d.draft_text.trim().slice(0, 500),
+        insight: (d.insight || "").trim().slice(0, 200),
+        topic_tag: topic || undefined,
+        self_replies: replies.length > 0 ? replies : undefined,
+      };
+    })
     .slice(0, count);
 }

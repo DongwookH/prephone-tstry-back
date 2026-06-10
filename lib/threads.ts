@@ -171,15 +171,41 @@ export async function disableThreadsToken(userId: string): Promise<boolean> {
   return false;
 }
 
+export type ReplyControl =
+  | "everyone"
+  | "accounts_you_follow"
+  | "mentioned_only"
+  | "parent_post_author_only"
+  | "followers_only";
+
+/**
+ * topic_tag 정규화 — Threads 규칙: 1~50자, '.'와 '&' 불가.
+ * 입력에서 금지문자 제거 + 길이 컷. 빈 문자열 → undefined 반환.
+ */
+function normalizeTopicTag(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  const cleaned = raw.replace(/[.&]/g, "").trim().slice(0, 50);
+  return cleaned.length >= 1 ? cleaned : undefined;
+}
+
 /**
  * Threads에 글 게시 (2단계 프로세스: container 생성 → 게시).
- * text는 500자 제한.
+ *
+ * Threads API 파라미터:
+ *  - text       본문 (500자 제한)
+ *  - imageUrl   이미지 첨부 시 IMAGE 모드
+ *  - topicTag   주제 태그 (1~50자, '.'와 '&' 불가) — 같은 주제 사용자에게 노출
+ *  - replyToId  부모 글 id — 셀프 댓글/스레드 잇기용
+ *  - replyControl  누가 댓글 달 수 있나
  */
 export async function postToThreads(opts: {
   accessToken: string;
   userId: string;
   text: string;
   imageUrl?: string;
+  topicTag?: string;
+  replyToId?: string;
+  replyControl?: ReplyControl;
 }): Promise<{ id: string }> {
   // 1) container 생성
   const containerBody = new URLSearchParams({
@@ -188,6 +214,10 @@ export async function postToThreads(opts: {
     access_token: opts.accessToken,
   });
   if (opts.imageUrl) containerBody.set("image_url", opts.imageUrl);
+  const tag = normalizeTopicTag(opts.topicTag);
+  if (tag) containerBody.set("topic_tag", tag);
+  if (opts.replyToId) containerBody.set("reply_to_id", opts.replyToId);
+  if (opts.replyControl) containerBody.set("reply_control", opts.replyControl);
 
   const c = await fetch(`${THREADS_API}/${opts.userId}/threads`, {
     method: "POST",
@@ -217,6 +247,68 @@ export async function postToThreads(opts: {
     throw new Error(`Threads publish 실패 (${p.status}): ${t.slice(0, 200)}`);
   }
   return (await p.json()) as { id: string };
+}
+
+/**
+ * 메인 글 + 셀프 댓글들을 묶음으로 발행 (Threads 알고리즘 부스트).
+ *
+ * 알고리즘: 본인이 본인 글에 댓글로 대화를 이어가면 참여 속도(velocity) 신호가
+ * 크게 올라가서 도달이 증가함. 발행 직후 30~60분 안 활동이 결정적이라
+ * 메인 직후에 댓글까지 자동 게시.
+ *
+ * 흐름:
+ *   1. 메인글 게시 (topicTag 첨부)
+ *   2. 첫 셀프 댓글: reply_to_id = 메인글 id
+ *   3. 두번째 셀프 댓글: reply_to_id = 첫 댓글 id (스레드 잇기)
+ *   4. ...
+ *
+ * 각 단계 사이에 짧은 딜레이 → 봇 감지 완화 + Threads 측 처리 시간.
+ */
+export async function postThreadWithReplies(opts: {
+  accessToken: string;
+  userId: string;
+  mainText: string;
+  selfReplies?: string[];
+  topicTag?: string;
+  replyControl?: ReplyControl;
+}): Promise<{ mainId: string; replyIds: string[] }> {
+  const { accessToken, userId, mainText, topicTag, replyControl } = opts;
+  const replies = (opts.selfReplies ?? [])
+    .map((r) => (r || "").trim())
+    .filter(Boolean);
+
+  // 1) 메인글 발행
+  const main = await postToThreads({
+    accessToken,
+    userId,
+    text: mainText,
+    topicTag,
+    replyControl,
+  });
+
+  // 2) 셀프 댓글들 — 직전 글에 답글로 체이닝 (스레드 형태)
+  const replyIds: string[] = [];
+  let parentId = main.id;
+  for (const replyText of replies) {
+    // 1.5~3초 랜덤 딜레이
+    await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1500));
+    try {
+      const child = await postToThreads({
+        accessToken,
+        userId,
+        text: replyText,
+        replyToId: parentId,
+      });
+      replyIds.push(child.id);
+      parentId = child.id;
+    } catch (e) {
+      // 댓글 실패 시 메인은 살리고 나머지 댓글 중단
+      console.warn(`[threads] 셀프 댓글 실패 — 중단:`, (e as Error).message);
+      break;
+    }
+  }
+
+  return { mainId: main.id, replyIds };
 }
 
 export interface ThreadsSearchPost {

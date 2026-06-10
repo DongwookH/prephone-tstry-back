@@ -13,6 +13,9 @@ import {
   Repeat2,
   Lightbulb,
   Save,
+  Hash,
+  Plus,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -38,6 +41,8 @@ export type DraftCardData = {
   draftText: string;
   insight: string;
   sourcePosts: SourcePost[];
+  topicTag?: string;
+  selfReplies?: string[];
 };
 
 export function ThreadsDraftCard({
@@ -49,18 +54,43 @@ export function ThreadsDraftCard({
 }) {
   const router = useRouter();
   const [text, setText] = useState(data.draftText);
+  const [topicTag, setTopicTag] = useState(data.topicTag || "");
+  const [selfReplies, setSelfReplies] = useState<string[]>(
+    data.selfReplies && data.selfReplies.length > 0 ? data.selfReplies : [],
+  );
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null,
   );
   const [showSource, setShowSource] = useState(false);
 
-  const dirty = text.trim() !== data.draftText.trim();
+  const cleanReplies = (rs: string[]) => rs.map((r) => r.trim()).filter(Boolean);
+  const dirty =
+    text.trim() !== data.draftText.trim() ||
+    topicTag.trim() !== (data.topicTag || "").trim() ||
+    JSON.stringify(cleanReplies(selfReplies)) !==
+      JSON.stringify(data.selfReplies || []);
   const len = text.length;
+
+  const updateReply = (i: number, v: string) => {
+    setSelfReplies((arr) => arr.map((r, idx) => (idx === i ? v : r)));
+  };
+  const addReply = () => {
+    if (selfReplies.length >= 3) return;
+    setSelfReplies((arr) => [...arr, ""]);
+  };
+  const removeReply = (i: number) => {
+    setSelfReplies((arr) => arr.filter((_, idx) => idx !== i));
+  };
 
   const handleSave = () =>
     start(async () => {
-      const res = await saveDraftTextAction(data.id, text);
+      const res = await saveDraftTextAction(
+        data.id,
+        text,
+        topicTag,
+        cleanReplies(selfReplies),
+      );
       if (res.ok) {
         setMsg({ kind: "ok", text: "저장됨" });
         router.refresh();
@@ -77,11 +107,26 @@ export function ThreadsDraftCard({
   };
 
   const handlePublish = () => {
-    if (!confirm("이 초안을 Threads에 발행할까요?")) return;
+    const cleaned = cleanReplies(selfReplies);
+    const msg2 =
+      cleaned.length > 0
+        ? `메인 글 + 셀프 댓글 ${cleaned.length}개를 Threads에 발행할까요?`
+        : "이 초안을 Threads에 발행할까요?";
+    if (!confirm(msg2)) return;
     start(async () => {
-      const res = await approveAndPublishAction(data.id, text);
+      const res = await approveAndPublishAction(
+        data.id,
+        text,
+        topicTag,
+        cleaned,
+      );
       if (res.ok) {
-        setMsg({ kind: "ok", text: `발행 완료! (id: ${res.postId})` });
+        const replyMsg =
+          res.replyIds.length > 0 ? ` + 댓글 ${res.replyIds.length}개` : "";
+        setMsg({
+          kind: "ok",
+          text: `발행 완료${replyMsg}! (id: ${res.postId})`,
+        });
         router.refresh();
       } else setMsg({ kind: "err", text: res.error });
     });
@@ -123,7 +168,7 @@ export function ThreadsDraftCard({
         </div>
       )}
 
-      {/* 초안 편집 */}
+      {/* 초안 편집 (메인 글) */}
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -131,6 +176,66 @@ export function ThreadsDraftCard({
         className="w-full rounded-xl border border-ink-200 p-3 text-[14px] leading-relaxed text-ink-900 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none resize-y"
         placeholder="초안 본문..."
       />
+
+      {/* 주제 태그 (topic_tag) */}
+      <div className="flex items-center gap-2">
+        <Hash size={14} className="text-ink-500 flex-shrink-0" />
+        <input
+          type="text"
+          value={topicTag}
+          onChange={(e) => setTopicTag(e.target.value)}
+          maxLength={50}
+          placeholder="주제 (예: 선불폰) — 비워두면 미적용"
+          className="flex-1 h-9 px-3 rounded-lg border border-ink-200 text-[13px] text-ink-900 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none"
+        />
+        <span className="text-[10px] text-ink-400 tabular-nums w-12 text-right">
+          {topicTag.length}/50
+        </span>
+      </div>
+
+      {/* 셀프 댓글 (self_replies) — 알고리즘 부스트 */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold text-ink-700">
+            <MessageCircle size={12} />
+            셀프 댓글 ({selfReplies.length}/3)
+            <span className="text-ink-400 font-medium">
+              · 발행 직후 자동 게시 → 알고리즘 부스트
+            </span>
+          </div>
+          {selfReplies.length < 3 && (
+            <button
+              type="button"
+              onClick={addReply}
+              className="text-[11px] font-bold text-brand-600 hover:text-brand-700 flex items-center gap-0.5"
+            >
+              <Plus size={11} /> 추가
+            </button>
+          )}
+        </div>
+        {selfReplies.map((r, i) => (
+          <div key={i} className="flex items-start gap-2">
+            <span className="text-[10px] font-bold text-ink-400 mt-2.5 w-5 flex-shrink-0">
+              ↳{i + 1}
+            </span>
+            <textarea
+              value={r}
+              onChange={(e) => updateReply(i, e.target.value)}
+              rows={2}
+              maxLength={500}
+              placeholder={`댓글 ${i + 1} (자연스러운 후속 내용)`}
+              className="flex-1 rounded-lg border border-ink-200 p-2 text-[13px] leading-relaxed text-ink-800 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none resize-y"
+            />
+            <button
+              type="button"
+              onClick={() => removeReply(i)}
+              className="text-ink-400 hover:text-rose-500 mt-2 flex-shrink-0"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        ))}
+      </div>
 
       {/* 메시지 */}
       {msg && (

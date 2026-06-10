@@ -81,6 +81,8 @@ export async function POST(req: Request) {
           draft_text: d.draft_text,
           insight: d.insight,
           source_posts: topSource,
+          topic_tag: d.topic_tag,
+          self_replies: d.self_replies,
         });
         created++;
       }

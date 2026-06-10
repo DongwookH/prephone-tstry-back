@@ -972,22 +972,26 @@ export type ThreadsDraftRow = {
   status: "pending" | "published" | "rejected" | "";
   published_id: string;
   published_at: string;
+  topic_tag: string; // Threads 주제 태그 (선택)
+  self_replies: string; // JSON 배열 — 셀프 댓글들 (선택)
 };
 
 const THREADS_DRAFTS_SHEET = "threads_drafts";
 const THREADS_DRAFTS_HEADERS = [
-  "id",
-  "created_at",
-  "keyword",
-  "draft_text",
-  "source_posts",
-  "insight",
-  "status",
-  "published_id",
-  "published_at",
+  "id",            // A
+  "created_at",    // B
+  "keyword",       // C
+  "draft_text",    // D
+  "source_posts",  // E
+  "insight",       // F
+  "status",        // G
+  "published_id",  // H
+  "published_at",  // I
+  "topic_tag",     // J
+  "self_replies",  // K
 ];
 
-/** threads_drafts 시트가 없으면 생성 + 헤더. */
+/** threads_drafts 시트가 없으면 생성 + 헤더. 있어도 헤더가 옛 버전이면 갱신. */
 export async function ensureThreadsDraftsSheet(): Promise<void> {
   const sheets = getClient();
   const id = mainSheetId();
@@ -1007,9 +1011,18 @@ export async function ensureThreadsDraftsSheet(): Promise<void> {
         ],
       },
     });
+  }
+  // 헤더가 옛 버전이면 (topic_tag/self_replies 없으면) 헤더 row 패치
+  const headerRow = await readRange(id, `${THREADS_DRAFTS_SHEET}!A1:K1`);
+  const cur = headerRow[0] || [];
+  const needsPatch =
+    cur.length < THREADS_DRAFTS_HEADERS.length ||
+    !cur.includes("topic_tag") ||
+    !cur.includes("self_replies");
+  if (needsPatch) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: id,
-      range: `${THREADS_DRAFTS_SHEET}!A1:I1`,
+      range: `${THREADS_DRAFTS_SHEET}!A1:K1`,
       valueInputOption: "RAW",
       requestBody: { values: [THREADS_DRAFTS_HEADERS] },
     });
@@ -1022,20 +1035,24 @@ export async function appendThreadsDraft(d: {
   draft_text: string;
   source_posts: unknown;
   insight: string;
+  topic_tag?: string;
+  self_replies?: string[];
 }): Promise<{ id: string }> {
   await ensureThreadsDraftsSheet();
   const id = `td-${Date.now()}-${Math.floor(performance.now()) % 1000}`;
   const now = new Date().toISOString();
   await appendRow(mainSheetId(), THREADS_DRAFTS_SHEET, [
-    id,
-    now,
-    d.keyword,
-    d.draft_text,
-    JSON.stringify(d.source_posts ?? []),
-    d.insight,
-    "pending",
-    "",
-    "",
+    id,                                            // A id
+    now,                                           // B created_at
+    d.keyword,                                     // C
+    d.draft_text,                                  // D
+    JSON.stringify(d.source_posts ?? []),          // E
+    d.insight,                                     // F
+    "pending",                                     // G status
+    "",                                            // H published_id
+    "",                                            // I published_at
+    d.topic_tag ?? "",                             // J topic_tag
+    JSON.stringify(d.self_replies ?? []),          // K self_replies
   ]);
   return { id };
 }
@@ -1061,23 +1078,30 @@ export async function getThreadsDrafts(
   );
 }
 
-/** 초안 갱신 — 부분 패치 (draft_text / status / published_*). */
+/** 초안 갱신 — 부분 패치. */
 export async function updateThreadsDraft(
   id: string,
   patch: Partial<
     Pick<
       ThreadsDraftRow,
-      "draft_text" | "status" | "published_id" | "published_at"
+      | "draft_text"
+      | "status"
+      | "published_id"
+      | "published_at"
+      | "topic_tag"
+      | "self_replies"
     >
   >,
 ): Promise<boolean> {
   const sheets = getClient();
   const spreadsheetId = mainSheetId();
-  const rows = await readRange(spreadsheetId, `${THREADS_DRAFTS_SHEET}!A:I`);
+  const rows = await readRange(spreadsheetId, `${THREADS_DRAFTS_SHEET}!A:K`);
   if (rows.length < 2) return false;
   let headerIdx = 0;
   if (rows[0]?.[0]?.startsWith("💡")) headerIdx = 1;
-  // 컬럼 인덱스: D=draft_text(3), G=status(6), H=published_id(7), I=published_at(8)
+  // 컬럼 인덱스:
+  //   D=draft_text(3), G=status(6), H=published_id(7), I=published_at(8),
+  //   J=topic_tag(9), K=self_replies(10)
   for (let i = headerIdx + 1; i < rows.length; i++) {
     if (rows[i]?.[0] !== id) continue;
     const rowNum = i + 1;
@@ -1090,6 +1114,10 @@ export async function updateThreadsDraft(
       updates.push({ range: `H${rowNum}`, value: patch.published_id });
     if (patch.published_at !== undefined)
       updates.push({ range: `I${rowNum}`, value: patch.published_at });
+    if (patch.topic_tag !== undefined)
+      updates.push({ range: `J${rowNum}`, value: patch.topic_tag });
+    if (patch.self_replies !== undefined)
+      updates.push({ range: `K${rowNum}`, value: patch.self_replies });
     for (const u of updates) {
       await sheets.spreadsheets.values.update({
         spreadsheetId,
