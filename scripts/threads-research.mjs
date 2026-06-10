@@ -83,9 +83,9 @@ const KEYWORDS = (
   .map((s) => s.trim())
   .filter(Boolean);
 const OUR_USERNAME = (process.env.OUR_USERNAME || "safe_ntel").toLowerCase();
-const MIN_LIKES = parseInt(process.env.MIN_LIKES || "10", 10);
-const MIN_REPLIES = parseInt(process.env.MIN_REPLIES || "2", 10);
-const MAX_AGE_HOURS = parseInt(process.env.MAX_AGE_HOURS || "48", 10);
+const MIN_LIKES = parseInt(process.env.MIN_LIKES || "3", 10);
+const MIN_REPLIES = parseInt(process.env.MIN_REPLIES || "0", 10);
+const MAX_AGE_HOURS = parseInt(process.env.MAX_AGE_HOURS || "0", 10); // 0=시간 필터 끔 (DOM에선 timestamp 추출 어려움)
 const TOP_PER_KEYWORD = parseInt(process.env.TOP_PER_KEYWORD || "8", 10);
 
 function log(...a) {
@@ -109,7 +109,7 @@ try {
   process.exit(1);
 }
 
-/** 객체 트리를 재귀적으로 돌며 '게시글처럼 보이는' 노드를 수집. */
+/** 객체 트리를 재귀적으로 돌며 '게시글처럼 보이는' 노드를 수집 (유연한 판별). */
 function collectPosts(root, out, seen) {
   if (!root || typeof root !== "object") return;
   if (seen.has(root)) return;
@@ -120,28 +120,59 @@ function collectPosts(root, out, seen) {
     return;
   }
 
-  // 게시글 노드 판별: code(permalink) + caption.text 또는 text_post_app_info 보유
-  const hasCode = typeof root.code === "string";
+  // 게시글 노드 판별 — Threads API 변형 대응:
+  //  - id: code / pk / id 중 하나
+  //  - content: caption.text / text / text_post_app_info / caption(string)
+  //  - user: user.username / owner.username / user.pk
+  const code =
+    (typeof root.code === "string" && root.code) ||
+    (typeof root.pk === "string" && root.pk) ||
+    (typeof root.id === "string" && root.id) ||
+    null;
+
   const captionText =
-    root.caption && typeof root.caption.text === "string"
+    (root.caption && typeof root.caption.text === "string"
       ? root.caption.text
-      : undefined;
-  const tpa = root.text_post_app_info;
-  if (hasCode && (captionText !== undefined || tpa)) {
-    const username = root.user?.username || root.owner?.username;
+      : null) ||
+    (typeof root.text === "string" ? root.text : null) ||
+    (typeof root.caption === "string" ? root.caption : null);
+
+  const tpa = root.text_post_app_info || root.text_post_app_post;
+  const user = root.user || root.owner;
+  const username = user && (user.username || user.pk);
+
+  // 셋 다 있어야 게시글로 인정 (id + content + user)
+  if (code && captionText && username) {
     out.push({
-      code: root.code,
-      author: username,
-      text: captionText || "",
+      code,
+      author: typeof username === "string" ? username : String(username),
+      text: captionText,
       likes:
-        typeof root.like_count === "number" ? root.like_count : 0,
+        typeof root.like_count === "number"
+          ? root.like_count
+          : typeof root.likes_count === "number"
+            ? root.likes_count
+            : 0,
       replies:
         typeof tpa?.direct_reply_count === "number"
           ? tpa.direct_reply_count
-          : 0,
+          : typeof root.reply_count === "number"
+            ? root.reply_count
+            : typeof tpa?.reply_count === "number"
+              ? tpa.reply_count
+              : 0,
       reposts:
-        typeof tpa?.repost_count === "number" ? tpa.repost_count : 0,
-      taken_at: typeof root.taken_at === "number" ? root.taken_at : 0,
+        typeof tpa?.repost_count === "number"
+          ? tpa.repost_count
+          : typeof root.repost_count === "number"
+            ? root.repost_count
+            : 0,
+      taken_at:
+        typeof root.taken_at === "number"
+          ? root.taken_at
+          : typeof root.timestamp === "number"
+            ? root.timestamp
+            : 0,
     });
   }
 
@@ -154,13 +185,15 @@ async function scrapeKeyword(context, keyword) {
   const page = await context.newPage();
   const captured = [];
 
+  const responseUrls = []; // 디버그: 모든 JSON 응답 URL 카운트
   page.on("response", async (res) => {
     try {
       const ct = res.headers()["content-type"] || "";
       if (!ct.includes("application/json")) return;
-      const url = res.url();
-      // Threads/IG 내부 API 응답만 (graphql / api)
-      if (!/graphql|\/api\//.test(url)) return;
+      const u = res.url();
+      responseUrls.push(u);
+      // 필터를 더 넓혀서 captured에 담기 (그래프QL, /api/, threads, ajax, instagram 다 포함)
+      if (!/graphql|\/api\/|ajax|instagram|threads/.test(u)) return;
       const json = await res.json().catch(() => null);
       if (json) captured.push(json);
     } catch {
@@ -178,6 +211,16 @@ async function scrapeKeyword(context, keyword) {
     log(`  goto 타임아웃(계속): ${keyword}`);
   }
 
+  // 디버그: 최종 페이지 정보
+  try {
+    const finalUrl = page.url();
+    const title = await page.title().catch(() => "");
+    log(`  최종 URL: ${finalUrl}`);
+    log(`  페이지 타이틀: ${title}`);
+  } catch {
+    /* ignore */
+  }
+
   // 인기글 더 로드되도록 사람처럼 스크롤 — 양·간격 랜덤
   const scrollRounds = 4 + Math.floor(Math.random() * 3); // 4~6번
   for (let i = 0; i < scrollRounds; i++) {
@@ -187,11 +230,90 @@ async function scrapeKeyword(context, keyword) {
   }
   await page.waitForTimeout(1500);
 
-  // 캡처된 JSON에서 게시글 추출
+  // 1차: 캡처된 JSON에서 게시글 추출
   const posts = [];
   const seen = new Set();
   for (const json of captured) {
     collectPosts(json, posts, seen);
+  }
+
+  // 2차: JSON에서 못 찾으면 DOM 셀렉터로 fallback 추출
+  //  → Threads 검색 결과는 SSR(HTML 임베드)로 와서 GraphQL API 응답이 없음
+  if (posts.length === 0) {
+    log(`  JSON 캡처 0건 → DOM 셀렉터로 fallback 추출`);
+    const domPosts = await page
+      .evaluate(() => {
+        const results = [];
+        const seenCodes = new Set();
+        const links = document.querySelectorAll('a[href*="/post/"]');
+
+        for (const a of links) {
+          const href = a.getAttribute("href") || "";
+          const m = href.match(/\/@([^/]+)\/post\/([^/?#]+)/);
+          if (!m) continue;
+          const [, username, code] = m;
+          if (seenCodes.has(code)) continue;
+          seenCodes.add(code);
+
+          // 게시글 카드 컨테이너 찾기 — link 위로 올라가며 큰 컨테이너 찾기
+          let container = a;
+          for (let i = 0; i < 12; i++) {
+            if (!container.parentElement) break;
+            container = container.parentElement;
+            const txt = container.innerText || "";
+            // 보통 게시글 카드는 본문+메타 합쳐 80자 이상
+            if (txt.length > 80) break;
+          }
+          const fullText = container?.innerText || "";
+
+          // 본문은 username 뒤, 숫자/메타 앞까지 best effort
+          // username으로 split 후 첫 큰 텍스트 덩어리 = 본문
+          let body = fullText;
+          const afterUser = fullText.split(username)[1];
+          if (afterUser) body = afterUser;
+          // 본문 정리 — 앞뒤 공백/짧은 메타 제거
+          body = body.replace(/^[\s·•|–—\d일주달월년시분초.,/\-:]+/, "").trim();
+
+          // 숫자 추출 — 좋아요/댓글/리포스트 (텍스트 끝에 모여 있음)
+          // 패턴: "5 28 1" 같이 공백 구분된 숫자 3-4개 모음
+          const numMatch = fullText.match(
+            /(\d+(?:[.,]\d+)?[KkMm]?)\s+(\d+(?:[.,]\d+)?[KkMm]?)\s+(\d+(?:[.,]\d+)?[KkMm]?)/,
+          );
+          const parseNum = (s) => {
+            if (!s) return 0;
+            const n = parseFloat(s.replace(",", "."));
+            if (/K/i.test(s)) return Math.round(n * 1000);
+            if (/M/i.test(s)) return Math.round(n * 1000000);
+            return Math.round(n);
+          };
+
+          let replies = 0,
+            reposts = 0,
+            likes = 0;
+          if (numMatch) {
+            // Threads 표시 순서: 댓글 / 리포스트 / 공유? / 좋아요
+            // 보통 마지막이 좋아요. 정확치 않을 수 있어 best effort
+            replies = parseNum(numMatch[1]);
+            reposts = parseNum(numMatch[2]);
+            likes = parseNum(numMatch[3]);
+          }
+
+          results.push({
+            code,
+            author: username,
+            text: body.slice(0, 500),
+            likes,
+            replies,
+            reposts,
+            taken_at: 0, // DOM에서 정확한 timestamp 추출 어려움
+          });
+        }
+        return results;
+      })
+      .catch(() => []);
+
+    log(`  DOM 추출: ${domPosts.length}개`);
+    for (const p of domPosts) posts.push(p);
   }
 
   // code 기준 dedup
@@ -209,8 +331,9 @@ async function scrapeKeyword(context, keyword) {
       if (p.author.toLowerCase() === OUR_USERNAME) return false;
       if (p.likes < MIN_LIKES) return false;
       if (p.replies < MIN_REPLIES) return false;
-      // taken_at 있으면 시간 필터 (없으면 통과 — 일부 응답엔 없음)
-      if (p.taken_at && nowSec - p.taken_at > maxAgeSec) return false;
+      // 시간 필터 — MAX_AGE_HOURS=0이면 끔, taken_at=0(DOM)이면 통과
+      if (maxAgeSec > 0 && p.taken_at && nowSec - p.taken_at > maxAgeSec)
+        return false;
       return true;
     })
     .map((p) => ({
@@ -234,6 +357,48 @@ async function scrapeKeyword(context, keyword) {
   log(
     `  캡처 JSON ${captured.length}건 · 후보 ${byCode.size}개 · 필터 후 ${filtered.length}개`,
   );
+
+  // 디버그: 후보 0이면 응답 URL 호스트별 카운트 + 본문 일부 dump + 응답 JSON 저장
+  if (byCode.size === 0) {
+    // captured[0]을 /tmp에 저장 — 우리가 직접 구조 분석 가능
+    if (captured.length > 0) {
+      try {
+        const dumpPath = `/tmp/threads-debug-${keyword}.json`;
+        const { writeFileSync } = await import("fs");
+        writeFileSync(dumpPath, JSON.stringify(captured[0], null, 2));
+        log(`  [디버그] 첫 응답 JSON: ${dumpPath}`);
+      } catch {
+        /* ignore */
+      }
+    }
+    const hostCount = {};
+    for (const u of responseUrls) {
+      try {
+        const h = new URL(u).host;
+        hostCount[h] = (hostCount[h] || 0) + 1;
+      } catch {
+        /* ignore */
+      }
+    }
+    log(`  [디버그] 전체 JSON 응답: ${responseUrls.length}건`);
+    log(`  [디버그] 호스트별: ${JSON.stringify(hostCount)}`);
+    // graphql 관련 URL만 추려서 일부
+    const interesting = responseUrls
+      .filter((u) => /graphql|api|threads/.test(u))
+      .slice(0, 5);
+    log(`  [디버그] 흥미로운 URL 샘플:`);
+    for (const u of interesting) log(`    - ${u.slice(0, 140)}`);
+    // 페이지 본문 첫 부분 (로그인 페이지인지 확인)
+    try {
+      const bodyText = (await page.locator("body").innerText())
+        .replace(/\s+/g, " ")
+        .slice(0, 250);
+      log(`  [디버그] body 첫 250자: ${bodyText}`);
+    } catch {
+      /* ignore */
+    }
+  }
+
   await page.close();
   return filtered;
 }
