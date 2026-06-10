@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { appendPosts, bumpKeywordsUsage, getRecentPostTitles } from "@/lib/sheets";
+import {
+  appendPosts,
+  bumpKeywordsUsage,
+  getRecentPostTitles,
+  getAllPosts,
+} from "@/lib/sheets";
 import { generatePost } from "@/lib/post-generator";
 import { ACTIVE_PATTERN_IDS, type HookPatternId } from "@/lib/title-diversity";
 
@@ -70,9 +75,36 @@ export async function POST(req: Request) {
     });
 
     const now = new Date().toISOString();
-    const today = now.slice(0, 10).replace(/-/g, "");
-    const slot = String(body.slot ?? 0).padStart(3, "0");
-    const id = `p-${today}-${slot}`;
+    // KST 날짜로 id 부여 (UTC 23:15~24:00에 cron 돌 때 UTC date면 어제로 찍힘)
+    const todayKST = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date()).replace(/-/g, "");
+
+    // id 충돌 방지 — 시트에 같은 id가 이미 있으면 다음 빈 슬롯 번호 사용
+    // (수동 트리거와 자동 cron이 동시에 돌 때 발생)
+    const existingPosts = await getAllPosts().catch(() => []);
+    const usedSlots = new Set(
+      existingPosts
+        .map((p) => p.id || "")
+        .filter((id) => id.startsWith(`p-${todayKST}-`))
+        .map((id) => parseInt(id.slice(-3), 10))
+        .filter((n) => !isNaN(n)),
+    );
+    let slotNum = body.slot ?? 0;
+    // 요청한 슬롯이 비어 있으면 그대로 사용, 충돌하면 다음 빈 번호 (1~999)
+    if (usedSlots.has(slotNum)) {
+      for (let n = 1; n <= 999; n++) {
+        if (!usedSlots.has(n)) {
+          slotNum = n;
+          break;
+        }
+      }
+    }
+    const slot = String(slotNum).padStart(3, "0");
+    const id = `p-${todayKST}-${slot}`;
 
     await appendPosts([
       {
