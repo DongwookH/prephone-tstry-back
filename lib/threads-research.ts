@@ -48,7 +48,7 @@ export async function generateThreadsDraftsFromPosts(opts: {
 }): Promise<GeneratedThreadsDraft[]> {
   const { keyword, posts } = opts;
   const count = opts.count ?? 2;
-  if (posts.length === 0) return [];
+  // 인기글 0건이어도 KB 기반으로 생성 가능 (주간 자동화용 — 스크레이퍼 결과 없을 수 있음)
 
   const globalCtx = getGlobalContext();
 
@@ -56,12 +56,15 @@ export async function generateThreadsDraftsFromPosts(opts: {
   const ranked = [...posts]
     .sort((a, b) => engagementScore(b) - engagementScore(a))
     .slice(0, 8);
-  const sampleList = ranked
-    .map((p, i) => {
-      const t = (p.text || "").replace(/\s+/g, " ").slice(0, 220);
-      return `${i + 1}. (좋아요 ${p.likes ?? 0} · 댓글 ${p.replies ?? 0}) ${t}`;
-    })
-    .join("\n");
+  const sampleList =
+    ranked.length > 0
+      ? ranked
+          .map((p, i) => {
+            const t = (p.text || "").replace(/\s+/g, " ").slice(0, 220);
+            return `${i + 1}. (좋아요 ${p.likes ?? 0} · 댓글 ${p.replies ?? 0}) ${t}`;
+          })
+          .join("\n")
+      : "(인기글 데이터 없음 — KB와 키워드 의미만 활용해 작성)";
 
   const prompt = `당신은 한국 SNS(Threads) 바이럴 카피라이터이자 그로스 마케터입니다.
 2026년 최신 Threads 알고리즘과 다이렉트 리스폰스 카피라이팅 원리를 활용해
@@ -173,4 +176,51 @@ ${globalCtx}
       };
     })
     .slice(0, count);
+}
+
+// ─── 주간 자동화 — 1주치 스케줄 + 일괄 생성 ─────────────
+
+/**
+ * 다가오는 또는 현재 주 월요일 00:00 KST.
+ * @param ref 기준 시각 (기본 now)
+ */
+export function getUpcomingMondayKstStart(ref: Date = new Date()): Date {
+  // KST = UTC+9
+  const refKstMs = ref.getTime() + 9 * 3600 * 1000;
+  const refKst = new Date(refKstMs);
+  const dayKst = refKst.getUTCDay(); // 0=일, 1=월, ..., 6=토
+  // 이번 주 월요일 (월요일이면 그대로, 다른 요일이면 다음 주 월요일까지의 일수)
+  // 우리는 "다가오는" 월요일 — 월요일 새벽 트리거 → 그 주 월요일~일요일 발행
+  // 월요일이면 오늘 0시, 화요일이면 6일 뒤 등이 아니라
+  // 이번 트리거가 월요일에 도니까 그 날 0시 KST 사용
+  const daysSinceMonday = (dayKst + 6) % 7; // 월=0, 일=6
+  // 이번 주 월요일 KST 00:00
+  const mondayKstMs = refKstMs - daysSinceMonday * 24 * 3600 * 1000;
+  const monday = new Date(mondayKstMs);
+  monday.setUTCHours(0, 0, 0, 0); // KST 자정 = 그 KST 날짜의 00:00
+  // UTC로 다시 변환 (KST 자정 - 9시간 = 전날 UTC 15:00)
+  return new Date(monday.getTime() - 9 * 3600 * 1000);
+}
+
+/**
+ * 1주치 스케줄 빌더 — 월~일 7일 × 3슬롯(9시·14시·20시 KST) = 21개.
+ * 각 슬롯에 ±15분 랜덤 jitter.
+ * 반환 ISO 문자열 배열 (UTC 기준).
+ */
+export function buildWeeklySchedule(weekStartUtc: Date): string[] {
+  const baseHoursKst = [9, 14, 20];
+  const slots: string[] = [];
+  for (let day = 0; day < 7; day++) {
+    for (const hour of baseHoursKst) {
+      // KST hour → UTC hour - 9 (음수면 전날)
+      const dt = new Date(weekStartUtc);
+      dt.setUTCDate(dt.getUTCDate() + day);
+      dt.setUTCHours(hour - 9, 0, 0, 0);
+      // ±15분 랜덤 jitter (정확히 정시 발행 봇 같아 보이지 않게)
+      const jitterMs =
+        Math.floor((Math.random() * 30 * 60 - 15 * 60) * 1000);
+      slots.push(new Date(dt.getTime() + jitterMs).toISOString());
+    }
+  }
+  return slots;
 }

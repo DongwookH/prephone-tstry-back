@@ -1,0 +1,77 @@
+name: Threads Weekly Plan (21 drafts)
+
+# 매주 월요일 KST 06:00 = UTC 일요일 21:00.
+# GHA cron은 best-effort ~1~2h 지연이므로 일요일 19:15 UTC에 트리거 →
+# 실제 ~21:00 UTC ~= KST 월요일 06:00.
+#
+# 21번 직렬 호출 (각 1편 생성, Vercel 60초 한도 회피).
+on:
+  schedule:
+    - cron: "15 19 * * 0"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "수동 실행 사유 (선택)"
+        required: false
+        default: "manual"
+
+concurrency:
+  group: threads-weekly-plan
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    name: Generate 21 weekly drafts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 환경 검증
+        env:
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          [ -n "${PRODUCTION_URL}" ] || { echo "::error::PRODUCTION_URL 미설정"; exit 1; }
+          [ -n "${CRON_SECRET}" ] || { echo "::error::CRON_SECRET 미설정"; exit 1; }
+          echo "✓ Secrets OK"
+
+      - name: 21편 직렬 생성
+        env:
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -uo pipefail
+          total=0
+          fail=0
+          for i in $(seq 0 20); do
+            echo "▶ [$i/20] 생성 요청"
+            response=$(curl -sS \
+              -w "\nHTTP_STATUS:%{http_code}\n" \
+              -X POST "${PRODUCTION_URL}/api/cron/threads-weekly-plan" \
+              -H "Authorization: Bearer ${CRON_SECRET}" \
+              -H "Content-Type: application/json" \
+              -d "{\"index\": $i}" \
+              --max-time 90 \
+              --retry 1)
+            http_status=$(echo "$response" | grep "HTTP_STATUS:" | cut -d: -f2 | tr -d ' ')
+            body=$(echo "$response" | sed '/HTTP_STATUS:/d')
+            if [ "$http_status" = "200" ]; then
+              total=$((total + 1))
+              kw=$(echo "$body" | jq -r '.keyword // "?"')
+              sched=$(echo "$body" | jq -r '.scheduled_at // "?"')
+              echo "✓ $i: $kw → $sched"
+            else
+              fail=$((fail + 1))
+              echo "::warning::index $i 실패 (HTTP $http_status)"
+              echo "$body" | head -5
+            fi
+            sleep 2
+          done
+
+          {
+            echo "## 🧵 Threads Weekly Plan"
+            echo ""
+            echo "**성공:** $total / 21"
+            echo "**실패:** $fail"
+            echo ""
+            echo "👉 검토: ${PRODUCTION_URL}/threads"
+          } >> "$GITHUB_STEP_SUMMARY"

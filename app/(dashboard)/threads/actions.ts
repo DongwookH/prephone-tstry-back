@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import {
   getThreadsDraftById,
+  getThreadsDrafts,
   updateThreadsDraft,
 } from "@/lib/sheets";
 import { getThreadsToken, postThreadWithReplies } from "@/lib/threads";
@@ -154,6 +155,101 @@ export async function approveAndPublishAction(
 
     revalidatePath("/threads");
     return { ok: true, postId: mainId, replyIds, replyErrors };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/** 단일 초안 예약 — status=pending → status=scheduled. */
+export async function scheduleDraftAction(
+  id: string,
+  text?: string,
+  topicTag?: string,
+  selfReplies?: string[],
+  scheduledAt?: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const a = await requireAuth();
+  if (!a.ok) return { ok: false, error: a.error! };
+
+  try {
+    const draft = await getThreadsDraftById(id);
+    if (!draft) return { ok: false, error: "초안 없음" };
+    if (draft.status === "published")
+      return { ok: false, error: "이미 발행됨" };
+
+    const finalText = (text?.trim() || draft.draft_text || "").slice(0, 500);
+    if (!finalText) return { ok: false, error: "본문이 비어있습니다" };
+
+    const tag =
+      topicTag !== undefined
+        ? topicTag.replace(/[.&]/g, "").trim().slice(0, 50)
+        : draft.topic_tag;
+    const replies =
+      selfReplies !== undefined
+        ? selfReplies.map((r) => r.trim()).filter(Boolean).slice(0, 3)
+        : undefined;
+
+    await updateThreadsDraft(id, {
+      draft_text: finalText,
+      status: "scheduled",
+      topic_tag: tag,
+      self_replies:
+        replies !== undefined ? JSON.stringify(replies) : undefined,
+      scheduled_at: scheduledAt ?? undefined,
+    });
+    revalidatePath("/threads");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/** 일괄 승인 — 인자 id 배열의 모든 pending → scheduled. */
+export async function bulkScheduleAction(
+  ids: string[],
+): Promise<
+  | { ok: true; scheduled: number; skipped: number }
+  | { ok: false; error: string }
+> {
+  const a = await requireAuth();
+  if (!a.ok) return { ok: false, error: a.error! };
+
+  try {
+    const all = await getThreadsDrafts();
+    const map = new Map(all.map((d) => [d.id, d]));
+    let scheduled = 0;
+    let skipped = 0;
+    for (const id of ids) {
+      const d = map.get(id);
+      if (!d || d.status !== "pending") {
+        skipped++;
+        continue;
+      }
+      await updateThreadsDraft(id, { status: "scheduled" });
+      scheduled++;
+    }
+    revalidatePath("/threads");
+    return { ok: true, scheduled, skipped };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/** 예약 취소 — scheduled → pending. */
+export async function unscheduleDraftAction(
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const a = await requireAuth();
+  if (!a.ok) return { ok: false, error: a.error! };
+
+  try {
+    const d = await getThreadsDraftById(id);
+    if (!d) return { ok: false, error: "초안 없음" };
+    if (d.status !== "scheduled")
+      return { ok: false, error: `현재 상태(${d.status})는 취소 불가` };
+    await updateThreadsDraft(id, { status: "pending" });
+    revalidatePath("/threads");
+    return { ok: true };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }

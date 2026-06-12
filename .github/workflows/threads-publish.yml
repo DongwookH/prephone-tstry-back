@@ -1,0 +1,57 @@
+name: Threads Publish (scheduled drafts)
+
+# 발행 워커 — 매 시각 정시에 호출.
+# status=scheduled + scheduled_at <= now 인 초안을 발행.
+# KST 9~21시 슬롯이 있으므로 그 시간대만 호출 (UTC 0~12시).
+on:
+  schedule:
+    - cron: "0 0-12 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: threads-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish due Threads drafts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 발행 워커 호출
+        env:
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -uo pipefail
+          [ -n "${PRODUCTION_URL}" ] || { echo "::error::PRODUCTION_URL 미설정"; exit 1; }
+          [ -n "${CRON_SECRET}" ] || { echo "::error::CRON_SECRET 미설정"; exit 1; }
+
+          response=$(curl -sS \
+            -w "\nHTTP_STATUS:%{http_code}\n" \
+            -X POST "${PRODUCTION_URL}/api/cron/threads-publish" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            --max-time 90)
+          http_status=$(echo "$response" | grep "HTTP_STATUS:" | cut -d: -f2 | tr -d ' ')
+          body=$(echo "$response" | sed '/HTTP_STATUS:/d')
+
+          if [ "$http_status" != "200" ]; then
+            echo "::error::발행 워커 호출 실패 (HTTP $http_status)"
+            echo "$body" | head -10
+            exit 1
+          fi
+
+          published=$(echo "$body" | jq -r '.published // 0')
+          failed=$(echo "$body" | jq -r '.failed // 0')
+          remaining=$(echo "$body" | jq -r '.remaining // 0')
+
+          {
+            echo "## 📤 Threads Publish"
+            echo ""
+            echo "**발행:** $published · **실패:** $failed · **남음:** $remaining"
+            echo ""
+            echo "$body" | jq -r '.results[]? | "- " + (if .ok then "✅" else "❌" end) + " " + .keyword + " — " + (.mainId // .error // "?")'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "✓ published=$published failed=$failed remaining=$remaining"

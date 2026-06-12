@@ -1064,11 +1064,19 @@ export type ThreadsDraftRow = {
   draft_text: string;
   source_posts: string; // JSON 문자열
   insight: string;
-  status: "pending" | "published" | "rejected" | "";
+  status:
+    | "pending" // 초안 — 검토 대기
+    | "scheduled" // 사용자 승인 → 시간 되면 자동 발행
+    | "published" // 발행 완료
+    | "rejected" // 반려
+    | "failed" // 발행 시도 후 실패
+    | "";
   published_id: string;
   published_at: string;
   topic_tag: string; // Threads 주제 태그 (선택)
   self_replies: string; // JSON 배열 — 셀프 댓글들 (선택)
+  scheduled_at: string; // 예약 발행 시각 ISO (주간 자동화용)
+  publish_error: string; // 마지막 발행 에러 (있을 때)
 };
 
 const THREADS_DRAFTS_SHEET = "threads_drafts";
@@ -1084,6 +1092,8 @@ const THREADS_DRAFTS_HEADERS = [
   "published_at",  // I
   "topic_tag",     // J
   "self_replies",  // K
+  "scheduled_at",  // L
+  "publish_error", // M
 ];
 
 /** threads_drafts 시트가 없으면 생성 + 헤더. 있어도 헤더가 옛 버전이면 갱신. */
@@ -1107,17 +1117,19 @@ export async function ensureThreadsDraftsSheet(): Promise<void> {
       },
     });
   }
-  // 헤더가 옛 버전이면 (topic_tag/self_replies 없으면) 헤더 row 패치
-  const headerRow = await readRange(id, `${THREADS_DRAFTS_SHEET}!A1:K1`);
+  // 헤더가 옛 버전이면 갱신 (A~M 13컬럼)
+  const headerRow = await readRange(id, `${THREADS_DRAFTS_SHEET}!A1:M1`);
   const cur = headerRow[0] || [];
   const needsPatch =
     cur.length < THREADS_DRAFTS_HEADERS.length ||
     !cur.includes("topic_tag") ||
-    !cur.includes("self_replies");
+    !cur.includes("self_replies") ||
+    !cur.includes("scheduled_at") ||
+    !cur.includes("publish_error");
   if (needsPatch) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: id,
-      range: `${THREADS_DRAFTS_SHEET}!A1:K1`,
+      range: `${THREADS_DRAFTS_SHEET}!A1:M1`,
       valueInputOption: "RAW",
       requestBody: { values: [THREADS_DRAFTS_HEADERS] },
     });
@@ -1132,6 +1144,7 @@ export async function appendThreadsDraft(d: {
   insight: string;
   topic_tag?: string;
   self_replies?: string[];
+  scheduled_at?: string;
 }): Promise<{ id: string }> {
   await ensureThreadsDraftsSheet();
   const id = `td-${Date.now()}-${Math.floor(performance.now()) % 1000}`;
@@ -1148,6 +1161,8 @@ export async function appendThreadsDraft(d: {
     "",                                            // I published_at
     d.topic_tag ?? "",                             // J topic_tag
     JSON.stringify(d.self_replies ?? []),          // K self_replies
+    d.scheduled_at ?? "",                          // L scheduled_at
+    "",                                            // M publish_error
   ]);
   return { id };
 }
@@ -1185,18 +1200,19 @@ export async function updateThreadsDraft(
       | "published_at"
       | "topic_tag"
       | "self_replies"
+      | "scheduled_at"
+      | "publish_error"
     >
   >,
 ): Promise<boolean> {
   const sheets = getClient();
   const spreadsheetId = mainSheetId();
-  const rows = await readRange(spreadsheetId, `${THREADS_DRAFTS_SHEET}!A:K`);
+  const rows = await readRange(spreadsheetId, `${THREADS_DRAFTS_SHEET}!A:M`);
   if (rows.length < 2) return false;
   let headerIdx = 0;
   if (rows[0]?.[0]?.startsWith("💡")) headerIdx = 1;
-  // 컬럼 인덱스:
-  //   D=draft_text(3), G=status(6), H=published_id(7), I=published_at(8),
-  //   J=topic_tag(9), K=self_replies(10)
+  // 컬럼 인덱스: D=draft_text, G=status, H=published_id, I=published_at,
+  //              J=topic_tag, K=self_replies, L=scheduled_at, M=publish_error
   for (let i = headerIdx + 1; i < rows.length; i++) {
     if (rows[i]?.[0] !== id) continue;
     const rowNum = i + 1;
@@ -1213,6 +1229,10 @@ export async function updateThreadsDraft(
       updates.push({ range: `J${rowNum}`, value: patch.topic_tag });
     if (patch.self_replies !== undefined)
       updates.push({ range: `K${rowNum}`, value: patch.self_replies });
+    if (patch.scheduled_at !== undefined)
+      updates.push({ range: `L${rowNum}`, value: patch.scheduled_at });
+    if (patch.publish_error !== undefined)
+      updates.push({ range: `M${rowNum}`, value: patch.publish_error });
     for (const u of updates) {
       await sheets.spreadsheets.values.update({
         spreadsheetId,
@@ -1232,4 +1252,198 @@ export async function getThreadsDraftById(
 ): Promise<ThreadsDraftRow | null> {
   const all = await getThreadsDrafts();
   return all.find((r) => r.id === id) ?? null;
+}
+
+// ─── Threads 전용 키워드 시트 (threads_keywords) ─────────────────
+// Threads 자동화에서만 사용. 티스토리 keywords와 별개.
+// 감정/페인포인트/꿀팁 톤이 강한 Threads 친화 키워드 풀.
+
+export type ThreadsKeywordRow = {
+  id: string;
+  keyword: string;
+  category: string; // 페인포인트 / 인증결제 / 타겟 / 꿀팁 / 핵심
+  priority: "high" | "normal" | "low" | "";
+  used_count: string;
+  last_used: string;
+  status: "active" | "paused" | "blacklisted" | "";
+  created_at: string;
+};
+
+const THREADS_KEYWORDS_SHEET = "threads_keywords";
+const THREADS_KEYWORDS_HEADERS = [
+  "id",
+  "keyword",
+  "category",
+  "priority",
+  "used_count",
+  "last_used",
+  "status",
+  "created_at",
+];
+
+export async function ensureThreadsKeywordsSheet(): Promise<void> {
+  const sheets = getClient();
+  const id = mainSheetId();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: id,
+    fields: "sheets.properties.title",
+  });
+  const exists = meta.data.sheets?.some(
+    (s) => s.properties?.title === THREADS_KEYWORDS_SHEET,
+  );
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: id,
+      requestBody: {
+        requests: [
+          { addSheet: { properties: { title: THREADS_KEYWORDS_SHEET } } },
+        ],
+      },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: id,
+      range: `${THREADS_KEYWORDS_SHEET}!A1:H1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [THREADS_KEYWORDS_HEADERS] },
+    });
+  }
+}
+
+/** active 키워드만. */
+export async function getActiveThreadsKeywords(): Promise<ThreadsKeywordRow[]> {
+  let all: ThreadsKeywordRow[] = [];
+  try {
+    all = await readSheetAsObjects<ThreadsKeywordRow>(
+      mainSheetId(),
+      THREADS_KEYWORDS_SHEET,
+    );
+  } catch {
+    return [];
+  }
+  return all.filter(
+    (r) => r.keyword?.trim() && (r.status === "active" || !r.status),
+  );
+}
+
+/**
+ * 7일 내 미사용 우선, 부족 시 재사용 — pickKeywordsForToday와 같은 패턴.
+ */
+export function pickThreadsKeywords(
+  pool: ThreadsKeywordRow[],
+  count: number,
+  excludeRecentDays = 7,
+): ThreadsKeywordRow[] {
+  const order = { high: 0, normal: 1, low: 2 } as const;
+  const todayKST = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - excludeRecentDays);
+  const cutoffKST = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(cutoffDate);
+
+  function isRecentlyUsed(k: ThreadsKeywordRow): boolean {
+    const lu = (k.last_used || "").slice(0, 10);
+    return !!lu && lu >= cutoffKST;
+  }
+  function tiebreakHash(kw: string): number {
+    const s = `${kw}-${todayKST}`;
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return h;
+  }
+  function sortPool(p: ThreadsKeywordRow[]) {
+    return [...p].sort((a, b) => {
+      const pa = order[(a.priority || "normal") as keyof typeof order] ?? 1;
+      const pb = order[(b.priority || "normal") as keyof typeof order] ?? 1;
+      if (pa !== pb) return pa - pb;
+      const ua = parseInt(a.used_count || "0", 10);
+      const ub = parseInt(b.used_count || "0", 10);
+      if (ua !== ub) return ua - ub;
+      return tiebreakHash(a.keyword) - tiebreakHash(b.keyword);
+    });
+  }
+
+  const fresh = sortPool(pool.filter((k) => !isRecentlyUsed(k))).slice(0, count);
+  if (fresh.length >= count) return fresh;
+
+  const usedSet = new Set(fresh.map((k) => k.keyword));
+  const filler = sortPool(pool.filter((k) => !usedSet.has(k.keyword))).slice(
+    0,
+    count - fresh.length,
+  );
+  let result = [...fresh, ...filler];
+
+  // 그래도 부족하면 순환 재사용
+  if (result.length < count && result.length > 0) {
+    const base = result.length;
+    let i = 0;
+    while (result.length < count) {
+      result.push(result[i % base]);
+      i++;
+    }
+  }
+  return result;
+}
+
+export async function appendThreadsKeyword(input: {
+  keyword: string;
+  category: string;
+  priority?: "high" | "normal" | "low";
+}): Promise<{ id: string }> {
+  await ensureThreadsKeywordsSheet();
+  const id = `tk-${Date.now()}-${Math.floor(performance.now()) % 1000}`;
+  const now = new Date().toISOString();
+  await appendRow(mainSheetId(), THREADS_KEYWORDS_SHEET, [
+    id,
+    input.keyword.trim(),
+    input.category,
+    input.priority || "normal",
+    "0",
+    "",
+    "active",
+    now,
+  ]);
+  return { id };
+}
+
+/** used_count +1, last_used = today KST. */
+export async function bumpThreadsKeywordUsage(
+  keywords: string[],
+): Promise<void> {
+  if (keywords.length === 0) return;
+  const sheets = getClient();
+  const spreadsheetId = mainSheetId();
+  const rows = await readRange(spreadsheetId, `${THREADS_KEYWORDS_SHEET}!A:H`);
+  if (rows.length < 2) return;
+
+  const todayKST = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  let headerIdx = 0;
+  if (rows[0]?.[0]?.startsWith("💡")) headerIdx = 1;
+  const kwSet = new Set(keywords);
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    if (!rows[i] || !kwSet.has(rows[i][1])) continue;
+    const rowNum = i + 1;
+    const curUsed = parseInt(rows[i][4] || "0", 10);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${THREADS_KEYWORDS_SHEET}!E${rowNum}:F${rowNum}`,
+      valueInputOption: "RAW",
+      requestBody: { values: [[String(curUsed + 1), todayKST]] },
+    });
+  }
 }
