@@ -128,7 +128,7 @@ export async function POST(req: Request) {
     self_replies: draft.self_replies,
     scheduled_at: scheduledIso,
   });
-  await bumpThreadsKeywordUsage([kw]).catch(() => {});
+  // 주간 자동화는 used_count 변동시키지 않음 (deterministic seed 기반 픽 유지)
 
   return NextResponse.json({
     ok: true,
