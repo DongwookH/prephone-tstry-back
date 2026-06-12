@@ -136,7 +136,7 @@ export default async function AnalyticsPage({
       : null;
 
   // ── 7일 발행 추이 (시트 기반은 그대로 유지) ──────────
-  const days: {
+  const trendDays: {
     label: string;
     published: number;
     ready: number;
@@ -154,13 +154,16 @@ export default async function AnalyticsPage({
     const dayPosts = all.filter(
       (p) => p.created_at && toKstDate(p.created_at) === dStr,
     );
-    days.push({
+    trendDays.push({
       label,
       published: dayPosts.filter((p) => p.status === "published").length,
       ready: dayPosts.filter((p) => p.status === "ready").length,
     });
   }
-  const maxBar = Math.max(...days.flatMap((d) => [d.published, d.ready]), 10);
+  const maxBar = Math.max(
+    ...trendDays.flatMap((d) => [d.published, d.ready]),
+    10,
+  );
 
   // ── GA 일자별 페이지뷰 (있을 때만) ──────────
   const gaDailyMax = ga.daily
@@ -352,7 +355,7 @@ export default async function AnalyticsPage({
               <Legend color="bg-amber-500" label="대기" />
             </div>
           </div>
-          <BarChart7Day days={days} maxBar={maxBar} />
+          <BarChart7Day days={trendDays} maxBar={maxBar} />
         </section>
 
         {!hasMultiBlog && ga.ok && ga.daily && ga.daily.length > 0 && (
