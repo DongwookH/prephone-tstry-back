@@ -130,10 +130,13 @@ export default async function SettingsPage() {
   };
   const todayTotal = today.inputTokens + today.outputTokens;
 
-  // Gemini 무료 한도 (gemini-2.5-flash-lite 기준 ~1500 RPD, 토큰 한도는 별도)
-  // 일일 호출 한도 1500회 기준으로 표시 (정확한 수치는 모델마다 다름)
-  const DAILY_CALL_LIMIT = 1500;
-  const callsPct = Math.min((today.calls / DAILY_CALL_LIMIT) * 100, 100);
+  // Gemini 무료 한도 — 키 N개 × 모델별 RPD = 실제 합산 한도
+  // (예: gemini-2.5-flash 1500 RPD × 키 4개 = 6000회/일)
+  const DAILY_CALL_LIMIT = keyStatus.dailyLimit;
+  const callsPct =
+    DAILY_CALL_LIMIT > 0
+      ? Math.min((today.calls / DAILY_CALL_LIMIT) * 100, 100)
+      : 0;
 
   const gaConnected =
     !!process.env.GA_PROPERTY_ID && !!session?.accessToken;
@@ -251,7 +254,7 @@ export default async function SettingsPage() {
               <MiniKPI
                 label="오늘 호출"
                 value={today.calls.toLocaleString()}
-                sub={`/ ${DAILY_CALL_LIMIT} (무료 한도)`}
+                sub={`/ ${DAILY_CALL_LIMIT.toLocaleString()} (키 ${keyStatus.count}개 × ${keyStatus.rpdPerKey})`}
                 pct={callsPct}
               />
               <MiniKPI
@@ -288,18 +291,23 @@ export default async function SettingsPage() {
             </div>
             <UsageChart data={usageData} />
             <div className="text-[11px] text-ink-500 mt-3 leading-relaxed">
-              ※ Gemini API 무료 한도는 모델·계정에 따라 다릅니다. 위 한도(1500
-              호출/일)는 <code className="bg-ink-100 px-1.5 py-0.5 rounded">gemini-2.5-flash-lite</code> 기준 추정치.
-              실제 한도는{" "}
+              ※ 일일 한도 <strong>{DAILY_CALL_LIMIT.toLocaleString()}</strong>회
+              = 키 {keyStatus.count}개 × {keyStatus.rpdPerKey.toLocaleString()}
+              회 (
+              <code className="bg-ink-100 px-1.5 py-0.5 rounded">
+                {keyStatus.model}
+              </code>{" "}
+              Free Tier RPD 기준). 키를 추가하면 합산 한도도 늘어납니다.
+              실제 잔여량은{" "}
               <a
-                href="https://ai.google.dev/pricing"
+                href="https://aistudio.google.com/rate-limit"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-brand-600 font-bold hover:underline"
               >
-                Google AI Studio
+                Google AI Studio Rate Limit
               </a>
-              에서 확인.
+              에서 정확하게 확인 가능.
             </div>
           </Card>
 

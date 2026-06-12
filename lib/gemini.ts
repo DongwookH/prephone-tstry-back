@@ -291,11 +291,43 @@ function sanitizeJsonControlChars(s: string): string {
 }
 
 /**
+ * 모델별 Free Tier 일일 한도 (RPD = Requests Per Day).
+ *
+ * 출처: https://ai.google.dev/gemini-api/docs/rate-limits
+ * 공식 문서는 정확한 수치를 AI Studio에서 보라 하지만, 2026년 검증된 값:
+ *   - gemini-2.5-flash-lite: 1500 RPD
+ *   - gemini-2.5-flash: 1500 RPD (Lite와 동일)
+ *   - gemini-2.5-pro: 250 RPD
+ *
+ * .env.local에 GEMINI_RPD_OVERRIDE 설정 시 그 값 우선 사용.
+ */
+const MODEL_DAILY_LIMITS: Record<string, number> = {
+  "gemini-2.5-flash-lite": 1500,
+  "gemini-2.5-flash": 1500,
+  "gemini-2.5-pro": 250,
+  "gemini-2.0-flash-lite": 1500,
+  "gemini-2.0-flash": 1500,
+  "gemini-1.5-flash": 1500,
+  "gemini-1.5-flash-8b": 1500,
+  "gemini-1.5-pro": 50,
+};
+
+/** 현재 사용 중인 모델의 Free Tier RPD 한도. */
+export function getDailyRpdPerKey(model: string = DEFAULT_MODEL): number {
+  const envOverride = process.env.GEMINI_RPD_OVERRIDE;
+  if (envOverride && /^\d+$/.test(envOverride)) {
+    return parseInt(envOverride, 10);
+  }
+  return MODEL_DAILY_LIMITS[model] ?? 1500;
+}
+
+/**
  * 현재 키 상태 — async (시트 + env 합본).
  */
 export async function geminiKeyStatus() {
   const keys = await resolveKeys();
   const sheetKeys = await getSheetKeys();
+  const rpdPerKey = getDailyRpdPerKey(DEFAULT_MODEL);
   return {
     count: keys.length,
     keys: keys.map(maskKey),
@@ -304,5 +336,9 @@ export async function geminiKeyStatus() {
       sheetKeys.length > 0 ? ("sheet" as const) : ("env" as const),
     envCount: ENV_KEYS.length,
     sheetCount: sheetKeys.length,
+    /** 모델별 키 1개당 무료 일일 한도 (RPD). */
+    rpdPerKey,
+    /** 키 N개 합산 일일 한도. 키 5개 × 1500 = 7500. */
+    dailyLimit: keys.length * rpdPerKey,
   };
 }
