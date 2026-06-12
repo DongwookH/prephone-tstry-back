@@ -1328,10 +1328,14 @@ export async function getActiveThreadsKeywords(): Promise<ThreadsKeywordRow[]> {
 /**
  * 7일 내 미사용 우선, 부족 시 재사용 — pickKeywordsForToday와 같은 패턴.
  */
+/**
+ * @param seed 동일 seed → 동일 결과 보장 (weekly plan에서 21번 호출되어도 같은 21개 픽).
+ */
 export function pickThreadsKeywords(
   pool: ThreadsKeywordRow[],
   count: number,
   excludeRecentDays = 7,
+  seed?: string,
 ): ThreadsKeywordRow[] {
   const order = { high: 0, normal: 1, low: 2 } as const;
   const todayKST = new Intl.DateTimeFormat("en-CA", {
@@ -1340,6 +1344,7 @@ export function pickThreadsKeywords(
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+  const seedStr = seed || todayKST;
 
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - excludeRecentDays);
@@ -1355,19 +1360,24 @@ export function pickThreadsKeywords(
     return !!lu && lu >= cutoffKST;
   }
   function tiebreakHash(kw: string): number {
-    const s = `${kw}-${todayKST}`;
+    const s = `${kw}-${seedStr}`;
     let h = 0;
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
     return h;
   }
+  // seed 모드: used_count 무시 — 같은 seed에서 항상 같은 결과 (weekly 21개 호출 일관성)
+  // 기본 모드: used_count 반영 (옛 동작)
+  const useSeedMode = !!seed;
   function sortPool(p: ThreadsKeywordRow[]) {
     return [...p].sort((a, b) => {
       const pa = order[(a.priority || "normal") as keyof typeof order] ?? 1;
       const pb = order[(b.priority || "normal") as keyof typeof order] ?? 1;
       if (pa !== pb) return pa - pb;
-      const ua = parseInt(a.used_count || "0", 10);
-      const ub = parseInt(b.used_count || "0", 10);
-      if (ua !== ub) return ua - ub;
+      if (!useSeedMode) {
+        const ua = parseInt(a.used_count || "0", 10);
+        const ub = parseInt(b.used_count || "0", 10);
+        if (ua !== ub) return ua - ub;
+      }
       return tiebreakHash(a.keyword) - tiebreakHash(b.keyword);
     });
   }

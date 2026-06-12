@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import {
   getActiveThreadsKeywords,
   pickThreadsKeywords,
-  bumpThreadsKeywordUsage,
   appendThreadsDraft,
   getThreadsDrafts,
 } from "@/lib/sheets";
@@ -75,6 +74,8 @@ export async function POST(req: Request) {
   }
 
   // 5) 키워드 풀 → 21개 픽 (한 번에 픽해서 index로 잘라 씀)
+  //    seed = weekStart ISO → 같은 주 내 모든 호출에서 동일한 21개 순서 보장.
+  //    used_count 변동에 영향받지 않으므로 호출 간 일관성 유지.
   const pool = await getActiveThreadsKeywords();
   if (pool.length === 0) {
     return NextResponse.json(
@@ -85,7 +86,7 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const picked = pickThreadsKeywords(pool, TOTAL);
+  const picked = pickThreadsKeywords(pool, TOTAL, 7, weekStart.toISOString());
   const kw = picked[index]?.keyword;
   if (!kw) {
     return NextResponse.json(

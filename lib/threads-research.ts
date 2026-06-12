@@ -205,21 +205,21 @@ export function getUpcomingMondayKstStart(ref: Date = new Date()): Date {
 /**
  * 1주치 스케줄 빌더 — 월~일 7일 × 3슬롯(9시·14시·20시 KST) = 21개.
  * 각 슬롯에 ±15분 랜덤 jitter.
- * 반환 ISO 문자열 배열 (UTC 기준).
+ *
+ * weekStartUtc = KST 월요일 00:00에 해당하는 UTC 시각 (= 일요일 UTC 15:00).
+ * KST (월요일+day) HOUR시 = weekStartUtc + day*24시간 + HOUR시간 (KST·UTC 차이는 9이고 그건 이미 weekStart에 반영됨)
  */
 export function buildWeeklySchedule(weekStartUtc: Date): string[] {
   const baseHoursKst = [9, 14, 20];
   const slots: string[] = [];
   for (let day = 0; day < 7; day++) {
     for (const hour of baseHoursKst) {
-      // KST hour → UTC hour - 9 (음수면 전날)
-      const dt = new Date(weekStartUtc);
-      dt.setUTCDate(dt.getUTCDate() + day);
-      dt.setUTCHours(hour - 9, 0, 0, 0);
+      const targetMs =
+        weekStartUtc.getTime() + day * 24 * 3600 * 1000 + hour * 3600 * 1000;
       // ±15분 랜덤 jitter (정확히 정시 발행 봇 같아 보이지 않게)
       const jitterMs =
         Math.floor((Math.random() * 30 * 60 - 15 * 60) * 1000);
-      slots.push(new Date(dt.getTime() + jitterMs).toISOString());
+      slots.push(new Date(targetMs + jitterMs).toISOString());
     }
   }
   return slots;
