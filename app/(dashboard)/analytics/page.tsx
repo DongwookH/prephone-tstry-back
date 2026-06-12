@@ -97,7 +97,17 @@ async function loadGA(): Promise<GAState> {
   }
 }
 
-export default async function AnalyticsPage() {
+export default async function AnalyticsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ days?: string }>;
+}) {
+  // 기간 토글 — ?days=1 (오늘) | 7 | 30. 기본 7일.
+  const sp = await searchParams;
+  const parsed = parseInt(sp.days || "7", 10);
+  const days =
+    parsed === 1 || parsed === 7 || parsed === 30 ? parsed : 7;
+
   const [all, ga, gaProps] = await Promise.all([
     getAllPosts(),
     loadGA(),
@@ -172,15 +182,36 @@ export default async function AnalyticsPage() {
         right={
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 p-1 rounded-xl bg-ink-100">
-              <button className="px-3 h-8 rounded-lg text-[12px] font-semibold text-ink-600 hover:text-ink-900">
+              <Link
+                href="/analytics?days=1"
+                className={`px-3 h-8 rounded-lg text-[12px] flex items-center transition ${
+                  days === 1
+                    ? "bg-white shadow-card font-bold text-ink-900"
+                    : "font-semibold text-ink-600 hover:text-ink-900"
+                }`}
+              >
                 오늘
-              </button>
-              <button className="px-3 h-8 rounded-lg bg-white shadow-card text-[12px] font-bold text-ink-900">
+              </Link>
+              <Link
+                href="/analytics?days=7"
+                className={`px-3 h-8 rounded-lg text-[12px] flex items-center transition ${
+                  days === 7
+                    ? "bg-white shadow-card font-bold text-ink-900"
+                    : "font-semibold text-ink-600 hover:text-ink-900"
+                }`}
+              >
                 7일
-              </button>
-              <button className="px-3 h-8 rounded-lg text-[12px] font-semibold text-ink-600 hover:text-ink-900">
+              </Link>
+              <Link
+                href="/analytics?days=30"
+                className={`px-3 h-8 rounded-lg text-[12px] flex items-center transition ${
+                  days === 30
+                    ? "bg-white shadow-card font-bold text-ink-900"
+                    : "font-semibold text-ink-600 hover:text-ink-900"
+                }`}
+              >
                 30일
-              </button>
+              </Link>
             </div>
             <a
               href="https://analytics.google.com"
@@ -199,7 +230,7 @@ export default async function AnalyticsPage() {
         {/* ─── 블로그별 GA4 멀티 분석 (등록된 경우만) ─── */}
         {hasMultiBlog && (
           <div className="mb-8">
-            <MultiBlogAnalytics days={7} />
+            <MultiBlogAnalytics days={days} />
           </div>
         )}
 

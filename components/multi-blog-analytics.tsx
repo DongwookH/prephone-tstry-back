@@ -1,5 +1,5 @@
 import { getMultiBlogStats, aggregateOverview, type BlogStats } from "@/lib/ga4";
-import { getGaProperties } from "@/lib/sheets";
+import { getGaProperties, getAllPosts } from "@/lib/sheets";
 import { auth } from "@/auth";
 import Link from "next/link";
 import {
@@ -12,6 +12,27 @@ import {
   CircleDot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+/** GA4 pagePath → 우리 시트의 글 title 매칭용 맵 빌더. */
+function buildPathTitleMap(posts: Awaited<ReturnType<typeof getAllPosts>>): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const p of posts) {
+    if (!p.tistory_url || !p.title) continue;
+    try {
+      const u = new URL(p.tistory_url);
+      const path = u.pathname; // 예: /15
+      if (path && path !== "/" && !map.has(path)) {
+        map.set(path, p.title);
+      }
+    } catch {
+      // tistory_url이 URL 형식 아니면 path만 추출 시도 (예: "/15")
+      if (p.tistory_url.startsWith("/")) {
+        map.set(p.tistory_url, p.title);
+      }
+    }
+  }
+  return map;
+}
 
 /**
  * 등록된 GA properties (블로그) 5개를 병렬 조회 → 합계 + 블로그별 비교 표시.
@@ -36,15 +57,21 @@ export async function MultiBlogAnalytics({ days = 7 }: { days?: number }) {
     );
   }
 
-  const stats = await getMultiBlogStats({
-    accessToken: session.accessToken,
-    properties: props.map((p) => ({
-      id: p.property_id,
-      label: p.label,
-      tistory_url: p.tistory_url,
-    })),
-    days,
-  });
+  const [stats, posts] = await Promise.all([
+    getMultiBlogStats({
+      accessToken: session.accessToken,
+      properties: props.map((p) => ({
+        id: p.property_id,
+        label: p.label,
+        tistory_url: p.tistory_url,
+      })),
+      days,
+    }),
+    getAllPosts().catch(() => []),
+  ]);
+
+  // GA4 pagePath → 우리 시트의 글 title 매핑
+  const pathTitleMap = buildPathTitleMap(posts);
 
   const total = aggregateOverview(stats);
   const totalRealtime = stats.reduce(
@@ -97,7 +124,11 @@ export async function MultiBlogAnalytics({ days = 7 }: { days?: number }) {
       {/* 블로그별 비교 카드 */}
       <div className="grid gap-3 grid-cols-1 lg:grid-cols-2">
         {stats.map((s) => (
-          <BlogCard key={s.propertyId} stats={s} />
+          <BlogCard
+            key={s.propertyId}
+            stats={s}
+            pathTitleMap={pathTitleMap}
+          />
         ))}
       </div>
     </section>
@@ -126,7 +157,13 @@ function KPI({
   );
 }
 
-function BlogCard({ stats }: { stats: BlogStats }) {
+function BlogCard({
+  stats,
+  pathTitleMap,
+}: {
+  stats: BlogStats;
+  pathTitleMap: Map<string, string>;
+}) {
   const o = stats.overview;
   return (
     <div className="bg-white rounded-2xl shadow-card p-4 space-y-3">
@@ -196,32 +233,48 @@ function BlogCard({ stats }: { stats: BlogStats }) {
               <div className="text-[10px] font-bold text-ink-500 tracking-wider mb-1.5">
                 인기 페이지 TOP {stats.topPages.length}
               </div>
-              <div className="space-y-1">
-                {stats.topPages.slice(0, 5).map((p, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-2 text-[11px]"
-                  >
-                    <span className="text-ink-400 font-bold w-4">
-                      {i + 1}
-                    </span>
-                    <Link
-                      href={
-                        stats.tistoryUrl
-                          ? `${stats.tistoryUrl}${p.path}`
-                          : p.path
-                      }
-                      target="_blank"
-                      className="flex-1 truncate text-ink-700 hover:text-brand-600"
-                      title={p.title || p.path}
+              <div className="space-y-1.5">
+                {stats.topPages.slice(0, 5).map((p, i) => {
+                  // 우선순위: 시트에 매칭된 글 제목 → GA pageTitle (사이트명 아닐 때) → pagePath
+                  const sheetTitle = pathTitleMap.get(p.path);
+                  const gaTitle = p.title || "";
+                  // 사이트 공통 타이틀(예: "앤텔레콤 안심개통 케어통신")이면 path가 더 정보가 많음
+                  const looksLikeSiteName =
+                    gaTitle && (gaTitle.length < 35 || gaTitle === gaTitle.trim());
+                  const display =
+                    sheetTitle ||
+                    (looksLikeSiteName ? p.path : gaTitle || p.path);
+                  return (
+                    <div
+                      key={i}
+                      className="flex items-start gap-2 text-[11px] py-0.5"
                     >
-                      {p.title || p.path}
-                    </Link>
-                    <span className="text-ink-500 tabular-nums font-bold">
-                      {p.pageviews.toLocaleString()}
-                    </span>
-                  </div>
-                ))}
+                      <span className="text-ink-400 font-bold w-4 mt-0.5">
+                        {i + 1}
+                      </span>
+                      <Link
+                        href={
+                          stats.tistoryUrl
+                            ? `${stats.tistoryUrl.replace(/\/$/, "")}${p.path}`
+                            : p.path
+                        }
+                        target="_blank"
+                        className="flex-1 min-w-0 text-ink-700 hover:text-brand-600 leading-tight"
+                        title={display}
+                      >
+                        <div className="truncate font-medium">{display}</div>
+                        {sheetTitle && (
+                          <div className="text-[10px] text-ink-400 font-mono truncate">
+                            {p.path}
+                          </div>
+                        )}
+                      </Link>
+                      <span className="text-ink-500 tabular-nums font-bold mt-0.5 flex-shrink-0">
+                        {p.pageviews.toLocaleString()}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
