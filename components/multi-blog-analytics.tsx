@@ -13,25 +13,49 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** GA4 pagePath → 우리 시트의 글 title 매칭용 맵 빌더. */
-function buildPathTitleMap(posts: Awaited<ReturnType<typeof getAllPosts>>): Map<string, string> {
+/** 글 제목 정리 — 사이트명 접미사 제거 (" | 앤텔레콤 안심개통" 등). */
+function cleanTitle(t: string): string {
+  return t
+    .replace(/\s*[|·\-–—]\s*(?:앤텔레콤\s*안심개통(?:\s*케어(?:통신)?)?|앤텔레콤|안심개통|케어통신).*$/i, "")
+    .trim();
+}
+
+/**
+ * GA4 pagePath → 우리 시트의 글 title 매칭용 맵 빌더.
+ *
+ * 사용자가 한 글을 5개 블로그에 복붙해서 올리므로, posts 시트엔 한 블로그 URL만 저장돼 있음.
+ * → 도메인 무관하게 path만으로 매칭. 같은 path(예: /1)면 같은 글로 추정.
+ * (티스토리 글 ID는 발행 순서로 부여되므로 5개 블로그가 거의 같은 path 갖는 경우 많음)
+ */
+function buildPathTitleMap(
+  posts: Awaited<ReturnType<typeof getAllPosts>>,
+): Map<string, string> {
   const map = new Map<string, string>();
   for (const p of posts) {
     if (!p.tistory_url || !p.title) continue;
+    let path = "";
     try {
       const u = new URL(p.tistory_url);
-      const path = u.pathname; // 예: /15
-      if (path && path !== "/" && !map.has(path)) {
-        map.set(path, p.title);
-      }
+      path = u.pathname;
     } catch {
-      // tistory_url이 URL 형식 아니면 path만 추출 시도 (예: "/15")
-      if (p.tistory_url.startsWith("/")) {
-        map.set(p.tistory_url, p.title);
-      }
+      if (p.tistory_url.startsWith("/")) path = p.tistory_url;
+    }
+    if (!path || path === "/") continue;
+    if (!map.has(path)) {
+      map.set(path, cleanTitle(p.title));
     }
   }
   return map;
+}
+
+/** GA pageTitle이 우리 사이트 공통명만 있는지 판단. */
+function isSiteNameOnly(t: string): boolean {
+  if (!t) return true;
+  const cleaned = t.trim();
+  // 정확히 사이트명 또는 그 변형
+  if (/^앤텔레콤\s*안심개통(\s*케어(\s*통신)?)?$/i.test(cleaned)) return true;
+  if (/^앤텔레콤$/i.test(cleaned)) return true;
+  return false;
 }
 
 /**
@@ -235,15 +259,16 @@ function BlogCard({
               </div>
               <div className="space-y-1.5">
                 {stats.topPages.slice(0, 5).map((p, i) => {
-                  // 우선순위: 시트에 매칭된 글 제목 → GA pageTitle (사이트명 아닐 때) → pagePath
+                  // 우선순위: 시트 매칭 글 제목 → GA pageTitle(사이트명 아닐 때) → pagePath
                   const sheetTitle = pathTitleMap.get(p.path);
-                  const gaTitle = p.title || "";
-                  // 사이트 공통 타이틀(예: "앤텔레콤 안심개통 케어통신")이면 path가 더 정보가 많음
-                  const looksLikeSiteName =
-                    gaTitle && (gaTitle.length < 35 || gaTitle === gaTitle.trim());
-                  const display =
-                    sheetTitle ||
-                    (looksLikeSiteName ? p.path : gaTitle || p.path);
+                  const gaTitle = (p.title || "").trim();
+                  const cleanedGaTitle = gaTitle ? cleanTitle(gaTitle) : "";
+                  const usefulGaTitle =
+                    cleanedGaTitle && !isSiteNameOnly(cleanedGaTitle)
+                      ? cleanedGaTitle
+                      : "";
+                  const display = sheetTitle || usefulGaTitle || p.path;
+                  const showSubPath = Boolean(sheetTitle || usefulGaTitle);
                   return (
                     <div
                       key={i}
@@ -263,7 +288,7 @@ function BlogCard({
                         title={display}
                       >
                         <div className="truncate font-medium">{display}</div>
-                        {sheetTitle && (
+                        {showSubPath && (
                           <div className="text-[10px] text-ink-400 font-mono truncate">
                             {p.path}
                           </div>
