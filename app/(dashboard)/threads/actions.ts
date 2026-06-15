@@ -6,8 +6,11 @@ import {
   getThreadsDraftById,
   getThreadsDrafts,
   updateThreadsDraft,
+  getActiveThreadsKeywords,
+  pickThreadsKeywords,
 } from "@/lib/sheets";
 import { getThreadsToken, postThreadWithReplies } from "@/lib/threads";
+import { generateThreadsDraftsFromPosts } from "@/lib/threads-research";
 
 async function requireAuth(): Promise<{ ok: boolean; error?: string }> {
   const session = await auth();
@@ -230,6 +233,87 @@ export async function bulkScheduleAction(
     }
     revalidatePath("/threads");
     return { ok: true, scheduled, skipped };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/**
+ * 반려글 1건 재생성 — 가장 오래된 rejected(+scheduled_at) 1건을 새 키워드로 재작성.
+ * UI에서 반복 호출해 N개 처리. Vercel 60초 한도 안에 1건만 처리해 안전.
+ *
+ * 반환:
+ *   ok=true: { remaining, oldKeyword, newKeyword }
+ *   ok=true + done: 반려글 없음
+ *   ok=false: error
+ */
+export async function regenerateOneRejectedAction(): Promise<
+  | { ok: true; done: true }
+  | {
+      ok: true;
+      done: false;
+      remaining: number;
+      oldKeyword: string;
+      newKeyword: string;
+    }
+  | { ok: false; error: string }
+> {
+  const a = await requireAuth();
+  if (!a.ok) return { ok: false, error: a.error! };
+
+  try {
+    const all = await getThreadsDrafts();
+    // 주간 자동화 안에 있는 반려글만 (scheduled_at 있는 것)
+    const rejected = all.filter(
+      (d) => d.status === "rejected" && !!d.scheduled_at,
+    );
+    if (rejected.length === 0) return { ok: true, done: true };
+
+    const target = rejected[0];
+
+    const pool = await getActiveThreadsKeywords();
+    if (pool.length === 0)
+      return { ok: false, error: "키워드 풀이 비어 있습니다" };
+
+    const usedSet = new Set(
+      all
+        .filter((d) => d.id !== target.id)
+        .map((d) => d.keyword)
+        .filter(Boolean),
+    );
+    const fresh = pool.filter((k) => !usedSet.has(k.keyword));
+    const candidatePool = fresh.length > 0 ? fresh : pool;
+
+    const picked = pickThreadsKeywords(candidatePool, 1, 0, target.id);
+    const newKeyword = picked[0]?.keyword;
+    if (!newKeyword) return { ok: false, error: "키워드 픽 실패" };
+
+    const drafts = await generateThreadsDraftsFromPosts({
+      keyword: newKeyword,
+      posts: [],
+      count: 1,
+    });
+    const draft = drafts[0];
+    if (!draft) return { ok: false, error: "Gemini가 초안을 만들지 못함" };
+
+    await updateThreadsDraft(target.id, {
+      keyword: newKeyword,
+      draft_text: draft.draft_text,
+      insight: draft.insight,
+      topic_tag: draft.topic_tag,
+      self_replies: JSON.stringify(draft.self_replies),
+      status: "pending",
+      publish_error: "",
+    });
+
+    revalidatePath("/threads");
+    return {
+      ok: true,
+      done: false,
+      remaining: rejected.length - 1,
+      oldKeyword: target.keyword,
+      newKeyword,
+    };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }

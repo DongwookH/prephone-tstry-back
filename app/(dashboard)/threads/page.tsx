@@ -5,6 +5,7 @@ import {
   ThreadsWeeklyCalendar,
   type CalendarDraft,
 } from "@/components/threads-weekly-calendar";
+import { RegenerateRejectedButton } from "@/components/regenerate-rejected-button";
 import { AtSign, CircleCheck, CircleX, CalendarClock } from "lucide-react";
 import { getUpcomingMondayKstStart } from "@/lib/threads-research";
 
@@ -100,6 +101,11 @@ export default async function ThreadsPage({
   });
 
   // 다른 주의 검토 대기/예약/실패 초안 — 표시는 하되 별도 섹션
+  // 주간 자동화에 속한 반려글 (전체 주 — scheduled_at 있는 것만)
+  const rejectedCount = drafts.filter(
+    (d) => d.status === "rejected" && !!d.scheduled_at,
+  ).length;
+
   const otherWeekUnfinished = drafts.filter((d) => {
     if (!d.scheduled_at) return false;
     if (
@@ -213,6 +219,9 @@ export default async function ThreadsPage({
           weekStartIso={weekStart.toISOString()}
           threadsConnected={threadsConnected}
         />
+
+        {/* 반려글 재생성 */}
+        <RegenerateRejectedButton count={rejectedCount} />
 
         {/* 다른 주의 미완료 초안 — 검토 대기/예약/실패 */}
         {otherWeekUnfinished.length > 0 && (
