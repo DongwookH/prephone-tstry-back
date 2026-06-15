@@ -13,7 +13,10 @@ export const maxDuration = 60;
  * POST /api/cron/threads-regenerate-rejected
  *
  * status="rejected" 초안을 새 키워드로 본문 재생성. 한 호출에 1건.
- * body: { dryRun?: boolean }
+ * 기본은 scheduled_at가 있는 것만 (주간 자동화 안에 들어있는 반려글) 처리.
+ * 옛 스크레이퍼 시대 반려글(scheduled_at 없음)은 includeLegacy=true 일 때만.
+ *
+ * body: { dryRun?: boolean, includeLegacy?: boolean }
  */
 export async function POST(req: Request) {
   const authHeader = req.headers.get("authorization");
@@ -22,11 +25,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { dryRun?: boolean };
+  const body = (await req.json().catch(() => ({}))) as {
+    dryRun?: boolean;
+    includeLegacy?: boolean;
+  };
   const dryRun = !!body.dryRun;
+  const includeLegacy = !!body.includeLegacy;
 
   const all = await getThreadsDrafts();
-  const rejected = all.filter((d) => d.status === "rejected");
+  const rejected = all.filter(
+    (d) =>
+      d.status === "rejected" && (includeLegacy ? true : !!d.scheduled_at),
+  );
 
   if (dryRun) {
     return NextResponse.json({
