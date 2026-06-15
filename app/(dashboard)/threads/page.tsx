@@ -5,7 +5,7 @@ import {
   ThreadsWeeklyCalendar,
   type CalendarDraft,
 } from "@/components/threads-weekly-calendar";
-import { AtSign, CircleCheck, CircleX } from "lucide-react";
+import { AtSign, CircleCheck, CircleX, CalendarClock } from "lucide-react";
 import { getUpcomingMondayKstStart } from "@/lib/threads-research";
 
 export const dynamic = "force-dynamic";
@@ -35,20 +35,81 @@ function toCalendarDraft(r: ThreadsDraftRow): CalendarDraft {
   };
 }
 
-export default async function ThreadsPage() {
-  const [drafts, token] = await Promise.all([
+// 임의의 시각이 속한 주의 월요일 00:00 KST를 UTC Date로 반환
+function getMondayKstOf(refUtc: Date): Date {
+  const refKstMs = refUtc.getTime() + 9 * 3600 * 1000;
+  const refKst = new Date(refKstMs);
+  const dayKst = refKst.getUTCDay(); // 0=일, 1=월, ..., 6=토
+  const daysSinceMonday = (dayKst + 6) % 7;
+  const mondayKstMs = refKstMs - daysSinceMonday * 24 * 3600 * 1000;
+  const monday = new Date(mondayKstMs);
+  monday.setUTCHours(0, 0, 0, 0);
+  return new Date(monday.getTime() - 9 * 3600 * 1000);
+}
+
+export default async function ThreadsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ week?: string }>;
+}) {
+  const [drafts, token, sp] = await Promise.all([
     getThreadsDrafts(),
     getThreadsToken().catch(() => null),
+    searchParams,
   ]);
 
-  const weekStart = getUpcomingMondayKstStart();
+  // 활성 주 결정:
+  // 1) URL의 ?week=YYYY-MM-DD가 있으면 그 주
+  // 2) 검토 대기/예약/실패 상태의 초안 중 가장 빠른 scheduled_at의 주
+  // 3) 기본값 — 다가오는 월요일
+  let weekStart: Date;
+  if (sp.week) {
+    const parsed = new Date(sp.week);
+    if (!isNaN(parsed.getTime())) {
+      weekStart = getMondayKstOf(parsed);
+    } else {
+      weekStart = getUpcomingMondayKstStart();
+    }
+  } else {
+    const unfinished = drafts
+      .filter(
+        (d) =>
+          d.scheduled_at &&
+          (d.status === "pending" ||
+            d.status === "scheduled" ||
+            d.status === "failed"),
+      )
+      .map((d) => new Date(d.scheduled_at).getTime())
+      .filter((t) => !isNaN(t));
+    if (unfinished.length > 0) {
+      const earliest = Math.min(...unfinished);
+      weekStart = getMondayKstOf(new Date(earliest));
+    } else {
+      weekStart = getUpcomingMondayKstStart();
+    }
+  }
   const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 3600 * 1000);
+  const prevWeek = new Date(weekStart.getTime() - 7 * 24 * 3600 * 1000);
+  const nextWeek = new Date(weekStart.getTime() + 7 * 24 * 3600 * 1000);
 
-  // 이번 주에 속하는 초안만 — scheduled_at 기준
+  // 이 주에 속하는 초안만 — scheduled_at 기준
   const weekDrafts = drafts.filter((d) => {
     if (!d.scheduled_at) return false;
     const t = new Date(d.scheduled_at).getTime();
     return t >= weekStart.getTime() && t < weekEnd.getTime();
+  });
+
+  // 다른 주의 검토 대기/예약/실패 초안 — 표시는 하되 별도 섹션
+  const otherWeekUnfinished = drafts.filter((d) => {
+    if (!d.scheduled_at) return false;
+    if (
+      d.status !== "pending" &&
+      d.status !== "scheduled" &&
+      d.status !== "failed"
+    )
+      return false;
+    const t = new Date(d.scheduled_at).getTime();
+    return t < weekStart.getTime() || t >= weekEnd.getTime();
   });
 
   // 옛 초안 (scheduled_at 없음 — 스크레이퍼가 만든 것) — 별도 섹션
@@ -68,6 +129,25 @@ export default async function ThreadsPage() {
     published: cal.filter((c) => c.status === "published").length,
     failed: cal.filter((c) => c.status === "failed").length,
   };
+
+  const weekRangeLabel = (() => {
+    const fmt = new Intl.DateTimeFormat("ko-KR", {
+      timeZone: "Asia/Seoul",
+      month: "numeric",
+      day: "numeric",
+    });
+    const lastDay = new Date(weekEnd.getTime() - 24 * 3600 * 1000);
+    return `${fmt.format(weekStart)} ~ ${fmt.format(lastDay)}`;
+  })();
+  const weekIsoDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+  }).format(weekStart);
+  const prevIso = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+  }).format(prevWeek);
+  const nextIso = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+  }).format(nextWeek);
 
   return (
     <>
@@ -100,12 +180,80 @@ export default async function ThreadsPage() {
           <StatusKPI label="실패" value={stats.failed} color="rose" />
         </div>
 
+        {/* 주 네비게이션 */}
+        <div className="flex items-center justify-between bg-ink-50 rounded-xl px-4 py-3">
+          <a
+            href={`/threads?week=${prevIso}`}
+            className="text-[12px] font-bold text-ink-600 hover:text-ink-900 transition flex items-center gap-1"
+          >
+            ← 지난 주
+          </a>
+          <div className="text-center">
+            <div className="text-[14px] font-extrabold text-ink-900">
+              {weekRangeLabel}
+            </div>
+            <a
+              href="/threads"
+              className="text-[11px] text-brand-600 hover:underline"
+            >
+              이번 주로
+            </a>
+          </div>
+          <a
+            href={`/threads?week=${nextIso}`}
+            className="text-[12px] font-bold text-ink-600 hover:text-ink-900 transition flex items-center gap-1"
+          >
+            다음 주 →
+          </a>
+        </div>
+
         {/* 캘린더 */}
         <ThreadsWeeklyCalendar
           drafts={cal}
           weekStartIso={weekStart.toISOString()}
           threadsConnected={threadsConnected}
         />
+
+        {/* 다른 주의 미완료 초안 — 검토 대기/예약/실패 */}
+        {otherWeekUnfinished.length > 0 && (
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-[14px] font-extrabold text-ink-700 flex items-center gap-2">
+                <CalendarClockIcon /> 다른 주 검토 대기·예약 초안
+              </h2>
+              <p className="text-[11px] text-ink-500 mt-0.5">
+                현재 표시 중인 주 외에 아직 발행되지 않은 초안 {otherWeekUnfinished.length}개
+              </p>
+            </div>
+            <div className="space-y-2">
+              {Object.entries(groupByWeek(otherWeekUnfinished)).map(
+                ([iso, items]) => (
+                  <a
+                    key={iso}
+                    href={`/threads?week=${iso}`}
+                    className="block bg-white border border-ink-200 rounded-xl p-4 hover:border-brand-300 hover:shadow-sm transition"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-[13px] font-bold text-ink-900">
+                          {formatWeekRange(iso)} 주차
+                        </div>
+                        <div className="text-[11px] text-ink-500 mt-0.5">
+                          검토 대기 {items.filter((x) => x.status === "pending").length} ·
+                          예약 {items.filter((x) => x.status === "scheduled").length} ·
+                          실패 {items.filter((x) => x.status === "failed").length}
+                        </div>
+                      </div>
+                      <span className="text-[12px] text-brand-600 font-bold">
+                        보기 →
+                      </span>
+                    </div>
+                  </a>
+                ),
+              )}
+            </div>
+          </section>
+        )}
 
         {/* 옛 스크레이퍼 기반 초안 (별도) */}
         {(legacyPending.length > 0 || legacyPublished.length > 0) && (
@@ -121,6 +269,40 @@ export default async function ThreadsPage() {
       </div>
     </>
   );
+}
+
+function CalendarClockIcon() {
+  return <CalendarClock size={14} className="text-brand-600 inline-block" />;
+}
+
+function groupByWeek(items: ThreadsDraftRow[]): Record<string, ThreadsDraftRow[]> {
+  const out: Record<string, ThreadsDraftRow[]> = {};
+  for (const it of items) {
+    if (!it.scheduled_at) continue;
+    const t = new Date(it.scheduled_at);
+    if (isNaN(t.getTime())) continue;
+    const mon = getMondayKstOf(t);
+    const iso = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+    }).format(mon);
+    if (!out[iso]) out[iso] = [];
+    out[iso].push(it);
+  }
+  return out;
+}
+
+function formatWeekRange(weekStartIsoDate: string): string {
+  // weekStartIsoDate = "YYYY-MM-DD" (KST 월요일)
+  const [y, m, d] = weekStartIsoDate.split("-").map(Number);
+  // KST 자정 = UTC 전날 15:00
+  const startUtc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0) - 9 * 3600 * 1000);
+  const endUtc = new Date(startUtc.getTime() + 6 * 24 * 3600 * 1000);
+  const fmt = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "numeric",
+    day: "numeric",
+  });
+  return `${fmt.format(startUtc)} ~ ${fmt.format(endUtc)}`;
 }
 
 function ConnectionPill({ connected }: { connected: boolean }) {
