@@ -1366,6 +1366,8 @@ const CONTENT_FOREIGNER_BLACKLIST = [
 // 사용자가 수동으로 추가한 차단 키워드
 const CONTENT_MANUAL_BLACKLIST = [
   "선불폰 사기",
+  "보이스피싱",
+  "은행인증", // "인터넷은행 인증" 등 변형 포함 (normalize 후 substring)
 ] as const;
 
 function matchesAny(keyword: string, list: readonly string[]): boolean {
