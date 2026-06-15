@@ -4,14 +4,23 @@ import { getThreadsToken, postThreadWithReplies } from "@/lib/threads";
 
 export const maxDuration = 60;
 
+// 매시간 정시 발행 워커가 도므로, 정시 ± 70분 안의 슬롯만 "지금이 발행 시각"으로 인정.
+// 이보다 오래된 슬롯은 backlog로 간주 → 같은 시간 무더기 발행 막기 위해 stale 처리.
+const FRESHNESS_WINDOW_MIN = 70;
+
+// 한 호출에 1건만 발행 — Threads 알고리즘은 발행 간격이 중요하고,
+// 같은 cron run에서 여러 개를 연달아 발행하면 "동일 시각 발행"으로 보임.
+const MAX_PER_RUN = 1;
+
 /**
  * POST /api/cron/threads-publish
  *
  * GHA가 매시간 정시 호출 (KST 9~21 시간대만 실제 발행 발생).
- * status="scheduled" + scheduled_at <= now 인 초안을 발행.
  *
- * 한 호출에 최대 3개까지 발행 (60초 한도 안전망 — 각 발행 메인+댓글 ~15초).
- * 더 있으면 다음 호출이 처리.
+ * 발행 대상: status="scheduled" + scheduled_at가 (now - 70분) ~ now 사이 + 아직 발행 안 된 것
+ *   - 70분 윈도우 = cron 정시 트리거가 다음 시간까지 못 잡으면 다음 시간 cron이 처리할 수 있게.
+ *   - 70분 초과로 지난 슬롯은 stale → 표시는 남기되 자동 발행 안 함 (사용자가 검토 후 수동 처리).
+ * 한 호출에 최대 1건 발행 — 시간당 1개씩 자연스러운 스페이싱.
  */
 export async function POST(req: Request) {
   const authHeader = req.headers.get("authorization");
@@ -22,22 +31,52 @@ export async function POST(req: Request) {
 
   const all = await getThreadsDrafts();
   const now = Date.now();
+  const freshCutoff = now - FRESHNESS_WINDOW_MIN * 60 * 1000;
 
-  // 발행 대상: status=scheduled + 시간 도래 + 아직 발행 안 된 것
-  const due = all
-    .filter(
-      (d) =>
-        d.status === "scheduled" &&
-        d.scheduled_at &&
-        new Date(d.scheduled_at).getTime() <= now &&
-        !d.published_id,
-    )
+  const scheduledDrafts = all.filter(
+    (d) =>
+      d.status === "scheduled" &&
+      d.scheduled_at &&
+      !d.published_id,
+  );
+
+  // 1) stale 처리 — 70분보다 오래된 과거 슬롯은 자동 발행 안 함
+  //    publish_error에 사유 적고 status는 scheduled 유지 (사용자가 보고 직접 발행하거나 취소).
+  //    → 다음 cron run에서도 다시 stale로 분류되어 자동 발행 회피.
+  //    "stale 이미 마킹된" 것은 다시 마킹하지 않음 (write quota 절약).
+  const stale = scheduledDrafts.filter((d) => {
+    const t = new Date(d.scheduled_at).getTime();
+    return t < freshCutoff;
+  });
+  const newlyStale = stale.filter(
+    (d) => !d.publish_error?.startsWith("⏰ stale"),
+  );
+  for (const d of newlyStale) {
+    await updateThreadsDraft(d.id, {
+      publish_error: `⏰ stale — 예약 시각(${new Date(d.scheduled_at).toISOString()})이 ${FRESHNESS_WINDOW_MIN}분 이상 지나 자동 발행 건너뜀. 검토 후 수동 발행 또는 재예약 필요.`,
+    });
+  }
+
+  // 2) 발행 대상 — 70분 윈도우 안 + 시간 도래
+  const due = scheduledDrafts
+    .filter((d) => {
+      const t = new Date(d.scheduled_at).getTime();
+      return t <= now && t >= freshCutoff;
+    })
     .sort((a, b) =>
       (a.scheduled_at || "").localeCompare(b.scheduled_at || ""),
     );
 
   if (due.length === 0) {
-    return NextResponse.json({ ok: true, published: 0, message: "발행 대상 없음" });
+    return NextResponse.json({
+      ok: true,
+      published: 0,
+      staleSkipped: stale.length,
+      newlyStaleMarked: newlyStale.length,
+      message: stale.length > 0
+        ? `발행 대상 없음 (오래된 슬롯 ${stale.length}건은 stale 처리 — 수동 검토 필요)`
+        : "발행 대상 없음",
+    });
   }
 
   // 토큰 확보
@@ -49,7 +88,6 @@ export async function POST(req: Request) {
     );
   }
 
-  const MAX_PER_RUN = 3;
   const target = due.slice(0, MAX_PER_RUN);
   const results: {
     id: string;
@@ -102,9 +140,6 @@ export async function POST(req: Request) {
       });
       results.push({ id: d.id, keyword: d.keyword, ok: false, error: msg });
     }
-
-    // 발행 간 살짝 텀 (Threads API 보호)
-    await new Promise((r) => setTimeout(r, 1000));
   }
 
   return NextResponse.json({
@@ -112,6 +147,8 @@ export async function POST(req: Request) {
     published: results.filter((r) => r.ok).length,
     failed: results.filter((r) => !r.ok).length,
     remaining: due.length - target.length,
+    staleSkipped: stale.length,
+    newlyStaleMarked: newlyStale.length,
     results,
   });
 }
