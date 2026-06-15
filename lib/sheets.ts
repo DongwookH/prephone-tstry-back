@@ -223,6 +223,8 @@ export async function getActiveKeywords(opts?: {
     if (!r.keyword?.trim()) return false;
     if (r.status && r.status !== "active") return false;
     if (opts?.source && r.source && r.source !== opts.source) return false;
+    // 콘텐츠 블랙리스트 (미성년/외국인/수동) — 티스토리·쓰레드 양쪽 공통
+    if (isContentBlacklistedKeyword(r.keyword)) return false;
     return true;
   });
 }
@@ -1315,8 +1317,9 @@ export async function ensureThreadsKeywordsSheet(): Promise<void> {
   }
 }
 
-// 쓰레드에서 사용 금지 — 미성년자 관련 키워드 (정책상 차단)
-const THREADS_MINOR_BLACKLIST = [
+// 콘텐츠 차단 — 정책/방향성상 작성 금지 (티스토리·쓰레드 양쪽 공통 적용)
+// 미성년자 관련
+const CONTENT_MINOR_BLACKLIST = [
   "미성년",
   "청소년",
   "어린이",
@@ -1340,33 +1343,63 @@ const THREADS_MINOR_BLACKLIST = [
   "만 19세",
 ] as const;
 
-export function isMinorRelatedKeyword(keyword: string): boolean {
-  const k = (keyword || "").toLowerCase().replace(/\s+/g, "");
-  return THREADS_MINOR_BLACKLIST.some((bad) =>
-    k.includes(bad.toLowerCase().replace(/\s+/g, "")),
-  );
-}
+// 외국인 관련 (단기/장기체류·유학·이민·외등 등 포함)
+const CONTENT_FOREIGNER_BLACKLIST = [
+  "외국인",
+  "외국인등록증",
+  "외국인등록번호",
+  "단기체류",
+  "단기 체류",
+  "장기체류",
+  "장기 체류",
+  "유학생",
+  "이민자",
+  "이민",
+  "다문화",
+  "워홀",
+  "워킹홀리데이",
+  "영주권",
+  "거소증",
+  "재외국민",
+] as const;
 
-// 쓰레드에서 사용 금지 — 사용자가 수동으로 차단한 키워드
-// 시트 status="blacklisted"를 안 쓰는 이유: 시트 외에서도 일관 차단하려면 코드 레벨이 안전.
-const THREADS_MANUAL_BLACKLIST = [
+// 사용자가 수동으로 추가한 차단 키워드
+const CONTENT_MANUAL_BLACKLIST = [
   "선불폰 사기",
 ] as const;
 
-export function isManuallyBlacklistedKeyword(keyword: string): boolean {
+function matchesAny(keyword: string, list: readonly string[]): boolean {
   const k = (keyword || "").toLowerCase().replace(/\s+/g, "");
-  return THREADS_MANUAL_BLACKLIST.some((bad) =>
+  return list.some((bad) =>
     k.includes(bad.toLowerCase().replace(/\s+/g, "")),
   );
 }
 
-export function isThreadsBlacklistedKeyword(keyword: string): boolean {
+export function isMinorRelatedKeyword(keyword: string): boolean {
+  return matchesAny(keyword, CONTENT_MINOR_BLACKLIST);
+}
+export function isForeignerRelatedKeyword(keyword: string): boolean {
+  return matchesAny(keyword, CONTENT_FOREIGNER_BLACKLIST);
+}
+export function isManuallyBlacklistedKeyword(keyword: string): boolean {
+  return matchesAny(keyword, CONTENT_MANUAL_BLACKLIST);
+}
+
+/** 티스토리·쓰레드 양쪽에 적용되는 콘텐츠 블랙리스트 */
+export function isContentBlacklistedKeyword(keyword: string): boolean {
   return (
-    isMinorRelatedKeyword(keyword) || isManuallyBlacklistedKeyword(keyword)
+    isMinorRelatedKeyword(keyword) ||
+    isForeignerRelatedKeyword(keyword) ||
+    isManuallyBlacklistedKeyword(keyword)
   );
 }
 
-/** active 키워드만. 블랙리스트(미성년/수동)는 자동 제외. */
+/** @deprecated isContentBlacklistedKeyword 사용. 호환용 별칭. */
+export function isThreadsBlacklistedKeyword(keyword: string): boolean {
+  return isContentBlacklistedKeyword(keyword);
+}
+
+/** active 키워드만. 콘텐츠 블랙리스트(미성년/외국인/수동)는 자동 제외. */
 export async function getActiveThreadsKeywords(): Promise<ThreadsKeywordRow[]> {
   let all: ThreadsKeywordRow[] = [];
   try {
@@ -1381,7 +1414,7 @@ export async function getActiveThreadsKeywords(): Promise<ThreadsKeywordRow[]> {
     (r) =>
       r.keyword?.trim() &&
       (r.status === "active" || !r.status) &&
-      !isThreadsBlacklistedKeyword(r.keyword),
+      !isContentBlacklistedKeyword(r.keyword),
   );
 }
 
