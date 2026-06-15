@@ -1194,7 +1194,9 @@ export async function updateThreadsDraft(
   patch: Partial<
     Pick<
       ThreadsDraftRow,
+      | "keyword"
       | "draft_text"
+      | "insight"
       | "status"
       | "published_id"
       | "published_at"
@@ -1211,14 +1213,18 @@ export async function updateThreadsDraft(
   if (rows.length < 2) return false;
   let headerIdx = 0;
   if (rows[0]?.[0]?.startsWith("💡")) headerIdx = 1;
-  // 컬럼 인덱스: D=draft_text, G=status, H=published_id, I=published_at,
-  //              J=topic_tag, K=self_replies, L=scheduled_at, M=publish_error
+  // 컬럼 인덱스: C=keyword, D=draft_text, F=insight, G=status, H=published_id,
+  //              I=published_at, J=topic_tag, K=self_replies, L=scheduled_at, M=publish_error
   for (let i = headerIdx + 1; i < rows.length; i++) {
     if (rows[i]?.[0] !== id) continue;
     const rowNum = i + 1;
     const updates: { range: string; value: string }[] = [];
+    if (patch.keyword !== undefined)
+      updates.push({ range: `C${rowNum}`, value: patch.keyword });
     if (patch.draft_text !== undefined)
       updates.push({ range: `D${rowNum}`, value: patch.draft_text });
+    if (patch.insight !== undefined)
+      updates.push({ range: `F${rowNum}`, value: patch.insight });
     if (patch.status !== undefined)
       updates.push({ range: `G${rowNum}`, value: patch.status });
     if (patch.published_id !== undefined)
@@ -1309,7 +1315,39 @@ export async function ensureThreadsKeywordsSheet(): Promise<void> {
   }
 }
 
-/** active 키워드만. */
+// 쓰레드에서 사용 금지 — 미성년자 관련 키워드 (정책상 차단)
+const THREADS_MINOR_BLACKLIST = [
+  "미성년",
+  "청소년",
+  "어린이",
+  "아동",
+  "초등",
+  "중등",
+  "중학생",
+  "고등학생",
+  "학생용",
+  "자녀",
+  "키즈",
+  "만14세",
+  "만 14세",
+  "만15세",
+  "만 15세",
+  "만17세",
+  "만 17세",
+  "만18세",
+  "만 18세",
+  "만19세",
+  "만 19세",
+] as const;
+
+export function isMinorRelatedKeyword(keyword: string): boolean {
+  const k = (keyword || "").toLowerCase().replace(/\s+/g, "");
+  return THREADS_MINOR_BLACKLIST.some((bad) =>
+    k.includes(bad.toLowerCase().replace(/\s+/g, "")),
+  );
+}
+
+/** active 키워드만. 미성년자 관련은 자동 제외. */
 export async function getActiveThreadsKeywords(): Promise<ThreadsKeywordRow[]> {
   let all: ThreadsKeywordRow[] = [];
   try {
@@ -1321,7 +1359,10 @@ export async function getActiveThreadsKeywords(): Promise<ThreadsKeywordRow[]> {
     return [];
   }
   return all.filter(
-    (r) => r.keyword?.trim() && (r.status === "active" || !r.status),
+    (r) =>
+      r.keyword?.trim() &&
+      (r.status === "active" || !r.status) &&
+      !isMinorRelatedKeyword(r.keyword),
   );
 }
 
