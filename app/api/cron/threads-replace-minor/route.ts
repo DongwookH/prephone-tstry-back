@@ -4,7 +4,7 @@ import {
   updateThreadsDraft,
   getActiveThreadsKeywords,
   pickThreadsKeywords,
-  isMinorRelatedKeyword,
+  isContentBlacklistedKeyword,
 } from "@/lib/sheets";
 import { generateThreadsDraftsFromPosts } from "@/lib/threads-research";
 
@@ -13,7 +13,7 @@ export const maxDuration = 60;
 /**
  * POST /api/cron/threads-replace-minor
  *
- * 기존 threads_drafts 중 미성년자 관련 키워드로 만들어진 초안을 안전한 키워드로 교체.
+ * 기존 threads_drafts 중 콘텐츠 블랙리스트(미성년자/외국인/수동) 키워드로 만들어진 초안을 안전한 키워드로 교체.
  * - 발행 완료(published) 초안은 건드리지 않고 보고만 함 (이미 외부에 나간 글이라 수동 처리 필요)
  * - 그 외(pending/scheduled/failed/rejected/빈값) 초안은 새 키워드로 본문 재생성 후 시트 업데이트
  *
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   const dryRun = !!body.dryRun;
 
   const allDrafts = await getThreadsDrafts();
-  const minorDrafts = allDrafts.filter((d) => isMinorRelatedKeyword(d.keyword));
+  const minorDrafts = allDrafts.filter((d) => isContentBlacklistedKeyword(d.keyword));
 
   const publishedMinor = minorDrafts.filter((d) => d.status === "published");
   const replaceable = minorDrafts.filter((d) => d.status !== "published");
