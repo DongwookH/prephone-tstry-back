@@ -11,7 +11,7 @@ import { generateThreadsDraftsFromPosts } from "@/lib/threads-research";
 export const maxDuration = 60;
 
 /**
- * POST /api/admin/threads-replace-minor
+ * POST /api/cron/threads-replace-minor
  *
  * 기존 threads_drafts 중 미성년자 관련 키워드로 만들어진 초안을 안전한 키워드로 교체.
  * - 발행 완료(published) 초안은 건드리지 않고 보고만 함 (이미 외부에 나간 글이라 수동 처리 필요)
