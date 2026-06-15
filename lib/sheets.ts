@@ -1347,7 +1347,26 @@ export function isMinorRelatedKeyword(keyword: string): boolean {
   );
 }
 
-/** active 키워드만. 미성년자 관련은 자동 제외. */
+// 쓰레드에서 사용 금지 — 사용자가 수동으로 차단한 키워드
+// 시트 status="blacklisted"를 안 쓰는 이유: 시트 외에서도 일관 차단하려면 코드 레벨이 안전.
+const THREADS_MANUAL_BLACKLIST = [
+  "선불폰 사기",
+] as const;
+
+export function isManuallyBlacklistedKeyword(keyword: string): boolean {
+  const k = (keyword || "").toLowerCase().replace(/\s+/g, "");
+  return THREADS_MANUAL_BLACKLIST.some((bad) =>
+    k.includes(bad.toLowerCase().replace(/\s+/g, "")),
+  );
+}
+
+export function isThreadsBlacklistedKeyword(keyword: string): boolean {
+  return (
+    isMinorRelatedKeyword(keyword) || isManuallyBlacklistedKeyword(keyword)
+  );
+}
+
+/** active 키워드만. 블랙리스트(미성년/수동)는 자동 제외. */
 export async function getActiveThreadsKeywords(): Promise<ThreadsKeywordRow[]> {
   let all: ThreadsKeywordRow[] = [];
   try {
@@ -1362,7 +1381,7 @@ export async function getActiveThreadsKeywords(): Promise<ThreadsKeywordRow[]> {
     (r) =>
       r.keyword?.trim() &&
       (r.status === "active" || !r.status) &&
-      !isMinorRelatedKeyword(r.keyword),
+      !isThreadsBlacklistedKeyword(r.keyword),
   );
 }
 
