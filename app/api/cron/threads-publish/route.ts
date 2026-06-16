@@ -4,9 +4,10 @@ import { getThreadsToken, postThreadWithReplies } from "@/lib/threads";
 
 export const maxDuration = 60;
 
-// 매시간 정시 발행 워커가 도므로, 정시 ± 70분 안의 슬롯만 "지금이 발행 시각"으로 인정.
-// 이보다 오래된 슬롯은 backlog로 간주 → 같은 시간 무더기 발행 막기 위해 stale 처리.
-const FRESHNESS_WINDOW_MIN = 70;
+// 정시 cron이 GHA 부하로 몇 시간 건너뛰는 경우(드물지만 자주 발생)를 대비해
+// 12시간 윈도우 유지. MAX_PER_RUN=1로 burst가 안 일어나므로 윈도우 넓혀도 안전.
+// 12시간 초과 슬롯만 stale 처리 — 그 정도면 사실상 다음 주기 슬롯과 충돌 가능.
+const FRESHNESS_WINDOW_MIN = 720;
 
 // 한 호출에 1건만 발행 — Threads 알고리즘은 발행 간격이 중요하고,
 // 같은 cron run에서 여러 개를 연달아 발행하면 "동일 시각 발행"으로 보임.
