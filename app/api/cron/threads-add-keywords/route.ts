@@ -6,6 +6,43 @@ import {
 
 export const maxDuration = 60;
 
+function authorized(req: Request): boolean {
+  const authHeader = req.headers.get("authorization");
+  const expected = `Bearer ${process.env.CRON_SECRET}`;
+  return !!process.env.CRON_SECRET && authHeader === expected;
+}
+
+/**
+ * GET /api/cron/threads-add-keywords
+ *
+ * 현재 활성 키워드 풀 조회 (블랙리스트 제외된 상태 그대로).
+ * 카테고리별로 묶어서 반환.
+ */
+export async function GET(req: Request) {
+  if (!authorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const pool = await getActiveThreadsKeywords();
+  const byCategory: Record<string, string[]> = {};
+  for (const k of pool) {
+    const cat = k.category || "기타";
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(k.keyword);
+  }
+  return NextResponse.json({
+    ok: true,
+    total: pool.length,
+    byCategory,
+    keywords: pool.map((k) => ({
+      keyword: k.keyword,
+      category: k.category || "",
+      priority: k.priority || "",
+      used_count: k.used_count || "0",
+      last_used: k.last_used || "",
+    })),
+  });
+}
+
 /**
  * POST /api/cron/threads-add-keywords
  *
