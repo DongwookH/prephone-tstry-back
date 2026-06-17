@@ -36,7 +36,8 @@ export async function POST(req: Request) {
 
   const scheduledDrafts = all.filter(
     (d) =>
-      d.status === "scheduled" &&
+      // scheduled = 정상 예약. failed = 직전 발행 일시 실패 → 윈도우 안이면 재시도.
+      (d.status === "scheduled" || d.status === "failed") &&
       d.scheduled_at &&
       !d.published_id,
   );
