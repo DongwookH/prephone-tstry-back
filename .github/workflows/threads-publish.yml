@@ -1,12 +1,14 @@
 name: Threads Publish (scheduled drafts)
 
-# 발행 워커 — 매 30분 호출 (정시 + 30분).
+# 발행 워커 — 비정시 15분 간격 호출.
 # status=scheduled/failed + scheduled_at <= now 인 초안을 발행 (한 번에 1건).
-# KST 9~21시 슬롯이 있으므로 그 시간대만 호출 (UTC 0~12시).
-# 30분 간격 = GitHub Actions cron이 정시를 스킵해도 30분 뒤 따라잡음 (스킵 내성).
+# KST 9~22시 슬롯 커버 (UTC 0~13시).
+# ⚠️ GitHub Actions cron은 정시(:00)에 부하가 몰려 스킵·지연이 잦음.
+#    → 비정시(:07,:22,:37,:52)로 분산해 스킵 확률을 낮춤. 그래도 GHA는 신뢰도 한계가 있어
+#    실제 안정 발행은 외부 cron(cron-job.org 등) 또는 Vercel Cron 병행 권장.
 on:
   schedule:
-    - cron: "0,30 0-12 * * *"
+    - cron: "7,22,37,52 0-13 * * *"
   workflow_dispatch:
 
 concurrency:
