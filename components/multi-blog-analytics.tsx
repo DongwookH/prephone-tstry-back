@@ -67,15 +67,20 @@ export async function MultiBlogAnalytics({ days = 7 }: { days?: number }) {
   if (props.length === 0) return null;
 
   const session = await auth();
-  if (!session?.accessToken) {
+  // refresh token 만료/무효 → access token 갱신 실패 시 옛 토큰이 남아 401이 남.
+  // accessToken 유무뿐 아니라 refresh 에러도 함께 체크해 깔끔히 재로그인 안내.
+  if (!session?.accessToken || session.error === "RefreshAccessTokenError") {
+    const expired = session?.error === "RefreshAccessTokenError";
     return (
       <div className="bg-white rounded-2xl shadow-card p-5">
         <div className="flex items-center gap-2 text-rose-600 text-[13px] font-bold mb-2">
           <AlertTriangle size={14} />
-          GA 인증 필요
+          {expired ? "GA 인증 만료 — 재로그인 필요" : "GA 인증 필요"}
         </div>
         <p className="text-[12px] text-ink-600">
-          로그아웃 후 재로그인 시 analytics.readonly 권한 동의 필요
+          {expired
+            ? "Google 인증이 만료됐습니다. 우측 상단 로그아웃 → 재로그인하면 복구됩니다."
+            : "로그아웃 후 재로그인 시 analytics.readonly 권한 동의 필요"}
         </p>
       </div>
     );
