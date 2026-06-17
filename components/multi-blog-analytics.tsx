@@ -79,7 +79,7 @@ export async function MultiBlogAnalytics({ days = 7 }: { days?: number }) {
         </div>
         <p className="text-[12px] text-ink-600">
           {expired
-            ? "Google 인증이 만료됐습니다. 우측 상단 로그아웃 → 재로그인하면 복구됩니다."
+            ? "Google 인증이 만료됐습니다. 왼쪽 아래 프로필(ft99900@gmail.com) 클릭 → 로그아웃 → 다시 Google 로그인하면 복구됩니다."
             : "로그아웃 후 재로그인 시 analytics.readonly 권한 동의 필요"}
         </p>
       </div>
