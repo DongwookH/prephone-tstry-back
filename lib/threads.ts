@@ -230,23 +230,40 @@ export async function postToThreads(opts: {
   }
   const { id: creationId } = (await c.json()) as { id: string };
 
-  // 2) container를 published 상태로 (보통 30초 권장 — 이미지 처리)
-  if (opts.imageUrl) {
-    await new Promise((r) => setTimeout(r, 5000));
+  // 2) container를 published 상태로.
+  //    Threads는 컨테이너 생성 직후 서버 인덱싱 전에 publish하면 "Media Not Found"
+  //    (code 24 / subcode 4279009)로 간헐 거부함. 이미지뿐 아니라 텍스트도 짧은 대기 필요.
+  const initialWait = opts.imageUrl ? 5000 : 2500;
+  await new Promise((r) => setTimeout(r, initialWait));
+
+  // publish — Media Not Found 등 일시적 에러는 backoff 재시도 (최대 4회).
+  let lastErr = "";
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 2500 * attempt)); // 2.5s, 5s, 7.5s
+    }
+    const p = await fetch(`${THREADS_API}/${opts.userId}/threads_publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        creation_id: creationId,
+        access_token: opts.accessToken,
+      }).toString(),
+    });
+    if (p.ok) {
+      return (await p.json()) as { id: string };
+    }
+    lastErr = await p.text();
+    lastStatus = p.status;
+    // 컨테이너 아직 미인덱싱(일시적)일 때만 재시도. 권한/형식 등 영구 에러면 즉시 중단.
+    const transient =
+      /4279009|Media Not Found|does not exist|"is_transient":\s*true|media_id/i.test(
+        lastErr,
+      );
+    if (!transient) break;
   }
-  const p = await fetch(`${THREADS_API}/${opts.userId}/threads_publish`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      creation_id: creationId,
-      access_token: opts.accessToken,
-    }).toString(),
-  });
-  if (!p.ok) {
-    const t = await p.text();
-    throw new Error(`Threads publish 실패 (${p.status}): ${t.slice(0, 200)}`);
-  }
-  return (await p.json()) as { id: string };
+  throw new Error(`Threads publish 실패 (${lastStatus}): ${lastErr.slice(0, 200)}`);
 }
 
 /**
