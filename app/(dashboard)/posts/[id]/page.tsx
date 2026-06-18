@@ -5,6 +5,7 @@ import { getPostByIdFromSheet } from "@/lib/sheets";
 import { CheckCircle2 } from "lucide-react";
 import { PostContentViewer } from "@/components/post-content-viewer";
 import { CardNewsCards } from "@/components/card-news-cards";
+import { ThumbnailCard } from "@/components/thumbnail-card";
 import { TagsBlock } from "@/components/tags-block";
 import { PublishForm } from "@/components/publish-form";
 import { DangerZone } from "@/components/danger-zone";
@@ -185,6 +186,9 @@ export default async function PostDetail({
                 persona: post.persona,
               }}
             />
+
+            {/* 자동 생성 썸네일 (대표이미지) */}
+            <ThumbnailCard postId={post.id} title={post.title} />
 
             {/* 카드뉴스 (1080×1080 5장: 표지 + 섹션 4) */}
             <CardNewsCards
