@@ -17,6 +17,7 @@ export default auth((req) => {
     pathname.startsWith("/api/threads/deauthorize") ||
     pathname.startsWith("/api/threads/data-deletion") ||
     pathname.startsWith("/api/threads/research/ingest") ||
+    pathname.startsWith("/thumbnails") || // 자동 생성 썸네일 — 공개 접근 (백오피스 img, 티스토리 첨부)
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon");
 
