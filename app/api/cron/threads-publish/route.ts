@@ -13,6 +13,75 @@ const FRESHNESS_WINDOW_MIN = 720;
 // 같은 cron run에서 여러 개를 연달아 발행하면 "동일 시각 발행"으로 보임.
 const MAX_PER_RUN = 1;
 
+function kstLabel(iso: string): string {
+  if (!iso) return "—";
+  const t = new Date(iso).getTime();
+  if (!isFinite(t)) return iso;
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(t));
+}
+
+/**
+ * GET /api/cron/threads-publish
+ *
+ * 발행 안 하고 현재 상태만 진단. 서버 시각 기준 due/대기/stale 분류 + 임박 슬롯 목록.
+ */
+export async function GET(req: Request) {
+  const authHeader = req.headers.get("authorization");
+  const expected = `Bearer ${process.env.CRON_SECRET}`;
+  if (!process.env.CRON_SECRET || authHeader !== expected) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const all = await getThreadsDrafts();
+  const now = Date.now();
+  const freshCutoff = now - FRESHNESS_WINDOW_MIN * 60 * 1000;
+
+  const counts: Record<string, number> = {};
+  for (const d of all) {
+    const k = d.published_id ? "published" : d.status || "(빈값)";
+    counts[k] = (counts[k] || 0) + 1;
+  }
+
+  // 미발행 + scheduled_at 있는 것 — 상태/시각 분류
+  const pendingSlots = all
+    .filter((d) => !d.published_id && d.scheduled_at)
+    .map((d) => {
+      const t = new Date(d.scheduled_at).getTime();
+      let bucket: string;
+      if (!isFinite(t)) bucket = "잘못된시각";
+      else if (t > now) bucket = "미래(대기)";
+      else if (t < freshCutoff) bucket = "stale(만료)";
+      else bucket = "발행대상(due)";
+      return {
+        kst: kstLabel(d.scheduled_at),
+        keyword: d.keyword,
+        status: d.status,
+        bucket,
+        _t: t,
+      };
+    })
+    .sort((a, b) => a._t - b._t);
+
+  return NextResponse.json({
+    ok: true,
+    serverNowUtc: new Date(now).toISOString(),
+    serverNowKst: kstLabel(new Date(now).toISOString()),
+    counts,
+    dueNow: pendingSlots.filter(
+      (s) => s.bucket === "발행대상(due)" && s.status === "scheduled",
+    ).length,
+    slots: pendingSlots.map(({ _t, ...rest }) => rest),
+  });
+}
+
 /**
  * POST /api/cron/threads-publish
  *
