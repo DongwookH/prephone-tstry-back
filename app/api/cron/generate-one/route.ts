@@ -143,6 +143,7 @@ export async function POST(req: Request) {
       seoScore: post.seo_score,
       keyword: body.keyword,
       track: body.track,
+      thumbnail: post.thumbnail,
     });
   } catch (err) {
     return NextResponse.json(

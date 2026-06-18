@@ -32,6 +32,13 @@ export { sanitizeForTistory };
  *  - 내부 링크 3~5개 (UTM 부착)
  */
 
+export type ThumbnailMeta = {
+  lines: string[]; // 썸네일 제목 3줄 (짧은 임팩트 카피)
+  highlight: number[]; // 강조(테마색)할 줄 인덱스
+  tags: string[]; // 태그 3개 (#포함)
+  theme: "green" | "blue" | "orange" | "purple"; // 테마색 키
+};
+
 export type GeneratedPost = {
   title: string;
   meta_description: string;
@@ -41,6 +48,7 @@ export type GeneratedPost = {
   utm_campaign: string;
   sub_keywords_used?: string[];
   tags?: string[];
+  thumbnail?: ThumbnailMeta;
 };
 
 const PERSONAS: Record<string, string> = {
@@ -514,8 +522,25 @@ ${
   "char_count": {본문 글자 수 — 공백 제외, HTML 태그 제외},
   "seo_score": {자가 평가 60~100 — 키워드 밀도/구조/링크/Q&A/이미지 모두 충족시 90+},
   "sub_keywords_used": ["{본문에 녹여 쓴 서브 키워드 목록}"],
-  "tags": ["{티스토리 발행용 태그 5~8개. 주 키워드 + 관련 검색 키워드 + 타겟·상황·브랜드. 한국어, 공백 X, 하이픈 또는 한 단어. 너무 길지 않게 (2~10자). 미성년자/외국인 관련 태그 금지. 예: 선불폰, 비대면개통, KT바로유심, 신용불량OK, 5분개통, 무약정}"]
-}`;
+  "tags": ["{티스토리 발행용 태그 5~8개. 주 키워드 + 관련 검색 키워드 + 타겟·상황·브랜드. 한국어, 공백 X, 하이픈 또는 한 단어. 너무 길지 않게 (2~10자). 미성년자/외국인 관련 태그 금지. 예: 선불폰, 비대면개통, KT바로유심, 신용불량OK, 5분개통, 무약정}"],
+  "thumbnail": {
+    "lines": ["{썸네일 카피 1줄째}", "{2줄째}", "{3줄째}"],
+    "highlight": [0, 2],
+    "tags": ["#{짧은태그1}", "#{태그2}", "#{태그3}"],
+    "theme": "{green|blue|orange|purple}"
+  }
+}
+
+# 🖼️ thumbnail 작성 규칙 (카드뉴스 썸네일용 — 매우 중요)
+- **lines**: 긴 제목이 아니라 **짧고 강한 카피 3줄**. 각 줄 4~9자. 위→아래로 읽으면 한 문장처럼 이어지게.
+  · 좋은 예: ["미납 정지폰도", "본인 명의 그대로", "5분 비대면 개통!"] / ["신용불량도", "거절 없이", "당일 개통!"]
+  · 나쁜 예: 제목을 그대로 복붙하거나 한 줄이 12자 넘는 것.
+- **highlight**: lines 중 테마색으로 강조할 줄 인덱스 (보통 [0, 2] — 첫·마지막 줄. 핵심 메시지 줄을 강조).
+- **tags**: 짧은 해시태그 3개 (#포함, 각 3~6자). 글 주제 핵심. 미성년자/외국인 금지.
+- **theme**: 글 분위기에 맞는 색 1개.
+  · green = 안심·해결·기본 (미납/정지/직권해지 해결) / blue = 신뢰·자격 (신용·본인인증)
+  · orange = 혜택·이득 (가성비/절약/요금제) / purple = 프리미엄·특별
+`;
 }
 
 /** 글자수 계산용 — HTML 태그 제거. */
@@ -724,7 +749,41 @@ export async function generatePost(opts: {
     utm_campaign: utmCampaign,
     sub_keywords_used: result.sub_keywords_used || [],
     tags: cleanTags.slice(0, 8),
+    thumbnail: normalizeThumbnail(result.thumbnail, opts.keyword),
   };
+}
+
+/** Gemini의 thumbnail 메타 정규화 — 누락/형식 오류 시 키워드 기반 fallback. */
+function normalizeThumbnail(
+  raw: unknown,
+  keyword: string,
+): ThumbnailMeta {
+  const themes = ["green", "blue", "orange", "purple"] as const;
+  const r = (raw || {}) as Partial<ThumbnailMeta>;
+  let lines = Array.isArray(r.lines)
+    ? r.lines.map((s) => String(s).trim()).filter(Boolean).slice(0, 3)
+    : [];
+  if (lines.length < 3) {
+    // fallback — 키워드로 간단 구성
+    lines = [keyword.slice(0, 10), "지금 바로", "개통 가능!"];
+  }
+  let tags = Array.isArray(r.tags)
+    ? r.tags
+        .map((s) => {
+          const t = String(s).trim();
+          return t.startsWith("#") ? t : `#${t}`;
+        })
+        .filter((t) => t.length > 1)
+        .slice(0, 3)
+    : [];
+  if (tags.length === 0) tags = [`#${keyword.replace(/\s+/g, "")}`];
+  const highlight = Array.isArray(r.highlight)
+    ? r.highlight.filter((n) => typeof n === "number" && n >= 0 && n < 3)
+    : [0, 2];
+  const theme = themes.includes(r.theme as (typeof themes)[number])
+    ? (r.theme as ThumbnailMeta["theme"])
+    : "green";
+  return { lines, highlight, tags, theme };
 }
 
 export async function generatePosts(
