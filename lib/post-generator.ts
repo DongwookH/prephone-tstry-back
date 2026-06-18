@@ -37,7 +37,15 @@ export type ThumbnailMeta = {
   highlight: number[]; // 강조(테마색)할 줄 인덱스
   tags: string[]; // 태그 3개 (#포함)
   theme: "green" | "blue" | "orange" | "purple"; // 테마색 키
+  character: string; // 캐릭터 감정 키 (thumbsup/worried/coin 등)
 };
+
+// 사용 가능한 캐릭터 감정 키 (scripts/assets/characters/ 와 동기화)
+const CHARACTER_EMOTIONS = [
+  "thumbsup", "surprised", "wink", "thinking", "pointing",
+  "cheer", "heart", "worried", "ok", "callcenter",
+  "checklist", "celebrate", "relieved", "coin", "stop",
+] as const;
 
 export type GeneratedPost = {
   title: string;
@@ -527,7 +535,8 @@ ${
     "lines": ["{썸네일 카피 1줄째}", "{2줄째}", "{3줄째}"],
     "highlight": [0, 2],
     "tags": ["#{짧은태그1}", "#{태그2}", "#{태그3}"],
-    "theme": "{green|blue|orange|purple}"
+    "theme": "{green|blue|orange|purple}",
+    "character": "{글 분위기에 맞는 캐릭터 감정 1개}"
   }
 }
 
@@ -540,6 +549,11 @@ ${
 - **theme**: 글 분위기에 맞는 색 1개.
   · green = 안심·해결·기본 (미납/정지/직권해지 해결) / blue = 신뢰·자격 (신용·본인인증)
   · orange = 혜택·이득 (가성비/절약/요금제) / purple = 프리미엄·특별
+- **character**: 강아지 마스코트 표정 1개. 글 분위기에 맞게 선택:
+  · thumbsup=자신감·가능 / cheer=응원·축하 / heart=감사 / ok=안심
+  · worried=걱정·페인포인트 / surprised=놀람·반전 / thinking=고민·질문
+  · pointing=안내·설명 / callcenter=상담·문의 / checklist=절차·체크
+  · celebrate=완료·성공 / relieved=해결·안도 / coin=혜택·절약·요금 / stop=주의·경고 / wink=꿀팁·친근
 `;
 }
 
@@ -832,7 +846,12 @@ function normalizeThumbnail(
   const theme = themes.includes(r.theme as (typeof themes)[number])
     ? (r.theme as ThumbnailMeta["theme"])
     : "green";
-  return { lines, highlight, tags, theme };
+  const character = CHARACTER_EMOTIONS.includes(
+    r.character as (typeof CHARACTER_EMOTIONS)[number],
+  )
+    ? (r.character as string)
+    : "thumbsup";
+  return { lines, highlight, tags, theme, character };
 }
 
 export async function generatePosts(

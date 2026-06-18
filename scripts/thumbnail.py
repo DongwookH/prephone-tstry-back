@@ -16,8 +16,18 @@ from PIL import Image, ImageDraw, ImageFont
 ASSET_DIR = os.environ.get("ASSET_DIR", "scripts/assets")
 OUT_DIR = os.environ.get("OUT_DIR", "public/thumbnails")
 FONT_PATH = os.environ.get("NOTO_FONT", os.path.join(ASSET_DIR, "NotoSansKR.ttf"))
-CHAR_PATH = os.path.join(ASSET_DIR, "character.png")
+CHAR_DIR = os.path.join(ASSET_DIR, "characters")
 LOGO_PATH = os.path.join(ASSET_DIR, "logo.png")
+
+DEFAULT_CHARACTER = "thumbsup"
+
+
+def char_path(emotion):
+    """감정 키 → 캐릭터 PNG 경로. 없으면 기본 캐릭터로 fallback."""
+    p = os.path.join(CHAR_DIR, f"{emotion}.png")
+    if os.path.exists(p):
+        return p
+    return os.path.join(CHAR_DIR, f"{DEFAULT_CHARACTER}.png")
 
 # 테마 키 → 원색 RGB. 배경·태그·강조가 전부 이 색의 농도로 파생된다.
 THEME_MAP = {
@@ -41,7 +51,7 @@ def font(size, wght=900):
     return f
 
 
-def make_thumbnail(lines, highlight, tags, theme_rgb, out):
+def make_thumbnail(lines, highlight, tags, theme_rgb, out, character="thumbsup"):
     W = H = 680
     BG = tint(theme_rgb, 0.05)
     DECO = tint(theme_rgb, 0.16)
@@ -83,8 +93,8 @@ def make_thumbnail(lines, highlight, tags, theme_rgb, out):
         col = ACCENT if i in hl else DARK
         d.text((W / 2, ys[i]), line, font=ttf, fill=col, anchor="mm")
 
-    # 캐릭터 우하단
-    ch = Image.open(CHAR_PATH).convert("RGBA")
+    # 캐릭터 우하단 (감정에 맞는 것 선택)
+    ch = Image.open(char_path(character)).convert("RGBA")
     cw = 180
     ch = ch.resize((cw, int(ch.height * cw / ch.width)), Image.LANCZOS)
     canvas.alpha_composite(ch, (W - cw - 10, H - ch.height - 4))
@@ -116,6 +126,7 @@ def main():
                 meta.get("tags", []),
                 theme_rgb,
                 out,
+                meta.get("character", DEFAULT_CHARACTER),
             )
             generated.append(pid)
         except Exception as e:
