@@ -122,6 +122,8 @@ export async function POST(req: Request) {
         created_at: now,
         updated_at: now,
         tags: post.tags,
+        // 썸네일 메타를 image_urls 컬럼에 JSON으로 저장 (thumbnails job이 읽어 PNG 생성)
+        image_urls: post.thumbnail ? JSON.stringify(post.thumbnail) : "",
       },
     ]);
 

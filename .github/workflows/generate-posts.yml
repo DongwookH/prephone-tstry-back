@@ -151,7 +151,56 @@ jobs:
           echo "::notice::✓ $id | $title | ${chars}자 | SEO $seo | ${duration}ms"
           echo "✓ 완료: $title"
 
-  # ─── 3단계: 최종 요약 ─────────────────────────────
+  # ─── 3단계: 썸네일 자동 생성 + 커밋 ─────────────────
+  thumbnails:
+    name: Thumbnails (Pillow)
+    needs: generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Python + Pillow
+        run: pip install --quiet Pillow
+
+      - name: 노토산스 KR 폰트 다운로드
+        run: |
+          curl -sL "https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf" -o /tmp/NotoSansKR.ttf
+          ls -la /tmp/NotoSansKR.ttf
+
+      - name: 오늘 글 메타 조회 + 썸네일 생성
+        env:
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -uo pipefail
+          posts=$(curl -sS -X GET "${PRODUCTION_URL}/api/cron/posts-today" \
+            -H "Authorization: Bearer ${CRON_SECRET}" --max-time 60)
+          count=$(echo "$posts" | jq '.count // 0')
+          echo "오늘 썸네일 대상: $count 개"
+          if [ "$count" = "0" ]; then echo "대상 없음 — 종료"; exit 0; fi
+          echo "$posts" | jq -c '.posts' \
+            | NOTO_FONT=/tmp/NotoSansKR.ttf OUT_DIR=public/thumbnails ASSET_DIR=scripts/assets \
+              python3 scripts/thumbnail.py
+
+      - name: 생성된 썸네일 커밋·push
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -z "$(git status --porcelain public/thumbnails)" ]; then
+            echo "변경된 썸네일 없음"; exit 0
+          fi
+          git add public/thumbnails
+          git commit -m "chore(thumbnail): 자동 생성 썸네일 [skip ci]"
+          git push
+
+  # ─── 4단계: 최종 요약 ─────────────────────────────
   summary:
     name: Summary
     needs: [plan, generate]
