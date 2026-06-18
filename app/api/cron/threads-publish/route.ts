@@ -99,12 +99,14 @@ export async function GET(req: Request) {
 /**
  * POST /api/cron/threads-publish
  *
- * GHA가 매시간 정시 호출 (KST 9~21 시간대만 실제 발행 발생).
+ * GHA가 발행 슬롯 시각(KST 9·14·20시) 직후에 호출.
+ * 동작: 승인된(status="scheduled") 글 중 예약 시각(scheduled_at)이 지난 것을 조회 → 있으면 발행.
  *
- * 발행 대상: status="scheduled" + scheduled_at가 (now - 70분) ~ now 사이 + 아직 발행 안 된 것
- *   - 70분 윈도우 = cron 정시 트리거가 다음 시간까지 못 잡으면 다음 시간 cron이 처리할 수 있게.
- *   - 70분 초과로 지난 슬롯은 stale → 표시는 남기되 자동 발행 안 함 (사용자가 검토 후 수동 처리).
- * 한 호출에 최대 1건 발행 — 시간당 1개씩 자연스러운 스페이싱.
+ * 발행 대상: status="scheduled"(또는 일시 실패 "failed") + scheduled_at <= now + 미발행.
+ *   - FRESHNESS_WINDOW_MIN(12시간) 안의 슬롯만 발행 → GHA가 한 슬롯 cron을 스킵해도
+ *     다음 슬롯 cron이 같은 날 안에서 따라잡음.
+ *   - 12시간 초과로 지난 슬롯은 stale → 자동 발행 안 함 (사용자가 검토 후 수동 처리).
+ * 한 호출에 최대 1건 발행 — 글 간 자연스러운 스페이싱.
  */
 export async function POST(req: Request) {
   const authHeader = req.headers.get("authorization");

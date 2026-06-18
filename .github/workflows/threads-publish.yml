@@ -1,14 +1,17 @@
 name: Threads Publish (scheduled drafts)
 
-# 발행 워커 — 비정시 15분 간격 호출.
-# status=scheduled/failed + scheduled_at <= now 인 초안을 발행 (한 번에 1건).
-# KST 9~22시 슬롯 커버 (UTC 0~13시).
-# ⚠️ GitHub Actions cron은 정시(:00)에 부하가 몰려 스킵·지연이 잦음.
-#    → 비정시(:07,:22,:37,:52)로 분산해 스킵 확률을 낮춤. 그래도 GHA는 신뢰도 한계가 있어
-#    실제 안정 발행은 외부 cron(cron-job.org 등) 또는 Vercel Cron 병행 권장.
+# 발행 워커 — 발행 슬롯 시각(KST 9·14·20시) 직후에만 호출.
+# 동작: 승인된(status=scheduled) 글 중 예약시각 지난 것 조회 → 있으면 1건 발행.
+#
+# 슬롯은 ±15분 jitter(8:45~9:15 등)라 슬롯 "직후"인 :20부터 잡아야 다 커버됨.
+# GitHub Actions cron은 부하로 스킵이 잦으므로, 각 슬롯당 :20/:35/:50 3번 시도(스킵 내성).
+# 한 번이라도 돌면 그 슬롯 발행 + 12h freshness 윈도우로 못 잡은 건 다음 슬롯 cron이 따라잡음.
+#
+# UTC 0시=KST 9시 / UTC 5시=KST 14시 / UTC 11시=KST 20시.
+#   → KST 9:20·9:35·9:50 / 14:20·14:35·14:50 / 20:20·20:35·20:50
 on:
   schedule:
-    - cron: "7,22,37,52 0-13 * * *"
+    - cron: "20,35,50 0,5,11 * * *"
   workflow_dispatch:
 
 concurrency:
