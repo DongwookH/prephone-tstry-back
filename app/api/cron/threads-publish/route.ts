@@ -70,6 +70,19 @@ export async function GET(req: Request) {
     })
     .sort((a, b) => a._t - b._t);
 
+  // 최근 발행 완료(published) — 시각 내림차순 상위 8
+  const publishedRecent = all
+    .filter((d) => d.published_id && d.scheduled_at)
+    .map((d) => ({
+      kst: kstLabel(d.scheduled_at),
+      keyword: d.keyword,
+      published_id: d.published_id,
+      _t: new Date(d.scheduled_at).getTime(),
+    }))
+    .sort((a, b) => b._t - a._t)
+    .slice(0, 8)
+    .map(({ _t, ...rest }) => rest);
+
   return NextResponse.json({
     ok: true,
     serverNowUtc: new Date(now).toISOString(),
@@ -79,6 +92,7 @@ export async function GET(req: Request) {
       (s) => s.bucket === "발행대상(due)" && s.status === "scheduled",
     ).length,
     slots: pendingSlots.map(({ _t, ...rest }) => rest),
+    publishedRecent,
   });
 }
 
