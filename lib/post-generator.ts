@@ -543,6 +543,47 @@ ${
 `;
 }
 
+/**
+ * 히어로 박스(상단 표지) 일관성 보장.
+ * Gemini가 가끔 히어로 박스 없이 본문 섹션부터 시작 → 없으면 코드가 자동 prepend.
+ * 이미 라임 그라데이션 히어로로 시작하면 그대로 둠.
+ */
+function ensureHeroBox(
+  html: string,
+  title: string,
+  keyword: string,
+  utmCampaign: string,
+): string {
+  const head = html.slice(0, 700);
+  // 이미 히어로 박스(라임 그라데이션 F4F9E0)로 시작하면 그대로
+  if (/linear-gradient[^;"']*F4F9E0/i.test(head)) return html;
+  return buildHeroBox(title, keyword, utmCampaign) + "\n" + html;
+}
+
+/** 히어로 박스 HTML 생성 (프롬프트 ① 템플릿과 동일 구조). */
+function buildHeroBox(
+  title: string,
+  keyword: string,
+  utmCampaign: string,
+): string {
+  const utm = `utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}`;
+  const btn =
+    "display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);";
+  const hl =
+    "color:#5F7C0E;font-weight:800;background:#FFFFFF;padding:2px 8px;border-radius:6px;";
+  return `<div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);border-radius:24px;padding:48px 40px;margin-bottom:24px;border:1px solid #D4E89C;">
+  <h2 style="font-size:30px;font-weight:900;margin:0 0 24px;color:#191F28;line-height:1.3;letter-spacing:-0.02em;">${title}</h2>
+  <p style="font-size:17px;line-height:1.9;margin:0 0 16px;color:#191F28;font-weight:600;">${keyword} 때문에 막막하셨나요? 앤텔레콤 안심개통 케어통신이 복잡한 절차 없이 해결해 드립니다.</p>
+  <p style="font-size:16px;line-height:1.9;margin:0 0 32px;color:#4E5968;font-weight:500;">이 글은 <strong style="${hl}">${keyword}</strong>를 빠르게 끝내는 흐름과 꼭 체크해야 할 <strong style="${hl}">완료 포인트</strong>를 한 번에 정리했어요.</p>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+    <a href="${SITE_URL}/step2?${utm}" style="${btn}">📱 개통 신청하기</a>
+    <a href="${SITE_URL}/kakao?${utm}" style="${btn}">💬 카카오톡 문의</a>
+    <a href="${SITE_URL}/plans?${utm}" style="${btn}">🔍 추가 정보 보기</a>
+    <a href="${SITE_URL}/usim-choice?${utm}" style="${btn}">⬅️ 이전 글 보기</a>
+  </div>
+</div>`;
+}
+
 /** 글자수 계산용 — HTML 태그 제거. */
 function htmlTextLength(html: string): number {
   if (!html) return 0;
@@ -738,12 +779,20 @@ export async function generatePost(opts: {
     cleanTags.unshift(mainTagNormalized);
   }
 
+  const finalTitle =
+    stripBrandSuffix(result.title?.trim() || "") || `${opts.keyword} 가이드`;
+  // 히어로 박스(상단 표지) 일관성 — Gemini가 빠뜨리면 자동 추가
+  const htmlWithHero = ensureHeroBox(
+    safeHtml,
+    finalTitle,
+    opts.keyword,
+    utmCampaign,
+  );
+
   return {
-    title:
-      stripBrandSuffix(result.title?.trim() || "") ||
-      `${opts.keyword} 가이드`,
+    title: finalTitle,
     meta_description: result.meta_description?.trim() || "",
-    content_html: safeHtml,
+    content_html: htmlWithHero,
     char_count: charCount,
     seo_score: seoScore,
     utm_campaign: utmCampaign,
