@@ -155,6 +155,10 @@ jobs:
   thumbnails:
     name: Thumbnails (Pillow)
     needs: generate
+    # generate 매트릭스 일부 슬롯이 실패(예: Gemini 503)해도 thumbnails는 실행.
+    # needs만 두면 매트릭스 실패 시 잡이 통째로 skip돼 성공 글 썸네일까지 누락됨.
+    # !cancelled(): 워크플로 취소가 아닌 한, generate 성공/실패 무관하게 진행.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     permissions:
