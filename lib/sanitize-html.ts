@@ -15,8 +15,13 @@
 export function sanitizeForTistory(html: string): string {
   if (!html) return html;
 
+  // (00) <script>/<style>/<noscript> 블록 제거 (가장 먼저).
+  //   블로그 본문에 불필요하고, 티스토리/정적 사이트에선 실행되지 않아
+  //   코드가 그대로 "SCRIPT" 텍스트로 노출됨. 인라인 style="" 속성은 건드리지 않음.
+  let out = stripScriptStyleBlocks(html);
+
   // (0) 마크다운 잔재 → HTML
-  let out = transformMarkdownEmphasis(html);
+  out = transformMarkdownEmphasis(out);
 
   // (1) <details>/<summary> 블록을 <section> + 헤더 div + 본문으로 변환
   //     중첩 details도 안전 — 가장 안쪽부터 반복 변환
@@ -101,6 +106,19 @@ export function sanitizeForTistory(html: string): string {
   out = out.replace(/<\/section>/gi, "</div>");
 
   return out;
+}
+
+/**
+ * <script>/<style>/<noscript> 블록과 짝 없는 잔여 태그를 제거.
+ * 인라인 style="..." 속성은 보존 (블록 태그만 대상).
+ */
+function stripScriptStyleBlocks(html: string): string {
+  return html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, "")
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript\s*>/gi, "")
+    // 닫는 태그 누락 등으로 남은 단독 script/style/noscript 태그
+    .replace(/<\/?(?:script|style|noscript)\b[^>]*>/gi, "");
 }
 
 /**
