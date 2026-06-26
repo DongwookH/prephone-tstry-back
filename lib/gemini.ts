@@ -131,6 +131,26 @@ function isRetryableError(err: unknown): boolean {
 }
 
 /**
+ * "모델 서버 전체" 문제인지 판정 (503/5xx/overloaded).
+ * 이 경우 같은 모델에 다른 키를 써도 동일하게 실패하므로,
+ * 키를 더 돌리지 말고 즉시 다음 폴백 "모델"로 점프해야 한다(시간 절약 + 504 회피).
+ * 반면 429/401/403은 키 단위 문제 → 다음 "키"로 가는 게 맞다.
+ */
+function isModelWideError(err: unknown): boolean {
+  const status =
+    (err as { status?: number })?.status ??
+    (err as { response?: { status?: number } })?.response?.status;
+  if (status) return [500, 502, 503, 504].includes(status);
+  const lower = String((err as Error)?.message ?? "").toLowerCase();
+  return (
+    lower.includes("unavailable") ||
+    lower.includes("overloaded") ||
+    lower.includes("high demand") ||
+    lower.includes("internal error")
+  );
+}
+
+/**
  * 최종 실패 메시지 — 마지막 에러 종류(503/429/인증/기타)에 맞춰
  * 사용자가 바로 이해·대응할 수 있는 문구를 만든다.
  * (기존 "모든 키 소진" 문구는 503에도 떠서 "할당량 소진"으로 오해를 부름)
@@ -226,21 +246,22 @@ export async function generateWithFallback<T>(
         return result;
       } catch (err) {
         lastError = err;
-        const retryable = isRetryableError(err);
+        if (!isRetryableError(err)) throw err;
         const status = (err as { status?: number })?.status ?? "no-status";
-        console.warn(
-          `[Gemini] ${label} 실패 (status=${status}): ${
-            (err as Error)?.message ?? err
-          }${retryable ? " — fallback" : " — 즉시 중단"}`,
-        );
-        if (!retryable) throw err;
+        if (isModelWideError(err)) {
+          // 모델 서버 과부하(503 등) — 같은 모델에 다른 키도 동일 실패 →
+          // 남은 키 생략하고 즉시 다음 모델로 (시간 절약, 60초 타임아웃 회피)
+          console.warn(
+            `[Gemini] ${label} 모델 과부하(${status}) — 남은 키 생략, 다음 모델로`,
+          );
+          break;
+        }
+        // 키 단위 문제(429/인증) — 다음 키로
+        console.warn(`[Gemini] ${label} 실패 (status=${status}) — 다음 키로`);
       }
     }
-    // 이 모델의 모든 키 실패 → 다음 폴백 모델로
     if (mi < models.length - 1) {
-      console.warn(
-        `[Gemini] 모델 ${modelName} 전 키 실패 — 폴백 모델(${models[mi + 1]})로 전환`,
-      );
+      console.warn(`[Gemini] 모델 ${modelName} 실패 — 폴백 모델(${models[mi + 1]})로 전환`);
     }
   }
 
