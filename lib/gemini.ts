@@ -69,6 +69,27 @@ if (ENV_KEYS.length === 0 && process.env.NODE_ENV !== "test") {
 
 const DEFAULT_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 
+/**
+ * 모델 폴백 체인 — 한 모델이 일시 과부하(503)/한도(429)로 모든 키에서 막혀도
+ * 같은 계열 다른 모델 서버는 멀쩡한 경우가 많아 자동으로 갈아탄다.
+ * (Free Tier RPD 한도는 모델별로 분리돼 있어 429에도 효과 있음.)
+ */
+const MODEL_FALLBACKS: Record<string, string[]> = {
+  "gemini-2.5-flash-lite": ["gemini-2.5-flash", "gemini-2.0-flash"],
+  "gemini-2.5-flash": ["gemini-2.5-flash-lite", "gemini-2.0-flash"],
+  "gemini-2.5-pro": ["gemini-2.5-flash"],
+  "gemini-2.0-flash": ["gemini-2.0-flash-lite", "gemini-2.5-flash"],
+};
+
+/** primary 모델 + 폴백 모델들 (primary 중복 제거). */
+function modelsToTry(primary: string): string[] {
+  const fallbacks = MODEL_FALLBACKS[primary] ?? [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+  ];
+  return [primary, ...fallbacks.filter((m) => m !== primary)];
+}
+
 function maskKey(key: string) {
   if (key.length < 12) return "***";
   return `${key.slice(0, 8)}…${key.slice(-4)}`;
@@ -110,8 +131,62 @@ function isRetryableError(err: unknown): boolean {
 }
 
 /**
- * 임의 작업을 키 fallback과 함께 실행.
+ * 최종 실패 메시지 — 마지막 에러 종류(503/429/인증/기타)에 맞춰
+ * 사용자가 바로 이해·대응할 수 있는 문구를 만든다.
+ * (기존 "모든 키 소진" 문구는 503에도 떠서 "할당량 소진"으로 오해를 부름)
+ */
+function describeFinalError(
+  lastError: unknown,
+  keysCount: number,
+  models: string[],
+): string {
+  const msg = String((lastError as Error)?.message ?? lastError ?? "");
+  const lower = msg.toLowerCase();
+  const status =
+    (lastError as { status?: number })?.status ??
+    (lastError as { response?: { status?: number } })?.response?.status;
+  const tried = `키 ${keysCount}개 × 모델 ${models.length}종(${models.join(
+    ", ",
+  )}) 모두 시도함`;
+
+  // 503/5xx/overloaded → 구글 서버 일시 과부하 (할당량과 무관)
+  if (
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    lower.includes("unavailable") ||
+    lower.includes("overloaded") ||
+    lower.includes("high demand") ||
+    lower.includes("internal error")
+  ) {
+    return `⏳ Gemini 서버 일시 과부하(${status ?? "5xx"}) — 구글 쪽 일시 현상이라 내 할당량과 무관합니다. ${tried}. 보통 1~5분 뒤 다시 시도하면 됩니다. 마지막 에러: ${msg}`;
+  }
+  // 429/quota → 호출 한도
+  if (
+    status === 429 ||
+    lower.includes("quota") ||
+    lower.includes("rate limit") ||
+    lower.includes("resource_exhausted")
+  ) {
+    return `🚦 Gemini 호출 한도 도달(429) — 분당/일일 한도일 수 있습니다. ${tried}. 잠시 후 재시도하거나 키를 추가하세요. 마지막 에러: ${msg}`;
+  }
+  // 401/403 → 키 인증 문제
+  if (
+    status === 401 ||
+    status === 403 ||
+    lower.includes("api key not valid") ||
+    lower.includes("permission denied")
+  ) {
+    return `🔑 Gemini API 키 인증 실패 — 키가 잘못됐거나 권한이 없습니다. 백오피스/env 키를 확인하세요. 마지막 에러: ${msg}`;
+  }
+  return `Gemini 호출 실패 — ${tried}. 마지막 에러: ${msg}`;
+}
+
+/**
+ * 임의 작업을 키 + 모델 fallback과 함께 실행.
  * fn은 GenerativeModel을 받아 Promise를 반환하면 됨.
+ * 순서: primary 모델로 키 전부 → 실패 시 폴백 모델로 키 전부 → …
  */
 export async function generateWithFallback<T>(
   fn: (model: GenerativeModel) => Promise<T>,
@@ -128,43 +203,48 @@ export async function generateWithFallback<T>(
     );
   }
 
-  const modelName = options.model ?? DEFAULT_MODEL;
+  const primary = options.model ?? DEFAULT_MODEL;
+  const models = modelsToTry(primary);
   let lastError: unknown;
 
-  for (let i = 0; i < KEYS.length; i++) {
-    const key = KEYS[i];
-    const label = `${i + 1}/${KEYS.length} (${maskKey(key)})`;
-    try {
-      const genAI = new GoogleGenerativeAI(key);
-      const model = genAI.getGenerativeModel({
-        model: modelName,
-        generationConfig: options.generationConfig,
-        tools: options.tools,
-      });
-      const result = await fn(model);
-      if (i > 0) {
-        console.info(`[Gemini] ✅ 키 ${label}로 fallback 성공`);
+  for (let mi = 0; mi < models.length; mi++) {
+    const modelName = models[mi];
+    for (let i = 0; i < KEYS.length; i++) {
+      const key = KEYS[i];
+      const label = `${i + 1}/${KEYS.length} (${maskKey(key)})·${modelName}`;
+      try {
+        const genAI = new GoogleGenerativeAI(key);
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          generationConfig: options.generationConfig,
+          tools: options.tools,
+        });
+        const result = await fn(model);
+        if (i > 0 || mi > 0) {
+          console.info(`[Gemini] ✅ ${label}로 fallback 성공`);
+        }
+        return result;
+      } catch (err) {
+        lastError = err;
+        const retryable = isRetryableError(err);
+        const status = (err as { status?: number })?.status ?? "no-status";
+        console.warn(
+          `[Gemini] ${label} 실패 (status=${status}): ${
+            (err as Error)?.message ?? err
+          }${retryable ? " — fallback" : " — 즉시 중단"}`,
+        );
+        if (!retryable) throw err;
       }
-      return result;
-    } catch (err) {
-      lastError = err;
-      const retryable = isRetryableError(err);
-      const status =
-        (err as { status?: number })?.status ?? "no-status";
+    }
+    // 이 모델의 모든 키 실패 → 다음 폴백 모델로
+    if (mi < models.length - 1) {
       console.warn(
-        `[Gemini] 키 ${label} 실패 (status=${status}): ${
-          (err as Error)?.message ?? err
-        }${retryable ? " — 다음 키로 fallback" : " — 즉시 중단"}`,
+        `[Gemini] 모델 ${modelName} 전 키 실패 — 폴백 모델(${models[mi + 1]})로 전환`,
       );
-      if (!retryable) throw err;
     }
   }
 
-  throw new Error(
-    `모든 Gemini API 키(${KEYS.length}개) 소진. 마지막 에러: ${
-      (lastError as Error)?.message ?? lastError
-    }`,
-  );
+  throw new Error(describeFinalError(lastError, KEYS.length, models));
 }
 
 /**
