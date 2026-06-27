@@ -96,6 +96,11 @@ export function getCategoryContext(category: string): string {
   return compile(`cat:${category}`, ids);
 }
 
+// ─── FAQ 단독 컨텍스트 (쓰레드 등 카테고리 없는 생성에 사용) ──
+export function getFaqContext(): string {
+  return compile("__faq__", ["04-faq"]);
+}
+
 // ─── 디버그 / 헬스체크 ───────────────────────────────
 export function knowledgeStatus() {
   const globalCtx = getGlobalContext();
