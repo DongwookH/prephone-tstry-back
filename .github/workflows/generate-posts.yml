@@ -124,29 +124,35 @@ jobs:
 
           echo "▶ Slot $slot: [Track $track] $keyword ($category)"
 
+          # --retry 제거: generate-one은 ~60초 걸리는 무거운 호출이라
+          # 504(타임아웃)에 재시도하면 응답이 두 번 이어붙어(concatenate) jq 파싱이 깨짐.
+          # 엔드포인트가 자체 모델 폴백을 하므로 클라이언트 재시도는 불필요.
           response=$(curl -sS \
             -w "\nHTTP_STATUS:%{http_code}\n" \
             -X POST "${PRODUCTION_URL}/api/cron/generate-one" \
             -H "Authorization: Bearer ${CRON_SECRET}" \
             -H "Content-Type: application/json" \
             -d "$item" \
-            --max-time 90 \
-            --retry 1)
+            --max-time 150)
 
-          http_status=$(echo "$response" | grep "HTTP_STATUS:" | cut -d: -f2)
-          body=$(echo "$response" | sed '/HTTP_STATUS:/d')
+          # 마지막 HTTP_STATUS 라인의 숫자만 추출 (멀티라인 안전)
+          http_status=$(printf '%s\n' "$response" | grep -oE 'HTTP_STATUS:[0-9]+' | tail -n1 | grep -oE '[0-9]+')
+          body=$(printf '%s\n' "$response" | sed '/HTTP_STATUS:/d')
 
-          if [ "$http_status" != "200" ]; then
-            echo "::error::Slot $slot 생성 실패 (HTTP $http_status)"
-            echo "$body" | head -20
+          # 200이 아니거나 본문이 유효 JSON이 아니면 → 깔끔하게 실패 처리.
+          # (jq에 깨진 응답을 먹여 "parse error + exit 5"로 죽는 것 방지)
+          if [ "${http_status:-}" != "200" ] || ! printf '%s' "$body" | jq empty >/dev/null 2>&1; then
+            echo "::error::Slot $slot 생성 실패 (HTTP ${http_status:-no-status}, 응답이 JSON 아님 — 대개 60초 타임아웃)"
+            printf '%s' "$body" | head -c 300
             exit 1
           fi
 
-          title=$(echo "$body" | jq -r '.title')
-          chars=$(echo "$body" | jq -r '.charCount')
-          seo=$(echo "$body" | jq -r '.seoScore')
-          duration=$(echo "$body" | jq -r '.durationMs')
-          id=$(echo "$body" | jq -r '.id')
+          # 여기서부터 body는 유효 JSON 보장
+          title=$(printf '%s' "$body" | jq -r '.title // "?"')
+          chars=$(printf '%s' "$body" | jq -r '.charCount // "?"')
+          seo=$(printf '%s' "$body" | jq -r '.seoScore // "?"')
+          duration=$(printf '%s' "$body" | jq -r '.durationMs // "?"')
+          id=$(printf '%s' "$body" | jq -r '.id // "?"')
 
           echo "::notice::✓ $id | $title | ${chars}자 | SEO $seo | ${duration}ms"
           echo "✓ 완료: $title"
