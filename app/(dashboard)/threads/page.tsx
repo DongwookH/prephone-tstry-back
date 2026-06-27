@@ -7,7 +7,6 @@ import {
 } from "@/components/threads-weekly-calendar";
 import { RegenerateRejectedButton } from "@/components/regenerate-rejected-button";
 import { AtSign, CircleCheck, CircleX, CalendarClock } from "lucide-react";
-import { getUpcomingMondayKstStart } from "@/lib/threads-research";
 
 export const dynamic = "force-dynamic";
 
@@ -61,33 +60,19 @@ export default async function ThreadsPage({
 
   // 활성 주 결정:
   // 1) URL의 ?week=YYYY-MM-DD가 있으면 그 주
-  // 2) 검토 대기/예약/실패 상태의 초안 중 가장 빠른 scheduled_at의 주
-  // 3) 기본값 — 다가오는 월요일
+  // 2) 기본값 — 현재 시각(KST)이 속한 이번 주
+  //    (지난주 미완료 초안이 있어도 이번 주를 보여줌. 다른 주 미완료는
+  //     아래 otherWeekUnfinished 섹션에 별도 노출되므로 놓치지 않음.)
   let weekStart: Date;
   if (sp.week) {
     const parsed = new Date(sp.week);
     if (!isNaN(parsed.getTime())) {
       weekStart = getMondayKstOf(parsed);
     } else {
-      weekStart = getUpcomingMondayKstStart();
+      weekStart = getMondayKstOf(new Date());
     }
   } else {
-    const unfinished = drafts
-      .filter(
-        (d) =>
-          d.scheduled_at &&
-          (d.status === "pending" ||
-            d.status === "scheduled" ||
-            d.status === "failed"),
-      )
-      .map((d) => new Date(d.scheduled_at).getTime())
-      .filter((t) => !isNaN(t));
-    if (unfinished.length > 0) {
-      const earliest = Math.min(...unfinished);
-      weekStart = getMondayKstOf(new Date(earliest));
-    } else {
-      weekStart = getUpcomingMondayKstStart();
-    }
+    weekStart = getMondayKstOf(new Date());
   }
   const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 3600 * 1000);
   const prevWeek = new Date(weekStart.getTime() - 7 * 24 * 3600 * 1000);
