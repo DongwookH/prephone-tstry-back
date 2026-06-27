@@ -28,8 +28,14 @@ export async function GET(req: Request) {
     .replace(/-/g, "");
 
   const all = await getAllPosts().catch(() => []);
-  const posts = all
-    .filter((p) => p.id?.startsWith(`p-${todayKST}`) && p.image_urls?.trim())
+  const todayPosts = all.filter((p) => p.id?.startsWith(`p-${todayKST}`));
+
+  // 오늘 저장된 모든 글의 키워드 (fill-missing 잡이 plan과 비교해 누락 판단)
+  const keywords = todayPosts.map((p) => p.keyword).filter(Boolean);
+
+  // 썸네일 메타 있는 글 (thumbnails 잡이 PNG 생성)
+  const posts = todayPosts
+    .filter((p) => p.image_urls?.trim())
     .map((p) => {
       let thumbnail: unknown = null;
       try {
@@ -37,9 +43,15 @@ export async function GET(req: Request) {
       } catch {
         thumbnail = null;
       }
-      return { id: p.id, thumbnail };
+      return { id: p.id, keyword: p.keyword, thumbnail };
     })
     .filter((p) => p.thumbnail);
 
-  return NextResponse.json({ ok: true, todayKST, count: posts.length, posts });
+  return NextResponse.json({
+    ok: true,
+    todayKST,
+    count: posts.length,
+    posts,
+    keywords,
+  });
 }

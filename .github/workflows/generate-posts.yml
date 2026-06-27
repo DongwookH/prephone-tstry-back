@@ -157,13 +157,54 @@ jobs:
           echo "::notice::✓ $id | $title | ${chars}자 | SEO $seo | ${duration}ms"
           echo "✓ 완료: $title"
 
+  # ─── 2.5단계: 빠진 슬롯 자동 재생성 (Hobby 60초 504 복구) ───
+  #   generate에서 일부 슬롯이 60초 타임아웃(504)으로 빠져도, plan과 비교해
+  #   누락 키워드만 generate-one 재호출(최대 3회). 504여도 서버 저장됐으면 스킵 → 중복 없음.
+  fill-missing:
+    name: Fill missing (누락 재생성)
+    needs: [plan, generate]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      PLAN: ${{ needs.plan.outputs.plan }}
+    steps:
+      - name: 누락 키워드 재생성
+        run: |
+          set -uo pipefail
+          api() { curl -sS -H "Authorization: Bearer ${CRON_SECRET}" "$@"; }
+          have() { api -m 30 "${PRODUCTION_URL}/api/cron/posts-today" | jq -r '.keywords[]?'; }
+
+          existing="$(have)"   # 시작 시점 저장된 키워드 (504였지만 저장된 것 포함)
+          echo "현재 저장된 키워드 수: $(printf '%s\n' "$existing" | grep -c . || true)"
+
+          echo "$PLAN" | jq -c '.[]' | while read -r item; do
+            kw=$(printf '%s' "$item" | jq -r '.keyword')
+            if printf '%s\n' "$existing" | grep -Fxq "$kw"; then continue; fi
+            echo "▶ 누락: $kw — 재생성"
+            ok=0
+            for attempt in 1 2 3; do
+              http=$(api -o /dev/null -w '%{http_code}' -m 90 -X POST \
+                "${PRODUCTION_URL}/api/cron/generate-one" \
+                -H "Content-Type: application/json" -d "$item" || echo "000")
+              if [ "$http" = "200" ]; then echo "  ✓ $kw (시도 $attempt)"; ok=1; break; fi
+              # 504/타임아웃이어도 서버가 저장했을 수 있음 → 재확인 (중복 방지)
+              if have | grep -Fxq "$kw"; then echo "  ✓ $kw (HTTP $http였지만 저장됨)"; ok=1; break; fi
+              echo "  …재시도 $attempt 실패 (HTTP $http)"
+            done
+            [ "$ok" = 1 ] || echo "::warning::$kw 재생성 3회 실패 — 다음 run/수동 처리"
+          done
+          echo "fill-missing 완료"
+
   # ─── 3단계: 썸네일 자동 생성 + 커밋 ─────────────────
   thumbnails:
     name: Thumbnails (Pillow)
-    needs: generate
-    # generate 매트릭스 일부 슬롯이 실패(예: Gemini 503)해도 thumbnails는 실행.
-    # needs만 두면 매트릭스 실패 시 잡이 통째로 skip돼 성공 글 썸네일까지 누락됨.
-    # !cancelled(): 워크플로 취소가 아닌 한, generate 성공/실패 무관하게 진행.
+    # fill-missing까지 끝난 뒤 실행 → 재생성으로 채워진 글의 썸네일도 함께 생성.
+    needs: [generate, fill-missing]
+    # generate/fill-missing 일부가 실패해도 thumbnails는 실행(성공 글 썸네일 보존).
+    # !cancelled(): 워크플로 취소가 아닌 한 진행.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
