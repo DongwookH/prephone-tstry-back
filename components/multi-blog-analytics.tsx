@@ -59,6 +59,59 @@ function isSiteNameOnly(t: string): boolean {
 }
 
 /**
+ * 티스토리 페이지의 og:title(실제 글 제목) 추출.
+ *   - 티스토리 <title>은 블로그명만 담겨 GA pageTitle이 무용 → og:title로 보완.
+ *   - Next fetch 캐시(1h) + 8초 타임아웃. 실패 시 null.
+ */
+async function fetchOgTitle(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; ntelecom-analytics/1.0; +https://ntelecomsafe.com)",
+      },
+      next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const m =
+      html.match(
+        /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i,
+      ) ||
+      html.match(
+        /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i,
+      );
+    if (!m) return null;
+    const t = cleanTitle(m[1].trim());
+    return t && !isSiteNameOnly(t) ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+/** stats의 인기페이지 URL들 → og:title 맵 (fullUrl → 제목). */
+async function buildOgTitleMap(
+  stats: Awaited<ReturnType<typeof getMultiBlogStats>>,
+): Promise<Map<string, string>> {
+  const urls = new Set<string>();
+  for (const s of stats) {
+    if (!s.tistoryUrl) continue;
+    const base = s.tistoryUrl.replace(/\/$/, "");
+    for (const p of s.topPages.slice(0, 5)) {
+      if (p.path && p.path !== "/") urls.add(base + p.path);
+    }
+  }
+  const list = [...urls];
+  const titles = await Promise.all(list.map((u) => fetchOgTitle(u)));
+  const map = new Map<string, string>();
+  list.forEach((u, i) => {
+    if (titles[i]) map.set(u, titles[i] as string);
+  });
+  return map;
+}
+
+/**
  * 등록된 GA properties (블로그) 5개를 병렬 조회 → 합계 + 블로그별 비교 표시.
  * 등록된 게 없으면 null 반환 → 페이지의 옛 단일 property 섹션이 fallback.
  */
@@ -99,8 +152,10 @@ export async function MultiBlogAnalytics({ days = 7 }: { days?: number }) {
     getAllPosts().catch(() => []),
   ]);
 
-  // GA4 pagePath → 우리 시트의 글 title 매핑
+  // GA4 pagePath → 우리 시트의 글 title 매핑 (보조)
   const pathTitleMap = buildPathTitleMap(posts);
+  // 인기페이지 URL → og:title(실제 글 제목) 매핑 (주 — 블로그·경로별 정확)
+  const ogTitleMap = await buildOgTitleMap(stats);
 
   const total = aggregateOverview(stats);
   const totalRealtime = stats.reduce(
@@ -157,6 +212,7 @@ export async function MultiBlogAnalytics({ days = 7 }: { days?: number }) {
             key={s.propertyId}
             stats={s}
             pathTitleMap={pathTitleMap}
+            ogTitleMap={ogTitleMap}
           />
         ))}
       </div>
@@ -189,9 +245,11 @@ function KPI({
 function BlogCard({
   stats,
   pathTitleMap,
+  ogTitleMap,
 }: {
   stats: BlogStats;
   pathTitleMap: Map<string, string>;
+  ogTitleMap: Map<string, string>;
 }) {
   const o = stats.overview;
   return (
@@ -264,7 +322,11 @@ function BlogCard({
               </div>
               <div className="space-y-1.5">
                 {stats.topPages.slice(0, 5).map((p, i) => {
-                  // 우선순위: 시트 매칭 글 제목 → GA pageTitle(사이트명 아닐 때) → pagePath
+                  // 우선순위: og:title(블로그·경로별 정확) → 시트 매칭 → GA pageTitle → pagePath
+                  const fullUrl = stats.tistoryUrl
+                    ? `${stats.tistoryUrl.replace(/\/$/, "")}${p.path}`
+                    : "";
+                  const ogTitle = fullUrl ? ogTitleMap.get(fullUrl) : undefined;
                   const sheetTitle = pathTitleMap.get(p.path);
                   const gaTitle = (p.title || "").trim();
                   const cleanedGaTitle = gaTitle ? cleanTitle(gaTitle) : "";
@@ -272,8 +334,11 @@ function BlogCard({
                     cleanedGaTitle && !isSiteNameOnly(cleanedGaTitle)
                       ? cleanedGaTitle
                       : "";
-                  const display = sheetTitle || usefulGaTitle || p.path;
-                  const showSubPath = Boolean(sheetTitle || usefulGaTitle);
+                  const display =
+                    ogTitle || sheetTitle || usefulGaTitle || p.path;
+                  const showSubPath = Boolean(
+                    ogTitle || sheetTitle || usefulGaTitle,
+                  );
                   return (
                     <div
                       key={i}
