@@ -1,10 +1,10 @@
-name: Threads Weekly Plan (21 drafts)
+name: Threads Weekly Plan (24 drafts)
 
 # 매주 월요일 KST 06:00 = UTC 일요일 21:00.
 # GHA cron은 best-effort ~1~2h 지연이므로 일요일 19:15 UTC에 트리거 →
 # 실제 ~21:00 UTC ~= KST 월요일 06:00.
 #
-# 21번 직렬 호출 (각 1편 생성, Vercel 60초 한도 회피).
+# 24번 직렬 호출 (각 1편 생성, Vercel 60초 한도 회피). 8일=월~다음주 월.
 on:
   schedule:
     - cron: "15 19 * * 0"
@@ -21,9 +21,9 @@ concurrency:
 
 jobs:
   generate:
-    name: Generate 21 weekly drafts
+    name: Generate 24 weekly drafts
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: 환경 검증
         env:
@@ -34,7 +34,7 @@ jobs:
           [ -n "${CRON_SECRET}" ] || { echo "::error::CRON_SECRET 미설정"; exit 1; }
           echo "✓ Secrets OK"
 
-      - name: 21편 직렬 생성
+      - name: 24편 직렬 생성
         env:
           PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -42,8 +42,8 @@ jobs:
           set -uo pipefail
           total=0
           fail=0
-          for i in $(seq 0 20); do
-            echo "▶ [$i/20] 생성 요청"
+          for i in $(seq 0 23); do
+            echo "▶ [$i/23] 생성 요청"
             response=$(curl -sS \
               -w "\nHTTP_STATUS:%{http_code}\n" \
               -X POST "${PRODUCTION_URL}/api/cron/threads-weekly-plan" \
@@ -70,7 +70,7 @@ jobs:
           {
             echo "## 🧵 Threads Weekly Plan"
             echo ""
-            echo "**성공:** $total / 21"
+            echo "**성공:** $total / 24"
             echo "**실패:** $fail"
             echo ""
             echo "👉 검토: ${PRODUCTION_URL}/threads"

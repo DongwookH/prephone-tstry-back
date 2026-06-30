@@ -246,16 +246,22 @@ export function getUpcomingMondayKstStart(ref: Date = new Date()): Date {
 }
 
 /**
- * 1주치 스케줄 빌더 — 월~일 7일 × 3슬롯(9시·14시·20시 KST) = 21개.
+ * 주간 스케줄 빌더 — 기본 8일(월~다음 주 월) × 3슬롯(9·14·20시 KST) = 24개.
+ *   다음 주 월요일까지 미리 생성해, 월요일 글이 한 주 앞서 준비되도록 함
+ *   (월요일 검토 시 그 주 월요일 글은 이미 전주에 생성돼 있음).
+ *   중복은 라우트의 슬롯 dedup이 처리.
  * 각 슬롯에 ±15분 랜덤 jitter.
  *
  * weekStartUtc = KST 월요일 00:00에 해당하는 UTC 시각 (= 일요일 UTC 15:00).
- * KST (월요일+day) HOUR시 = weekStartUtc + day*24시간 + HOUR시간 (KST·UTC 차이는 9이고 그건 이미 weekStart에 반영됨)
+ * KST (월요일+day) HOUR시 = weekStartUtc + day*24시간 + HOUR시간 (KST·UTC 차이 9는 이미 weekStart에 반영됨)
  */
-export function buildWeeklySchedule(weekStartUtc: Date): string[] {
+export function buildWeeklySchedule(
+  weekStartUtc: Date,
+  days = 8,
+): string[] {
   const baseHoursKst = [9, 14, 20];
   const slots: string[] = [];
-  for (let day = 0; day < 7; day++) {
+  for (let day = 0; day < days; day++) {
     for (const hour of baseHoursKst) {
       const targetMs =
         weekStartUtc.getTime() + day * 24 * 3600 * 1000 + hour * 3600 * 1000;

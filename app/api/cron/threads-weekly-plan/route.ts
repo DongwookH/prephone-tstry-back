@@ -43,9 +43,9 @@ export async function POST(req: Request) {
     ? new Date(body.weekStartIso)
     : getUpcomingMondayKstStart();
 
-  // 2) 이번 주 이미 만든 초안 확인 (중복 방지)
+  // 2) 윈도우 내 이미 만든 초안 확인 (중복 방지) — 8일(월~다음 주 월)
   const allDrafts = await getThreadsDrafts();
-  const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 3600 * 1000);
+  const weekEnd = new Date(weekStart.getTime() + 8 * 24 * 3600 * 1000);
   const existing = allDrafts.filter((d) => {
     if (!d.scheduled_at) return false;
     const t = new Date(d.scheduled_at).getTime();
@@ -58,8 +58,8 @@ export async function POST(req: Request) {
   // 간단화: GHA가 index 받으면 그 index만 처리 — 시간대는 그때 계산.
   const allSlots = buildWeeklySchedule(weekStart);
 
-  // 4) 처리할 index 결정
-  const TOTAL = 21;
+  // 4) 처리할 index 결정 — 8일 × 3슬롯 = 24
+  const TOTAL = 24;
   let index = typeof body.index === "number" ? body.index : -1;
   if (index < 0) {
     // 다음 미처리 슬롯 자동 선택
@@ -68,8 +68,24 @@ export async function POST(req: Request) {
   if (index >= TOTAL) {
     return NextResponse.json({
       ok: true,
-      message: `이번 주(${weekStart.toISOString()}) 21개 초안 모두 생성 완료`,
+      message: `이번 윈도우(${weekStart.toISOString()}) 24개 초안 모두 생성 완료`,
       existingCount: existing.length,
+    });
+  }
+
+  // 4-b) 슬롯 dedup — 해당 index 슬롯에 이미 초안이 있으면 스킵.
+  //   8일 윈도우가 겹쳐(지난주가 만든 다음 주 월요일, 또는 시프트로 이미 존재) 중복 생성되는 것 방지.
+  const slotMs = new Date(allSlots[index]).getTime();
+  const dup = existing.some((d) => {
+    const t = new Date(d.scheduled_at as string).getTime();
+    return isFinite(t) && Math.abs(t - slotMs) < 2 * 3600 * 1000;
+  });
+  if (dup) {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      index,
+      message: `index ${index} 슬롯 이미 생성됨 — 스킵`,
     });
   }
 
