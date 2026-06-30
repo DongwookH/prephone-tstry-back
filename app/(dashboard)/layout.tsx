@@ -12,7 +12,7 @@ export default async function DashboardLayout({
 }) {
   const [counts, session] = await Promise.all([getSidebarCounts(), auth()]);
   return (
-    <div className="flex min-h-screen">
+    <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar
         variant="full"
         counts={counts}

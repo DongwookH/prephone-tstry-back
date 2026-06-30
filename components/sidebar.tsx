@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
 import {
   LayoutGrid,
   FileText,
@@ -10,6 +11,8 @@ import {
   Settings,
   HelpCircle,
   AtSign,
+  Menu,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "./user-menu";
@@ -40,6 +43,11 @@ export function Sidebar({
   user?: SidebarUser;
 }) {
   const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+  // 라우트 이동 시 모바일 드로어 자동 닫기
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
 
   const items: Array<{
     href: string;
@@ -109,8 +117,8 @@ export function Sidebar({
     );
   }
 
-  return (
-    <aside className="w-[248px] flex-shrink-0 bg-white border-r border-ink-100 flex flex-col">
+  const panel = (
+    <>
       <div className="px-6 pt-7 pb-6">
         <Link href="/" className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center">
@@ -236,7 +244,61 @@ export function Sidebar({
           </Link>
         )}
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* 모바일 상단바 (md 미만) */}
+      <header className="md:hidden sticky top-0 z-30 flex items-center justify-between h-14 px-4 bg-white border-b border-ink-100">
+        <Link
+          href="/"
+          onClick={() => setOpen(false)}
+          className="flex items-center gap-2"
+        >
+          <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center">
+            <BlogMark />
+          </div>
+          <span className="text-[15px] font-extrabold tracking-tight">
+            Tistory Auto
+          </span>
+        </Link>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="메뉴 열기"
+          className="-mr-2 w-10 h-10 flex items-center justify-center rounded-lg text-ink-700 hover:bg-ink-50 transition"
+        >
+          <Menu size={22} />
+        </button>
+      </header>
+
+      {/* 모바일 드로어 */}
+      {open && (
+        <div className="md:hidden fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-ink-900/40 animate-fade-in"
+            onClick={() => setOpen(false)}
+          />
+          <aside className="absolute left-0 top-0 h-full w-[268px] max-w-[82vw] bg-white border-r border-ink-100 flex flex-col shadow-hover animate-slide-in-left">
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="메뉴 닫기"
+              className="absolute right-3 top-4 z-10 w-9 h-9 flex items-center justify-center rounded-lg text-ink-500 hover:bg-ink-50 transition"
+            >
+              <X size={20} />
+            </button>
+            {panel}
+          </aside>
+        </div>
+      )}
+
+      {/* 데스크톱 사이드바 (md 이상) */}
+      <aside className="hidden md:flex w-[248px] flex-shrink-0 bg-white border-r border-ink-100 flex-col">
+        {panel}
+      </aside>
+    </>
   );
 }
 

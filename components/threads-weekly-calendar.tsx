@@ -238,8 +238,8 @@ export function ThreadsWeeklyCalendar({
         </div>
       )}
 
-      {/* 캘린더 그리드 — 7 day x 3 slot */}
-      <div className="grid grid-cols-7 gap-2">
+      {/* 캘린더 그리드 — 데스크톱 7열, 모바일은 날짜별 세로 리스트(1열) */}
+      <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
         {grid.map((dayRow, dayIdx) => {
           const dayDate = new Date(weekStart);
           dayDate.setUTCDate(dayDate.getUTCDate() + dayIdx);

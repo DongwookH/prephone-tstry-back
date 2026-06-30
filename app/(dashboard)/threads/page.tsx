@@ -148,23 +148,23 @@ export default async function ThreadsPage({
           { label: "Threads", bold: true },
         ]}
       />
-      <div className="px-8 py-8 max-w-[1400px] mx-auto space-y-8 animate-fade-up">
+      <div className="px-4 sm:px-8 py-6 sm:py-8 max-w-[1400px] mx-auto space-y-6 sm:space-y-8 animate-fade-up">
         {/* 헤더 */}
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-[22px] font-extrabold text-ink-900 flex items-center gap-2">
+            <h1 className="text-[20px] sm:text-[22px] font-extrabold text-ink-900 flex items-center gap-2">
               <AtSign size={20} className="text-brand-600" />
               Threads 자동 발행
             </h1>
             <p className="text-[13px] text-ink-500 mt-1">
-              매주 월요일 새벽 자동으로 1주치 21개 초안 생성 → 검토·승인 → 시간되면 자동 발행
+              매주 월요일 새벽 다음 주 월요일까지 24개 초안 생성 → 검토·승인 → 시간되면 자동 발행
             </p>
           </div>
           <ConnectionPill connected={threadsConnected} />
         </div>
 
         {/* 상태 요약 */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatusKPI label="검토 대기" value={stats.pending} color="amber" />
           <StatusKPI label="예약됨" value={stats.scheduled} color="mint" />
           <StatusKPI label="발행 완료" value={stats.published} color="brand" />
