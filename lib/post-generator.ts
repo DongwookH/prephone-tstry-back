@@ -1,5 +1,9 @@
 import { generateJSON } from "./gemini";
-import { getGlobalContext, getCategoryContext } from "./knowledge";
+import {
+  getGlobalContext,
+  getCategoryContext,
+  getFaqExcerpt,
+} from "./knowledge";
 import { sanitizeForTistory } from "./sanitize-html";
 import {
   HOOK_PATTERNS,
@@ -96,6 +100,7 @@ function buildPrompt(opts: {
 
   const globalCtx = getGlobalContext();
   const catCtx = getCategoryContext(category);
+  const faqCtx = getFaqExcerpt({ category, keyword, subKeywords });
 
   return `당신은 한국 SEO + 블로그 카피라이팅 전문가입니다. 다음 키워드로 티스토리 발행용 한국어 블로그 글 1편을 작성해주세요.
 
@@ -106,6 +111,10 @@ ${globalCtx}
 # 📚 카테고리별 상세 정보
 
 ${catCtx}
+
+# ❓ 공식 FAQ (이 글 주제 관련 항목 발췌 — 더지통신 259문항 中. 사실 근거로만 사용, 운영 에러코드는 본문에 옮기지 말 것)
+
+${faqCtx}
 
 ⚠️ **위 KB에 없는 가격·정책·FAQ는 절대 만들지 마세요.**
 - 가격: 02-plans 표 그대로

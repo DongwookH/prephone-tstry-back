@@ -5,7 +5,7 @@
  */
 
 import { generateJSON } from "./gemini";
-import { getGlobalContext, getFaqContext } from "./knowledge";
+import { getGlobalContext, getFaqExcerpt } from "./knowledge";
 
 /** GHA Playwright 스크레이퍼가 넘기는 인기글 1건. */
 export interface ScrapedPost {
@@ -51,7 +51,7 @@ export async function generateThreadsDraftsFromPosts(opts: {
   // 인기글 0건이어도 KB 기반으로 생성 가능 (주간 자동화용 — 스크레이퍼 결과 없을 수 있음)
 
   const globalCtx = getGlobalContext();
-  const faqCtx = getFaqContext(); // 더지통신 공식 FAQ — 사실 근거
+  const faqCtx = getFaqExcerpt({ keyword }); // 주제 관련 FAQ 섹션만 발췌 — 사실 근거
 
   // 인기글 요약 — 본문/지표만 (링크/작성자는 분석엔 불필요, 프롬프트 절약)
   const ranked = [...posts]
@@ -116,7 +116,7 @@ ${sampleList}
 # 🏢 우리 회사 정보 (이 사실만 사용, 가격/정책 창작 금지)
 ${globalCtx}
 
-# ❓ 공식 FAQ (더지통신 259문항 — 개통/요금/절차/유심 사실 근거. 없는 내용 창작 금지, 운영코드는 본문에 옮기지 말 것)
+# ❓ 공식 FAQ (더지통신 259문항 中 이 주제 관련 발췌 — 개통/요금/절차/유심 사실 근거. 없는 내용 창작 금지, 운영코드는 본문에 옮기지 말 것)
 ${faqCtx}
 
 # 📡 통신망 선택 공식 (검증된 도메인 사실 — 적극 활용, 단 단정 표현 주의)

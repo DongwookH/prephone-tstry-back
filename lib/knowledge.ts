@@ -79,16 +79,18 @@ export function getGlobalContext(): string {
 }
 
 // ─── 카테고리별 컨텍스트 ────────────────────────────
+// ⚠️ 04-faq(259문항·64KB)는 여기서 통째로 넣지 않는다. 글마다 관련 섹션만
+//    getFaqExcerpt()로 발췌 주입 → 프롬프트 토큰 ↓ → 생성 속도 ↑ (60초 벽 회피).
 const CATEGORY_KB_MAP: Record<string, string[]> = {
-  개통핵심: ["04-faq", "03-process"],
-  페인포인트: ["04-faq", "03-process", "06-cases"],
-  타겟: ["04-faq", "06-cases"],
-  eSIM: ["04-faq", "05-usim"],
-  채널: ["04-faq", "05-usim"],
-  광역시: ["04-faq", "03-process"],
-  지역: ["04-faq", "03-process"],
-  auto: ["04-faq", "03-process", "06-cases", "05-usim"],
-  일반: ["04-faq", "03-process"],
+  개통핵심: ["03-process"],
+  페인포인트: ["03-process", "06-cases"],
+  타겟: ["06-cases"],
+  eSIM: ["05-usim"],
+  채널: ["05-usim"],
+  광역시: ["03-process"],
+  지역: ["03-process"],
+  auto: ["03-process", "06-cases", "05-usim"],
+  일반: ["03-process"],
 };
 
 export function getCategoryContext(category: string): string {
@@ -96,9 +98,114 @@ export function getCategoryContext(category: string): string {
   return compile(`cat:${category}`, ids);
 }
 
-// ─── FAQ 단독 컨텍스트 (쓰레드 등 카테고리 없는 생성에 사용) ──
-export function getFaqContext(): string {
-  return compile("__faq__", ["04-faq"]);
+// ─── FAQ 발췌 (글 주제 관련 섹션만 골라 주입) ──────────
+// 04-faq.md = "## 섹션" 20개 + 각 "### Q." 항목. 전체(64KB)를 매번 넣으면
+// 생성이 60초를 넘겨 504가 난다. 그래서 카테고리/키워드로 관련 섹션만 발췌.
+type FaqSection = { name: string; text: string };
+
+const faqParsed: { header: string; sections: FaqSection[] } = (() => {
+  const raw = fsCache.get("04-faq") ?? "";
+  if (!raw) return { header: "", sections: [] };
+  const sections: FaqSection[] = [];
+  const headerBuf: string[] = [];
+  let cur: FaqSection | null = null;
+  let buf: string[] = [];
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("## ")) {
+      if (cur) {
+        cur.text = buf.join("\n").trim();
+        sections.push(cur);
+      }
+      cur = { name: line.slice(3).trim(), text: "" };
+      buf = [line];
+    } else if (cur) {
+      buf.push(line);
+    } else {
+      headerBuf.push(line);
+    }
+  }
+  if (cur) {
+    cur.text = buf.join("\n").trim();
+    sections.push(cur);
+  }
+  return { header: headerBuf.join("\n").trim(), sections };
+})();
+
+// 카테고리 → 우선 섹션 (앞쪽 = 더 중요. 큰 핵심 섹션을 먼저 둬서 예산에 항상 포함).
+const FAQ_SECTION_MAP: Record<string, string[]> = {
+  개통핵심: ["신규개통", "개통방법", "특수개통", "유심정보입력"],
+  페인포인트: ["신규개통", "정지, 해지, 환불", "특수개통", "서류업무"],
+  타겟: ["신규개통", "개통방법", "특수개통"],
+  eSIM: ["ESIM", "유심인식", "단말기 관련", "신규개통"],
+  채널: ["유심구매", "개통방법", "충전방법", "신규개통"],
+  광역시: ["신규개통", "개통방법", "번호이동"],
+  지역: ["신규개통", "개통방법", "번호이동"],
+  auto: ["신규개통", "개통방법", "특수개통", "요금제선택"],
+  일반: ["신규개통", "개통방법", "특수개통", "요금제선택"],
+};
+const FAQ_DEFAULT_SECTIONS = ["신규개통", "개통방법", "특수개통", "요금제선택"];
+
+// 키워드에 특정 주제어가 있으면 그 섹션을 (카테고리보다) 먼저 끌어온다.
+const FAQ_KEYWORD_HINTS: Array<[RegExp, string[]]> = [
+  [/충전/, ["충전방법"]],
+  [/번호이동|번이/, ["번호이동"]],
+  [/요금제|가격|비교|요금/, ["요금제선택", "요금제관련"]],
+  [/신불|신용불량|회생|개인회생|미납|연체|파산/, ["특수개통", "신규개통"]],
+  [/정지|해지|환불|위약금/, ["정지, 해지, 환불"]],
+  [/esim|이심/i, ["ESIM"]],
+  [/공기계|자급제|단말|기기|인식/, ["단말기 관련", "유심인식"]],
+  [/유심|usim/i, ["유심구매", "유심인식"]],
+  [/명의|서류|신분증|개명|미성년/, ["서류업무"]],
+  [/부가|로밍|데이터|소액결제|보험/, ["부가서비스"]],
+  [/해피콜/, ["해피콜"]],
+  [/인증|공동인증|간편인증/, ["인증서 관련"]],
+];
+
+/**
+ * 글 주제에 맞는 FAQ 섹션만 발췌. (카테고리 없는 쓰레드는 키워드만으로 동작)
+ * @param maxChars 발췌 총 길이 상한(기본 20000자 ≈ 전체 64KB의 ~30%).
+ *   첫 섹션은 상한을 넘어도 무조건 포함, 이후 섹션은 들어갈 때만 추가.
+ */
+export function getFaqExcerpt(opts: {
+  category?: string;
+  keyword?: string;
+  subKeywords?: string[];
+  maxChars?: number;
+}): string {
+  const { sections, header } = faqParsed;
+  if (sections.length === 0) return "";
+  const maxChars = opts.maxChars ?? 20000;
+  const hay = [opts.keyword ?? "", ...(opts.subKeywords ?? [])]
+    .join(" ")
+    .toLowerCase();
+
+  // 우선순위대로 섹션 이름 모으기: 키워드 힌트 → 카테고리 → (없으면) 기본
+  const wanted: string[] = [];
+  const add = (names: string[]) => {
+    for (const n of names) if (!wanted.includes(n)) wanted.push(n);
+  };
+  for (const [re, names] of FAQ_KEYWORD_HINTS) if (re.test(hay)) add(names);
+  add(
+    (opts.category && FAQ_SECTION_MAP[opts.category]) || FAQ_DEFAULT_SECTIONS,
+  );
+
+  const cacheKey = `faqx:${wanted.join(",")}:${maxChars}`;
+  const cached = compiledCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const byName = new Map(sections.map((s) => [s.name, s]));
+  const picked: string[] = [];
+  let total = header.length;
+  for (const name of wanted) {
+    const s = byName.get(name);
+    if (!s) continue;
+    if (picked.length > 0 && total + s.text.length > maxChars) continue;
+    picked.push(s.text);
+    total += s.text.length;
+  }
+  const result = (header ? header + "\n\n" : "") + picked.join("\n\n");
+  compiledCache.set(cacheKey, result);
+  return result;
 }
 
 // ─── 디버그 / 헬스체크 ───────────────────────────────
