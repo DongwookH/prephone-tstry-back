@@ -1,0 +1,48 @@
+name: Threads Watchdog (발행 감시)
+
+# 발행 감시 워커 — 발행은 하지 않고, 연체(예약+20분 초과 미발행)만 감지해서
+# 텔레그램으로 알림 + [지금 발행] 버튼 발송. KST 21시 이후엔 일일 요약 1회.
+#
+# 발행 크론(threads-publish: :08/:28/:48)과 다른 분 오프셋(:18/:38/:58)으로 걸어
+# 두 워크플로가 같은 GHA 스킵 윈도우에 동시에 죽을 확률을 낮춤.
+# 알림 스팸 없음 — 라우트 쪽에서 60분 쿨다운 + 요약 하루 1회 보장.
+on:
+  schedule:
+    - cron: "18,38,58 23,0-16 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: threads-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    name: Check overdue & notify
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: 감시 워커 호출
+        env:
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -uo pipefail
+          [ -n "${PRODUCTION_URL}" ] || { echo "::error::PRODUCTION_URL 미설정"; exit 1; }
+          [ -n "${CRON_SECRET}" ] || { echo "::error::CRON_SECRET 미설정"; exit 1; }
+
+          response=$(curl -sS \
+            -w "\nHTTP_STATUS:%{http_code}\n" \
+            -X POST "${PRODUCTION_URL}/api/cron/threads-watchdog" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            --max-time 45)
+          http_status=$(echo "$response" | grep -oE 'HTTP_STATUS:[0-9]+' | tail -n1 | cut -d: -f2)
+          body=$(echo "$response" | sed '/HTTP_STATUS:/d')
+
+          if [ "$http_status" != "200" ]; then
+            echo "::error::감시 워커 호출 실패 (HTTP $http_status)"
+            echo "$body" | head -5
+            exit 1
+          fi
+
+          echo "$body" | jq -r '"overdue=\(.overdue // 0) actions=\(.actions // [] | join(", "))"'
