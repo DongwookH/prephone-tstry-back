@@ -9,6 +9,7 @@ import {
   publishDueThreads,
   threadsStatusText,
 } from "@/lib/threads-publish-core";
+import { handleNaturalMessage } from "@/lib/telegram-nlu";
 
 export const maxDuration = 60;
 
@@ -21,6 +22,7 @@ export const maxDuration = 60;
  *  - /status          현재 발행 현황
  *  - /publish         예약시간 지난 승인 초안 즉시 발행 (호출당 1건)
  *  - 인라인 버튼      "publish" / "status" callback
+ *  - 자연어 질문      명령이 아닌 일반 문장은 NLU 모듈이 해석해 응답
  *
  * 보안:
  *  - setWebhook 때 지정한 secret_token 헤더 검증
@@ -46,6 +48,8 @@ const HELP = [
   "",
   "/status — 오늘 발행 현황·다음 예약 확인",
   "/publish — 밀린(연체) 승인 초안 즉시 발행",
+  "",
+  "일반 문장으로 물어봐도 돼요 (예: \"2시꺼 발행됐어?\", \"내일 뭐 나가?\")",
   "",
   "발행이 밀리면 제가 먼저 알림을 보내드려요.",
 ].join("\n");
@@ -136,7 +140,14 @@ export async function POST(req: Request) {
   } else if (text.startsWith("/start") || text.startsWith("/help")) {
     await sendTelegram(HELP);
   } else if (text) {
-    await sendTelegram(`모르는 명령이에요.\n\n${HELP}`);
+    // 명령이 아닌 일반 문장 — 자연어 처리 모듈에 위임
+    try {
+      const result = await handleNaturalMessage(text);
+      await sendTelegram(result.text, { buttons: result.buttons });
+    } catch {
+      // NLU 실패 시 기존 도움말로 폴백
+      await sendTelegram(`모르는 명령이에요.\n\n${HELP}`);
+    }
   }
 
   return NextResponse.json({ ok: true });
