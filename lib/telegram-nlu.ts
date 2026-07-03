@@ -225,15 +225,27 @@ export async function handleNaturalMessage(
     const context = buildContext(all, now);
     const prompt = buildPrompt(text, context);
 
-    const parsed = await generateJSON<NluJson>(prompt, {
-      // NLU는 하루 몇 번 호출이라 비용 무관 — 행 바인딩 정확도가 중요해서
-      // 기본(flash-lite)보다 강한 flash를 명시 사용. (lite는 표 정독에 약해 옆 행과 섞음)
-      model: "gemini-2.5-flash",
-      generationConfig: {
-        temperature: 0.25,
-        maxOutputTokens: 1024,
-      },
-    });
+    // NLU는 하루 몇 번 호출이라 비용 무관 — 행 바인딩 정확도가 중요해서
+    // 기본(flash-lite)보다 강한 flash를 명시 사용. (lite는 표 정독에 약해 옆 행과 섞음)
+    // maxOutputTokens 주의: 2.5-flash는 내부 thinking이 이 예산을 같이 소모 —
+    // 1024로 잡으면 사고가 길어진 호출에서 본문 JSON이 잘림(실측). 4096으로 여유.
+    let parsed: NluJson | null = null;
+    for (let attempt = 0; attempt < 2 && !parsed; attempt++) {
+      try {
+        parsed = await generateJSON<NluJson>(prompt, {
+          model: "gemini-2.5-flash",
+          generationConfig: {
+            temperature: 0.25,
+            maxOutputTokens: 4096,
+          },
+        });
+      } catch (err) {
+        // JSON 잘림 등 파싱 실패는 간헐적 — 1회만 재시도
+        if (attempt === 1) throw err;
+        console.warn("[telegram-nlu] 파싱 실패 — 재시도:", (err as Error).message.slice(0, 80));
+      }
+    }
+    if (!parsed) return fallback;
 
     const reply = typeof parsed?.reply === "string" ? parsed.reply.trim() : "";
     if (!reply) return fallback;
