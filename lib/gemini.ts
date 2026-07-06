@@ -234,9 +234,27 @@ export async function generateWithFallback<T>(
       const label = `${i + 1}/${KEYS.length} (${maskKey(key)})·${modelName}`;
       try {
         const genAI = new GoogleGenerativeAI(key);
+        // gemini-2.5-flash/-flash-lite는 thinking(내부 사고)이 기본 ON이고,
+        // thinking 토큰이 maxOutputTokens 예산을 응답 본문과 같이 소모한다.
+        // → 응답 JSON이 중간에 잘려 "Unterminated string" 파싱 실패가 간헐 발생.
+        // thinkingBudget: 0으로 꺼서 잘림 방지 + 속도 향상.
+        // (2.5-pro는 thinking을 끌 수 없어 제외, 2.0 계열은 thinkingConfig
+        //  자체를 지원하지 않아 주입하면 400 에러 → "2.5" 포함 && "pro" 미포함일 때만 적용)
+        const isThinkingConfigurable =
+          modelName.includes("2.5") && !modelName.includes("pro");
+        const generationConfig = isThinkingConfigurable
+          ? ({
+              ...options.generationConfig,
+              thinkingConfig: { thinkingBudget: 0 },
+              // 구버전 @google/generative-ai SDK 타입에는 thinkingConfig가
+              // 정의돼 있지 않아 컴파일 에러가 남 — REST v1beta에는 실제로
+              // generationConfig.thinkingConfig.thinkingBudget 필드가 존재하므로
+              // 타입만 캐스트해서 통과시킨다 (런타임 동작에는 문제 없음).
+            } as GenerationConfig)
+          : options.generationConfig;
         const model = genAI.getGenerativeModel({
           model: modelName,
-          generationConfig: options.generationConfig,
+          generationConfig,
           tools: options.tools,
         });
         const result = await fn(model);

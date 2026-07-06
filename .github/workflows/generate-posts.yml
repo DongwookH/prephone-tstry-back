@@ -3,13 +3,17 @@ name: Generate Daily Posts
 # 매일 KST 09:00 부근 발행을 목표로 cron 설정.
 #
 # GitHub Actions cron은 best-effort라 매일 ~1시간 45분 지연됨 (관측치).
-# 따라서 KST 07:15 설정(UTC 22:15) → KST 09:00 부근 실제 트리거 → 5분 내 발행 완료.
+# 따라서 KST 07:15 설정(UTC 22:15) → KST 09:00 부근 실제 트리거 → 생성 완료.
 # 비정시(분 단위)로 잡아 정시 부하 회피.
 #
 # 관측 데이터 (이전 cron `45 23 * * *` UTC):
 #   5/19 → 01:32 UTC (KST 10:32) — 1h 47m 지연
 #   5/20 → 01:34 UTC (KST 10:34) — 1h 49m 지연
 #   5/21 → 01:33 UTC (KST 10:33) — 1h 48m 지연
+#
+# ⚠️ 이관 노트: 글 생성 1개가 30~50초라 Vercel Hobby 60초 벽에 걸려 504가 대량 발생했다.
+#    → 생성 자체를 GHA 러너에서 실행(scripts/generate-daily.ts)하고 시트 저장까지 러너에서 직접 수행.
+#      Vercel은 계획 조회(plan) 등 가벼운 API만 담당. GHA 러너는 실행 시간 제한이 없다.
 on:
   schedule:
     - cron: "15 22 * * *"
@@ -26,184 +30,97 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ─── 1단계: 키워드 픽 + GSG 발굴 ─────────────────────
-  plan:
-    name: Plan (키워드 5+5)
+  # ─── 1단계: 러너에서 글 생성 + 시트 저장 (Plan+매트릭스+fill-missing 대체) ───
+  #   scripts/generate-daily.ts 가 plan 조회 → 누락 계산 → lib 함수 직접 호출로 생성·저장.
+  #   Vercel 60초 벽 없음 (러너는 실행 시간 제한 없음, timeout-minutes로만 제한).
+  generate:
+    name: Generate (러너 직접 생성)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      plan: ${{ steps.plan.outputs.plan }}
-      count: ${{ steps.plan.outputs.count }}
+    timeout-minutes: 50
     steps:
-      - name: 환경 검증
-        env:
-          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-        run: |
-          [ -n "${PRODUCTION_URL}" ] || { echo "::error::PRODUCTION_URL secret 미설정"; exit 1; }
-          [ -n "${CRON_SECRET}" ] || { echo "::error::CRON_SECRET secret 미설정"; exit 1; }
-          echo "✓ Secrets OK"
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: POST /api/cron/plan
-        id: plan
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: 글 생성 + 시트 저장
+        id: gen
         env:
-          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          GOOGLE_SHEETS_CLIENT_EMAIL: ${{ secrets.GOOGLE_SHEETS_CLIENT_EMAIL }}
+          GOOGLE_SHEETS_PRIVATE_KEY: ${{ secrets.GOOGLE_SHEETS_PRIVATE_KEY }}
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          # 키워드 사용량(bumpKeywordsUsage)은 별도 시트 — 누락 시 메인 시트에 잘못 기록됨
+          KEYWORDS_SHEET_ID: ${{ secrets.KEYWORDS_SHEET_ID }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
         run: |
           set -uo pipefail
-          echo "▶ POST ${PRODUCTION_URL}/api/cron/plan"
+          # 스크립트 로그 전체를 파일로도 남겨서 요약 JSON 라인을 추출.
+          npx --yes tsx scripts/generate-daily.ts 2>&1 | tee /tmp/gen.log
+          # tsx의 exit code 보존 (tee 뒤라서 PIPESTATUS 사용)
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
-          response=$(curl -sS \
-            -w "\nHTTP_STATUS:%{http_code}\n" \
-            -X POST "${PRODUCTION_URL}/api/cron/plan" \
-            -H "Authorization: Bearer ${CRON_SECRET}" \
-            -H "Content-Type: application/json" \
-            --max-time 90 \
-            --retry 2)
+      - name: 요약 정리 ($GITHUB_STEP_SUMMARY)
+        if: ${{ !cancelled() }}
+        run: |
+          set -uo pipefail
+          # 스크립트가 마지막에 출력한 요약 JSON 한 줄 추출
+          # (형태: {"total":10,"saved":9,"alreadySaved":0,"failed":["키워드"]})
+          summary_line=$(grep -oE '\{"total":[0-9]+.*\}' /tmp/gen.log | tail -n1 || true)
 
-          http_status=$(echo "$response" | grep "HTTP_STATUS:" | cut -d: -f2)
-          body=$(echo "$response" | sed '/HTTP_STATUS:/d')
-
-          if [ "$http_status" != "200" ]; then
-            echo "::error::Plan 호출 실패 (HTTP $http_status)"
-            echo "$body" | head -30
-            exit 1
-          fi
-
-          # plan JSON을 outputs로 전달
-          plan_json=$(echo "$body" | jq -c '.plan')
-          count=$(echo "$body" | jq '.count')
-
-          echo "plan=$plan_json" >> "$GITHUB_OUTPUT"
-          echo "count=$count" >> "$GITHUB_OUTPUT"
-
-          # Summary
           {
-            echo "## 📋 Plan 단계 완료"
+            echo "## 🚀 Tistory Auto — Daily Generation (러너 직접 생성)"
             echo ""
-            echo "**픽된 키워드 ${count}개**"
+            echo "**실행 시간:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo "**트리거:** \`${{ github.event_name }}\`"
             echo ""
-            echo "$body" | jq -r '.plan[] | "- [Track \(.track)] \(.keyword) (\(.category)) [\(.persona)]"'
+            if [ -n "$summary_line" ]; then
+              total=$(echo "$summary_line" | jq -r '.total // "?"')
+              saved=$(echo "$summary_line" | jq -r '.saved // "?"')
+              already=$(echo "$summary_line" | jq -r '.alreadySaved // 0')
+              failed_count=$(echo "$summary_line" | jq -r '(.failed // []) | length')
+              echo "| 항목 | 값 |"
+              echo "| --- | --- |"
+              echo "| 계획(total) | ${total} |"
+              echo "| 새로 저장(saved) | ${saved} |"
+              echo "| 기존 저장(alreadySaved) | ${already} |"
+              echo "| 실패(failed) | ${failed_count} |"
+              echo ""
+              failed_list=$(echo "$summary_line" | jq -r '(.failed // []) | .[]' 2>/dev/null || true)
+              if [ -n "$failed_list" ]; then
+                echo "**실패 키워드:**"
+                echo "$failed_list" | while read -r kw; do echo "- ❌ $kw"; done
+              fi
+            else
+              echo "⚠️ 요약 JSON을 로그에서 찾지 못했습니다. 스텝 로그를 확인하세요."
+            fi
+            echo ""
+            echo "👉 https://prephone-tstry-back.vercel.app/posts"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          echo "✓ Plan: ${count}개 키워드"
-
-  # ─── 2단계: 글 1편씩 N번 직렬 생성 ─────────────────
-  generate:
-    name: Generate (slot ${{ matrix.slot }})
-    needs: plan
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    strategy:
-      max-parallel: 2  # 동시 2편씩 (rate limit 안전망)
-      fail-fast: false  # 1편 실패해도 다른 편 계속 진행
-      matrix:
-        slot: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    steps:
-      - name: POST /api/cron/generate-one
-        env:
-          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          PLAN: ${{ needs.plan.outputs.plan }}
+      - name: 최종 exit code 반영
+        if: ${{ !cancelled() }}
         run: |
-          set -uo pipefail
+          # 스크립트가 일부 항목 실패로 exit 1이면 job도 실패로 표시 (썸네일 잡은 !cancelled로 계속).
+          code="${{ steps.gen.outputs.exit_code }}"
+          echo "generate-daily.ts exit code: ${code:-unknown}"
+          [ "${code:-0}" = "0" ] || exit 1
 
-          # plan의 N번째 item 추출 (1-indexed)
-          slot=${{ matrix.slot }}
-          idx=$((slot - 1))
-          item=$(echo "$PLAN" | jq -c ".[$idx]")
-
-          if [ "$item" = "null" ] || [ -z "$item" ]; then
-            echo "::warning::Slot $slot — plan에 항목 없음, 스킵"
-            exit 0
-          fi
-
-          keyword=$(echo "$item" | jq -r '.keyword')
-          category=$(echo "$item" | jq -r '.category')
-          track=$(echo "$item" | jq -r '.track')
-
-          echo "▶ Slot $slot: [Track $track] $keyword ($category)"
-
-          # --retry 제거: generate-one은 ~60초 걸리는 무거운 호출이라
-          # 504(타임아웃)에 재시도하면 응답이 두 번 이어붙어(concatenate) jq 파싱이 깨짐.
-          # 엔드포인트가 자체 모델 폴백을 하므로 클라이언트 재시도는 불필요.
-          response=$(curl -sS \
-            -w "\nHTTP_STATUS:%{http_code}\n" \
-            -X POST "${PRODUCTION_URL}/api/cron/generate-one" \
-            -H "Authorization: Bearer ${CRON_SECRET}" \
-            -H "Content-Type: application/json" \
-            -d "$item" \
-            --max-time 150)
-
-          # 마지막 HTTP_STATUS 라인의 숫자만 추출 (멀티라인 안전)
-          http_status=$(printf '%s\n' "$response" | grep -oE 'HTTP_STATUS:[0-9]+' | tail -n1 | grep -oE '[0-9]+')
-          body=$(printf '%s\n' "$response" | sed '/HTTP_STATUS:/d')
-
-          # 200이 아니거나 본문이 유효 JSON이 아니면 → 깔끔하게 실패 처리.
-          # (jq에 깨진 응답을 먹여 "parse error + exit 5"로 죽는 것 방지)
-          if [ "${http_status:-}" != "200" ] || ! printf '%s' "$body" | jq empty >/dev/null 2>&1; then
-            echo "::error::Slot $slot 생성 실패 (HTTP ${http_status:-no-status}, 응답이 JSON 아님 — 대개 60초 타임아웃)"
-            printf '%s' "$body" | head -c 300
-            exit 1
-          fi
-
-          # 여기서부터 body는 유효 JSON 보장
-          title=$(printf '%s' "$body" | jq -r '.title // "?"')
-          chars=$(printf '%s' "$body" | jq -r '.charCount // "?"')
-          seo=$(printf '%s' "$body" | jq -r '.seoScore // "?"')
-          duration=$(printf '%s' "$body" | jq -r '.durationMs // "?"')
-          id=$(printf '%s' "$body" | jq -r '.id // "?"')
-
-          echo "::notice::✓ $id | $title | ${chars}자 | SEO $seo | ${duration}ms"
-          echo "✓ 완료: $title"
-
-  # ─── 2.5단계: 빠진 슬롯 자동 재생성 (Hobby 60초 504 복구) ───
-  #   generate에서 일부 슬롯이 60초 타임아웃(504)으로 빠져도, plan과 비교해
-  #   누락 키워드만 generate-one 재호출(최대 3회). 504여도 서버 저장됐으면 스킵 → 중복 없음.
-  fill-missing:
-    name: Fill missing (누락 재생성)
-    needs: [plan, generate]
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
-      CRON_SECRET: ${{ secrets.CRON_SECRET }}
-      PLAN: ${{ needs.plan.outputs.plan }}
-    steps:
-      - name: 누락 키워드 재생성
-        run: |
-          set -uo pipefail
-          api() { curl -sS -H "Authorization: Bearer ${CRON_SECRET}" "$@"; }
-          have() { api -m 30 "${PRODUCTION_URL}/api/cron/posts-today" | jq -r '.keywords[]?'; }
-
-          existing="$(have)"   # 시작 시점 저장된 키워드 (504였지만 저장된 것 포함)
-          echo "현재 저장된 키워드 수: $(printf '%s\n' "$existing" | grep -c . || true)"
-
-          echo "$PLAN" | jq -c '.[]' | while read -r item; do
-            kw=$(printf '%s' "$item" | jq -r '.keyword')
-            if printf '%s\n' "$existing" | grep -Fxq "$kw"; then continue; fi
-            echo "▶ 누락: $kw — 재생성"
-            ok=0
-            for attempt in 1 2 3; do
-              http=$(api -o /dev/null -w '%{http_code}' -m 90 -X POST \
-                "${PRODUCTION_URL}/api/cron/generate-one" \
-                -H "Content-Type: application/json" -d "$item" || echo "000")
-              if [ "$http" = "200" ]; then echo "  ✓ $kw (시도 $attempt)"; ok=1; break; fi
-              # 504/타임아웃이어도 서버가 저장했을 수 있음 → 재확인 (중복 방지)
-              if have | grep -Fxq "$kw"; then echo "  ✓ $kw (HTTP $http였지만 저장됨)"; ok=1; break; fi
-              echo "  …재시도 $attempt 실패 (HTTP $http)"
-            done
-            [ "$ok" = 1 ] || echo "::warning::$kw 재생성 3회 실패 — 다음 run/수동 처리"
-          done
-          echo "fill-missing 완료"
-
-  # ─── 3단계: 썸네일 자동 생성 + 커밋 ─────────────────
+  # ─── 2단계: 썸네일 자동 생성 + 커밋 ─────────────────
   thumbnails:
     name: Thumbnails (Pillow)
-    # fill-missing까지 끝난 뒤 실행 → 재생성으로 채워진 글의 썸네일도 함께 생성.
-    needs: [generate, fill-missing]
-    # generate/fill-missing 일부가 실패해도 thumbnails는 실행(성공 글 썸네일 보존).
+    # generate 잡이 끝난 뒤 실행 → 생성된 글의 썸네일 생성.
+    needs: [generate]
+    # generate 일부가 실패해도 thumbnails는 실행(성공 글 썸네일 보존).
     # !cancelled(): 워크플로 취소가 아닌 한 진행.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
@@ -250,23 +167,3 @@ jobs:
           git add public/thumbnails
           git commit -m "chore(thumbnail): 자동 생성 썸네일 [skip ci]"
           git push
-
-  # ─── 4단계: 최종 요약 ─────────────────────────────
-  summary:
-    name: Summary
-    needs: [plan, generate]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: 결과 정리
-        run: |
-          {
-            echo "## 🚀 Tistory Auto — Daily Generation Done"
-            echo ""
-            echo "**실행 시간:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-            echo "**트리거:** \`${{ github.event_name }}\`"
-            echo ""
-            echo "Plan: ${{ needs.plan.outputs.count }}개 / Generate matrix: 10 slots"
-            echo ""
-            echo "👉 https://prephone-tstry-back.vercel.app/posts"
-          } >> "$GITHUB_STEP_SUMMARY"
