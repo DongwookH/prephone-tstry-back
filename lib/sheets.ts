@@ -1368,6 +1368,11 @@ const CONTENT_MANUAL_BLACKLIST = [
   "선불폰 사기",
   "보이스피싱",
   "은행인증", // "인터넷은행 인증" 등 변형 포함 (normalize 후 substring)
+  // 은행 브랜드 키워드 — 타사 브랜드 편승 콘텐츠는 쓰지 않기로 결정 (2026-07-06)
+  "토스",
+  "케이뱅크",
+  "카카오뱅크",
+  "신협",
 ] as const;
 
 function matchesAny(keyword: string, list: readonly string[]): boolean {
