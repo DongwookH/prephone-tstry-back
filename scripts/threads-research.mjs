@@ -403,8 +403,17 @@ async function scrapeKeyword(context, keyword) {
   return filtered;
 }
 
+// SCRAPE_ONLY=1 이면 수집 결과만 출력하고 ingest(초안 생성)는 하지 않음 — 테스트/점검용
+const SCRAPE_ONLY = (process.env.SCRAPE_ONLY ?? "") === "1";
+
 async function ingest(keyword, posts) {
   if (posts.length === 0) return { created: 0, skipped: true };
+  if (SCRAPE_ONLY) {
+    for (const p of posts.slice(0, 5)) {
+      log(`  [scrape-only] (좋아요 ${p.likes ?? 0}·댓글 ${p.replies ?? 0}) ${(p.text || "").replace(/\s+/g, " ").slice(0, 80)}`);
+    }
+    return { created: 0, scrapeOnly: true, collected: posts.length };
+  }
   const res = await fetch(INGEST_URL, {
     method: "POST",
     headers: {
