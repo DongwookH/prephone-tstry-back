@@ -4,6 +4,7 @@ import {
   pickThreadsKeywords,
   appendThreadsDraft,
   getThreadsDrafts,
+  getRecentResearchPosts,
 } from "@/lib/sheets";
 import {
   generateThreadsDraftsFromPosts,
@@ -111,12 +112,13 @@ export async function POST(req: Request) {
     );
   }
 
-  // 6) 초안 1개 생성 (인기글 데이터 없으므로 KB 기반)
+  // 6) 초안 1개 생성 — 최근 축적된 인기글을 참고자료로 주입 (없으면 KB만으로 진행)
+  const researchPosts = await getRecentResearchPosts().catch(() => []);
   let drafts: Awaited<ReturnType<typeof generateThreadsDraftsFromPosts>>;
   try {
     drafts = await generateThreadsDraftsFromPosts({
       keyword: kw,
-      posts: [], // 주간 자동화는 인기글 데이터 없음 → KB만 사용
+      posts: researchPosts, // 축적된 인기글 (비어 있으면 프롬프트가 KB만 사용)
       count: 1,
     });
   } catch (err) {

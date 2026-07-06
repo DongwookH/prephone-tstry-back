@@ -4,6 +4,7 @@ import {
   getActiveThreadsKeywords,
   pickThreadsKeywords,
   appendThreadsDraft,
+  getRecentResearchPosts,
 } from "@/lib/sheets";
 import {
   generateThreadsDraftsFromPosts,
@@ -117,11 +118,12 @@ export async function POST(req: Request) {
     );
   }
 
+  const researchPosts = await getRecentResearchPosts().catch(() => []);
   let drafts: Awaited<ReturnType<typeof generateThreadsDraftsFromPosts>>;
   try {
     drafts = await generateThreadsDraftsFromPosts({
       keyword: kw,
-      posts: [],
+      posts: researchPosts, // 축적된 인기글 참고 (없으면 KB만 사용)
       count: 1,
     });
   } catch (err) {

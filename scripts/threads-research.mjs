@@ -11,13 +11,19 @@
  *  1) 저장된 로그인 세션(storageState)으로 Threads 접속
  *  2) 키워드별 검색 결과 페이지에서 네트워크 JSON 응답 캡처
  *  3) 인기글 후보 추출 → 필터(최근/타인/참여도) → 랭킹
- *  4) 키워드별로 /api/threads/research/ingest 에 POST
+ *  4) 키워드별로 전송:
+ *     - INGEST_MODE=store  (기본) → /api/threads/research/store 에 POST, 시트에 축적만
+ *       (초안 생성은 주간 자동 생성이 이 데이터를 참고해 처리)
+ *     - INGEST_MODE=drafts (예전 동작) → /api/threads/research/ingest 에 POST, 즉시 Gemini 초안 생성
+ *     - SCRAPE_ONLY=1이면 두 모드 모두 전송 없이 수집 로그만 출력
  *
  * env (또는 .env.local 파일):
  *  THREADS_SESSION_COOKIES  storageState JSON (필수) — scripts/threads-login.mjs로 생성
  *  THREADS_SESSION_FILE     storageState 파일 경로 (대안, 권장: scripts/threads-session.json)
- *  CRON_SECRET              ingest 인증 (필수)
- *  INGEST_URL               기본 https://prephone-tstry-back.vercel.app/api/threads/research/ingest
+ *  CRON_SECRET              ingest/store 인증 (필수)
+ *  INGEST_MODE              "store"(기본) | "drafts" — 수집 결과 전송 방식
+ *  INGEST_URL               기본 https://prephone-tstry-back.vercel.app/api/threads/research/ingest (drafts 모드용)
+ *  STORE_URL                기본 https://prephone-tstry-back.vercel.app/api/threads/research/store (store 모드용)
  *  RESEARCH_KEYWORDS        쉼표구분. 기본: 선불폰,알뜰폰,유심,비대면개통,선불유심
  *  OUR_USERNAME             우리 계정(제외). 기본 safe_ntel
  *  MIN_LIKES                기본 10
@@ -76,6 +82,11 @@ const CRON_SECRET = process.env.CRON_SECRET;
 const INGEST_URL =
   process.env.INGEST_URL ||
   "https://prephone-tstry-back.vercel.app/api/threads/research/ingest";
+const STORE_URL =
+  process.env.STORE_URL ||
+  "https://prephone-tstry-back.vercel.app/api/threads/research/store";
+// INGEST_MODE: "store"(기본, 시트 축적) | "drafts"(예전 동작, 즉시 초안 생성)
+const INGEST_MODE = (process.env.INGEST_MODE || "store").toLowerCase();
 const KEYWORDS = (
   process.env.RESEARCH_KEYWORDS || "선불폰,알뜰폰,유심,비대면개통,선불유심"
 )
@@ -403,17 +414,27 @@ async function scrapeKeyword(context, keyword) {
   return filtered;
 }
 
-// SCRAPE_ONLY=1 이면 수집 결과만 출력하고 ingest(초안 생성)는 하지 않음 — 테스트/점검용
+// SCRAPE_ONLY=1 이면 수집 결과만 출력하고 전송(store/ingest 무관)은 하지 않음 — 테스트/점검용
 const SCRAPE_ONLY = (process.env.SCRAPE_ONLY ?? "") === "1";
 
-async function ingest(keyword, posts) {
-  if (posts.length === 0) return { created: 0, skipped: true };
-  if (SCRAPE_ONLY) {
-    for (const p of posts.slice(0, 5)) {
-      log(`  [scrape-only] (좋아요 ${p.likes ?? 0}·댓글 ${p.replies ?? 0}) ${(p.text || "").replace(/\s+/g, " ").slice(0, 80)}`);
-    }
-    return { created: 0, scrapeOnly: true, collected: posts.length };
-  }
+// store 모드: 시트 축적 API로 전송 (초안 생성은 주간 자동 생성이 이 데이터를 참고)
+async function storeToSheet(keyword, posts) {
+  const res = await fetch(STORE_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${CRON_SECRET}`,
+    },
+    body: JSON.stringify({
+      items: [{ keyword, posts }],
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  return { status: res.status, ...json };
+}
+
+// drafts 모드(예전 동작): ingest API로 전송해 즉시 Gemini 초안 생성
+async function ingestDrafts(keyword, posts) {
   const res = await fetch(INGEST_URL, {
     method: "POST",
     headers: {
@@ -429,9 +450,25 @@ async function ingest(keyword, posts) {
   return { status: res.status, ...json };
 }
 
+async function ingest(keyword, posts) {
+  if (posts.length === 0) return { created: 0, stored: 0, skipped: true };
+  if (SCRAPE_ONLY) {
+    for (const p of posts.slice(0, 5)) {
+      log(`  [scrape-only] (좋아요 ${p.likes ?? 0}·댓글 ${p.replies ?? 0}) ${(p.text || "").replace(/\s+/g, " ").slice(0, 80)}`);
+    }
+    return { created: 0, stored: 0, scrapeOnly: true, collected: posts.length };
+  }
+  if (INGEST_MODE === "drafts") {
+    return ingestDrafts(keyword, posts);
+  }
+  return storeToSheet(keyword, posts);
+}
+
 async function main() {
   const HEADLESS = (process.env.HEADLESS ?? "true").toLowerCase() !== "false";
-  log(`키워드 ${KEYWORDS.length}개: ${KEYWORDS.join(", ")} | headless=${HEADLESS}`);
+  log(
+    `키워드 ${KEYWORDS.length}개: ${KEYWORDS.join(", ")} | headless=${HEADLESS} | mode=${SCRAPE_ONLY ? "scrape-only" : INGEST_MODE}`,
+  );
 
   // 진짜 Chrome 사용 시도 → 실패 시 번들 chromium fallback (지문 차이 큼)
   let browser;
@@ -463,13 +500,16 @@ async function main() {
     hasTouch: false,
   });
 
+  const modeLabel = INGEST_MODE === "drafts" ? "ingest(초안)" : "store(선불폰)";
   let totalCreated = 0;
+  let totalStored = 0;
   for (const kw of KEYWORDS) {
     try {
       const posts = await scrapeKeyword(context, kw);
       const r = await ingest(kw, posts);
-      log(`  ingest(${kw}):`, JSON.stringify(r));
+      log(`  ${modeLabel}(${kw}):`, JSON.stringify(r));
       totalCreated += r.created || 0;
+      totalStored += r.stored || 0;
     } catch (err) {
       log(`  키워드 실패 (계속): ${kw} — ${err.message}`);
     }
@@ -479,7 +519,13 @@ async function main() {
   }
 
   await browser.close();
-  log(`완료 — 총 초안 ${totalCreated}건 생성`);
+  if (SCRAPE_ONLY) {
+    log(`완료 — scrape-only 모드 (전송 없음)`);
+  } else if (INGEST_MODE === "drafts") {
+    log(`완료 — 총 초안 ${totalCreated}건 생성`);
+  } else {
+    log(`완료 — 총 ${totalStored}건 축적`);
+  }
 }
 
 main().catch((e) => {

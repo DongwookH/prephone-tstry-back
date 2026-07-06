@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { getThreadsDrafts, updateThreadsDraft } from "@/lib/sheets";
+import {
+  getThreadsDrafts,
+  updateThreadsDraft,
+  getRecentResearchPosts,
+} from "@/lib/sheets";
 import { generateThreadsDraftsFromPosts } from "@/lib/threads-research";
 
 export const maxDuration = 60;
@@ -88,11 +92,12 @@ export async function POST(req: Request) {
   // 1건 처리
   const target = targets[0];
 
+  const researchPosts = await getRecentResearchPosts().catch(() => []);
   let drafts: Awaited<ReturnType<typeof generateThreadsDraftsFromPosts>>;
   try {
     drafts = await generateThreadsDraftsFromPosts({
       keyword: target.keyword,
-      posts: [],
+      posts: researchPosts, // 축적된 인기글 참고 (없으면 KB만 사용)
       count: 1,
     });
   } catch (err) {

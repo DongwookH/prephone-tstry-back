@@ -1557,3 +1557,203 @@ export async function bumpThreadsKeywordUsage(
     });
   }
 }
+
+// ─── Threads 리서치 인기글 축적 (threads_research_posts 시트) ──────
+// Mac 스크래퍼가 매일 06:00 수집한 인기글을 "저장만" 해두고,
+// 주간 24개 자동 생성 시 getRecentResearchPosts로 참고자료 주입한다.
+//
+// ⚠️ ScrapedPost 타입은 lib/threads-research.ts에 원본이 있으나,
+//    threads-research → gemini → sheets 로 이어지는 런타임 순환을 피하려
+//    여기서는 구조가 같은 로컬 타입(ResearchPost)만 정의해 쓴다.
+
+export type ResearchPost = {
+  author?: string;
+  text?: string;
+  likes?: number;
+  replies?: number;
+  reposts?: number;
+  permalink?: string;
+  timestamp?: string;
+};
+
+const THREADS_RESEARCH_SHEET = "threads_research_posts";
+const THREADS_RESEARCH_HEADERS = [
+  "id",         // A
+  "scraped_at", // B
+  "keyword",    // C
+  "text",       // D
+  "likes",      // E
+  "replies",    // F
+  "reposts",    // G
+];
+
+/** threads_research_posts 시트가 없으면 생성 + 헤더. settings 패턴과 동일. */
+export async function ensureThreadsResearchSheet(): Promise<void> {
+  const sheets = getClient();
+  const id = mainSheetId();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: id,
+    fields: "sheets.properties.title",
+  });
+  const exists = meta.data.sheets?.some(
+    (s) => s.properties?.title === THREADS_RESEARCH_SHEET,
+  );
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: id,
+      requestBody: {
+        requests: [
+          { addSheet: { properties: { title: THREADS_RESEARCH_SHEET } } },
+        ],
+      },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: id,
+      range: `${THREADS_RESEARCH_SHEET}!A1:G1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [THREADS_RESEARCH_HEADERS] },
+    });
+  }
+}
+
+/** 참여도 점수 — threads-research.engagementScore와 동일 가중치(댓글3·리포스트2·좋아요1). */
+function researchEngagementScore(p: ResearchPost): number {
+  const likes = p.likes ?? 0;
+  const replies = p.replies ?? 0;
+  const reposts = p.reposts ?? 0;
+  return replies * 3 + reposts * 2 + likes;
+}
+
+/** 중복 방지 키용 텍스트 정규화 — 소문자화 + 공백압축 후 앞 80자. */
+function normalizeResearchText(text: string): string {
+  return (text || "").toLowerCase().replace(/\s+/g, " ").trim().slice(0, 80);
+}
+
+/**
+ * 인기글을 threads_research_posts 시트에 축적 (저장만, 생성 X).
+ *
+ * 중복 방지: 최근 14일 내 같은 (keyword + 정규화 텍스트 앞 80자) 행이 있으면 skip.
+ *   정규화 = 소문자화 + 공백압축 + 앞 80자.
+ *
+ * @param keyword 검색 키워드 (선불폰/알뜰폰/유심 등 니치 검색어)
+ * @param posts 수집한 인기글
+ * @param scrapedAtIso 수집 시각 ISO (보통 스크래퍼 실행 시각)
+ * @returns { stored, skipped }
+ */
+export async function appendResearchPosts(
+  keyword: string,
+  posts: ResearchPost[],
+  scrapedAtIso: string,
+): Promise<{ stored: number; skipped: number }> {
+  const kw = (keyword || "").trim();
+  const list = Array.isArray(posts) ? posts : [];
+  if (!kw || list.length === 0) return { stored: 0, skipped: 0 };
+
+  await ensureThreadsResearchSheet();
+  const spreadsheetId = mainSheetId();
+
+  // 최근 14일 내 기존 행 로드 → 중복 판정용 키 셋 구성
+  const norm = (s: string) => (s || "").replace(/\s+/g, "").toLowerCase();
+  const cutoffMs = Date.now() - 14 * 24 * 3600 * 1000;
+  const existing = await readSheetAsObjects<{
+    scraped_at: string;
+    keyword: string;
+    text: string;
+  }>(spreadsheetId, THREADS_RESEARCH_SHEET).catch(() => []);
+
+  const seen = new Set<string>();
+  for (const r of existing) {
+    const t = new Date(r.scraped_at || "").getTime();
+    if (isFinite(t) && t < cutoffMs) continue; // 14일보다 오래된 행은 중복 판정에서 제외
+    seen.add(`${norm(r.keyword)}##${normalizeResearchText(r.text || "")}`);
+  }
+
+  const scrapedAt =
+    scrapedAtIso && !isNaN(new Date(scrapedAtIso).getTime())
+      ? scrapedAtIso
+      : new Date().toISOString();
+
+  const rows: (string | number)[][] = [];
+  let skipped = 0;
+  for (const p of list) {
+    const text = (p.text || "").trim();
+    if (!text) {
+      skipped++;
+      continue;
+    }
+    const key = `${norm(kw)}##${normalizeResearchText(text)}`;
+    if (seen.has(key)) {
+      skipped++;
+      continue;
+    }
+    seen.add(key); // 같은 배치 내 중복도 방지
+    const rowId = `rp-${Date.now()}-${rows.length}-${Math.floor(
+      Math.random() * 1000,
+    )}`;
+    rows.push([
+      rowId,
+      scrapedAt,
+      kw,
+      text.slice(0, 500),
+      p.likes ?? 0,
+      p.replies ?? 0,
+      p.reposts ?? 0,
+    ]);
+  }
+
+  if (rows.length > 0) {
+    await appendRows(spreadsheetId, THREADS_RESEARCH_SHEET, rows);
+  }
+  return { stored: rows.length, skipped };
+}
+
+/**
+ * 최근 N일 내 축적된 인기글을 ScrapedPost 형태로 반환.
+ * 참여도(engagementScore) 내림차순으로 상위 limit개.
+ *
+ * @param opts.days  조회 범위 (기본 7일)
+ * @param opts.limit 반환 개수 (기본 8)
+ */
+export async function getRecentResearchPosts(opts?: {
+  days?: number;
+  limit?: number;
+}): Promise<ResearchPost[]> {
+  const days = opts?.days ?? 7;
+  const limit = opts?.limit ?? 8;
+
+  let all: {
+    scraped_at: string;
+    keyword: string;
+    text: string;
+    likes: string;
+    replies: string;
+    reposts: string;
+  }[];
+  try {
+    all = await readSheetAsObjects(mainSheetId(), THREADS_RESEARCH_SHEET);
+  } catch {
+    return [];
+  }
+
+  const cutoffMs = Date.now() - days * 24 * 3600 * 1000;
+  const toNum = (v: string) => {
+    const n = parseInt(v || "0", 10);
+    return isFinite(n) ? n : 0;
+  };
+
+  return all
+    .filter((r) => {
+      if (!r.text?.trim()) return false;
+      const t = new Date(r.scraped_at || "").getTime();
+      // scraped_at이 없거나 파싱 안 되면 최근 것으로 간주해 포함 (누락보다 안전)
+      return !isFinite(t) || t >= cutoffMs;
+    })
+    .map<ResearchPost>((r) => ({
+      text: r.text,
+      likes: toNum(r.likes),
+      replies: toNum(r.replies),
+      reposts: toNum(r.reposts),
+    }))
+    .sort((a, b) => researchEngagementScore(b) - researchEngagementScore(a))
+    .slice(0, limit);
+}
