@@ -500,7 +500,7 @@ async function main() {
     hasTouch: false,
   });
 
-  const modeLabel = INGEST_MODE === "drafts" ? "ingest(초안)" : "store(선불폰)";
+  const modeLabel = INGEST_MODE === "drafts" ? "ingest(초안)" : "store";
   let totalCreated = 0;
   let totalStored = 0;
   for (const kw of KEYWORDS) {
