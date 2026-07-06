@@ -268,6 +268,53 @@ function normKeyword(s: string): string {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// ── 텔레그램 HTML 이스케이프 (키워드 등 가변 텍스트에만 적용) ──────
+// lib/telegram-nlu.ts의 escapeHtml과 동일한 3줄 규칙.
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * 생성 결과 요약을 텔레그램으로 보고.
+ * telegramEnabled()가 false면 조용히 스킵. 전송 실패해도 throw하지 않음
+ * (호출부에서 try/catch로 한 번 더 감싸 exit code에 영향 없게 함).
+ */
+async function reportToTelegram(summary: {
+  total: number;
+  saved: number;
+  alreadySaved: number;
+  failed: string[];
+  // 오늘 저장 완료된 전체 키워드 (이번 실행 신규분 + 기존 alreadySaved분 포함)
+  allSavedKeywords: string[];
+}): Promise<void> {
+  const { telegramEnabled, sendTelegram } = await import("../lib/telegram");
+  if (!telegramEnabled()) return;
+
+  const { total, saved, failed, allSavedKeywords } = summary;
+
+  let text: string;
+  if (failed.length === 0) {
+    const keywordLines = allSavedKeywords.map((k) => escapeHtml(k)).join("\n");
+    text = `✅ 오늘 블로그 ${total}/${total} 저장 완료`;
+    if (keywordLines) text += `\n\n${keywordLines}`;
+  } else {
+    const failedLines = failed.map((k) => escapeHtml(k)).join("\n");
+    text =
+      `⚠️ 오늘 블로그 ${saved}/${total} 저장 · 실패 ${failed.length}건\n\n` +
+      `${failedLines}\n\n` +
+      `쿼터/일시 오류면 GitHub Actions에서 Generate Daily Posts를 다시 실행하면 이미 저장된 건 건너뛰고 누락만 재생성됩니다.`;
+  }
+
+  try {
+    await sendTelegram(text);
+  } catch (err) {
+    console.warn("[generate-daily] 텔레그램 전송 실패:", err);
+  }
+}
+
 async function main(): Promise<void> {
   const dryRun = process.argv.includes("--dry-run");
 
@@ -315,6 +362,7 @@ async function main(): Promise<void> {
 
   let saved = 0;
   const failed: string[] = [];
+  const savedKeywords: string[] = [];
 
   for (let i = 0; i < missing.length; i++) {
     const item = missing[i];
@@ -330,6 +378,7 @@ async function main(): Promise<void> {
           `✅ ${item.keyword} → ${r.id} | ${r.title} | ${r.charCount}자 | SEO ${r.seoScore} (시도 ${attempt})`,
         );
         saved++;
+        savedKeywords.push(item.keyword);
         ok = true;
         break;
       } catch (err) {
@@ -355,6 +404,20 @@ async function main(): Promise<void> {
     failed,
   };
   console.log("\n" + JSON.stringify(summary));
+
+  // 텔레그램 보고 (dry-run 아닐 때만, 전송 실패해도 exit code에 영향 없음)
+  try {
+    await reportToTelegram({
+      total: plan.length,
+      saved,
+      alreadySaved: plan.length - missing.length,
+      failed,
+      // 이번 실행 신규분 + 실행 전 이미 저장돼 있던 분 (오늘 저장된 전체 키워드)
+      allSavedKeywords: [...existingKeywords, ...savedKeywords],
+    });
+  } catch (err) {
+    console.warn("[generate-daily] 텔레그램 보고 중 예외:", err);
+  }
 
   // 하나라도 최종 실패면 exit 1 (모든 항목 처리 후)
   if (failed.length > 0) {
