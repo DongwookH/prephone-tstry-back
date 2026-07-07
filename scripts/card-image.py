@@ -95,54 +95,74 @@ def make_bottom_gradient(w, h, start_ratio=0.40, max_alpha=255):
     return layer
 
 
+def _tag_metrics(scale):
+    return {
+        "tf": font(int(21 * scale), 700),
+        "pad_x": int(17 * scale),
+        "gap": int(12 * scale),
+        "pill_h": int(42 * scale),
+        "line_gap": int(12 * scale),
+        "margin_x": int(24 * scale),
+    }
+
+
+def _wrap_tags(d, hashtags, w, scale):
+    """해시태그를 폭에 맞춰 최대 2줄로 감싼 [[(text,width),...], ...] 반환."""
+    if not hashtags:
+        return []
+    tags = [t if t.startswith("#") else f"#{t}" for t in hashtags]
+    m = _tag_metrics(scale)
+    max_width = w - int(48 * scale)
+    lines, cur, cur_w = [], [], 0
+    for t in tags:
+        tw = d.textlength(t, font=m["tf"]) + m["pad_x"] * 2
+        if cur and cur_w + m["gap"] + tw > max_width:
+            lines.append(cur)
+            cur, cur_w = [], 0
+            if len(lines) == 2:
+                break
+        cur.append((t, tw))
+        cur_w += (m["gap"] if cur_w else 0) + tw
+    if cur and len(lines) < 2:
+        lines.append(cur)
+    return lines
+
+
+def hashtag_block_height(d, hashtags, w, scale):
+    """draw 없이 pill 영역이 차지할 높이만 계산 (배치용)."""
+    rows = len(_wrap_tags(d, hashtags, w, scale))
+    if rows == 0:
+        return 0
+    m = _tag_metrics(scale)
+    return rows * m["pill_h"] + (rows - 1) * m["line_gap"]
+
+
 def draw_hashtag_pills(canvas, d, hashtags, top_y, w, h, accent_rgb, scale):
     """해시태그 pill들을 좌측 정렬로 가로 나열, 넘치면 최대 2줄까지 감싼다.
 
     accent_rgb(반투명)와 어두운 반투명을 번갈아 사용.
     반환값: pill 영역이 차지한 총 높이(다음 요소 배치용).
     """
-    if not hashtags:
+    lines = _wrap_tags(d, hashtags, w, scale)
+    if not lines:
         return 0
-
-    tags = [t if t.startswith("#") else f"#{t}" for t in hashtags]
-    tf = font(int(21 * scale), 700)
-    pad_x = int(17 * scale)
-    gap = int(12 * scale)
-    pill_h = int(42 * scale)
-    line_gap = int(12 * scale)
-    max_width = w - int(48 * scale)
-    margin_x = int(24 * scale)
-
+    m = _tag_metrics(scale)
     accent_fill = accent_rgb + (200,)
     dark_fill = (20, 20, 20, 140)
     fills = [accent_fill, dark_fill]
     fg = (255, 255, 255, 255)
 
-    # 폭에 맞춰 줄바꿈 (최대 2줄)
-    lines, cur, cur_w = [], [], 0
-    for t in tags:
-        tw = d.textlength(t, font=tf) + pad_x * 2
-        if cur and cur_w + gap + tw > max_width:
-            lines.append(cur)
-            cur, cur_w = [], 0
-            if len(lines) == 2:
-                break
-        cur.append((t, tw))
-        cur_w += (gap if cur_w else 0) + tw
-    if cur and len(lines) < 2:
-        lines.append(cur)
-
     y = top_y
     for row in lines:
-        x = margin_x
+        x = m["margin_x"]
         for i, (text, tw) in enumerate(row):
             fill = fills[i % 2]
             d.rounded_rectangle(
-                [x, y, x + tw, y + pill_h], radius=pill_h // 2, fill=fill
+                [x, y, x + tw, y + m["pill_h"]], radius=m["pill_h"] // 2, fill=fill
             )
-            d.text((x + tw / 2, y + pill_h / 2), text, font=tf, fill=fg, anchor="mm")
-            x += tw + gap
-        y += pill_h + line_gap
+            d.text((x + tw / 2, y + m["pill_h"] / 2), text, font=m["tf"], fill=fg, anchor="mm")
+            x += tw + m["gap"]
+        y += m["pill_h"] + m["line_gap"]
 
     return y - top_y
 
@@ -161,27 +181,32 @@ def compose_card(bg_path, title_lines, hashtags, out_path,
 
     d = ImageDraw.Draw(canvas)
 
-    grad_start_y = int(h * 0.47)
     pad_x = int(24 * scale)
 
-    # 해시태그 pill — 그라데이션 시작 지점 바로 아래
-    tags_top = grad_start_y + int(180 * scale)
-    tags_used_h = draw_hashtag_pills(canvas, d, hashtags, tags_top, w, h, accent_rgb, scale)
-
-    # 제목 — 태그 아래(여백 넉넉히), 하단 여백 위, 가로 폭을 꽉 채우도록 자동 축소, 좌측 정렬
+    # 제목 크기 계산 — 가로 폭 꽉 채우도록 자동 축소, 좌측 정렬
     title_lines = [ln for ln in (title_lines or []) if ln][:3]
     title_pad_x = int(18 * scale)
     max_title_w = w - title_pad_x * 2
-    base_size = int(108 * scale)
-    min_size = int(40 * scale)
+    base_size = int(92 * scale)
+    min_size = int(36 * scale)
     ts = fit_title_size(d, title_lines, max_title_w, base=base_size, min_size=min_size)
     ttf = font(ts, 900)
-    line_gap = int(ts * 1.22)
+    line_gap = int(ts * 1.18)
+    n = max(1, len(title_lines))
 
-    title_top = tags_top + tags_used_h  # 태그-제목 간 여백 (거의 붙임)
-    # 제목 블록을 태그 바로 아래에 상단 고정(태그~하단 전체 구간 중앙정렬 X — 그러면 여백이 커진다)
-    y0 = title_top + line_gap / 2
+    # 하단 기준 배치: (아래→위) 핸들 여백 → 제목 n줄 → 태그. 줄 수가 몇이든 하단에 딱 맞춤.
+    handle_h = int(46 * scale) if handle else int(22 * scale)
+    last_center = h - handle_h - int(ts * 0.5)   # 마지막 줄 중심
+    y0 = last_center - (n - 1) * line_gap         # 첫 줄 중심
+    title_first_top = y0 - ts / 2
 
+    # 해시태그 — 제목 블록 바로 위 (블록 높이 미리 계산해 배치)
+    tag_block_h = hashtag_block_height(d, hashtags, w, scale)
+    tag_gap = int(16 * scale)
+    tags_top = int(title_first_top - tag_gap - tag_block_h)
+    draw_hashtag_pills(canvas, d, hashtags, tags_top, w, h, accent_rgb, scale)
+
+    # 제목 그리기
     hl = set(highlight_words or [])
     white = (255, 255, 255, 255)
     accent = accent_rgb + (255,)
