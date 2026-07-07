@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Topbar } from "@/components/topbar";
 import { getPostByIdFromSheet } from "@/lib/sheets";
+import { extractCardData } from "@/lib/extract-card-data";
 import { CheckCircle2 } from "lucide-react";
 import { PostContentViewer } from "@/components/post-content-viewer";
 import { CardNewsDownload } from "@/components/card-news-download";
@@ -41,6 +42,21 @@ export default async function PostDetail({
 
   const ringDash = 314;
   const ringOffset = ringDash - (ringDash * Math.max(seo, 0)) / 100;
+
+  // 카드뉴스 섹션 제목 — alt 기본값 생성용 (카드뉴스 이미지와 동일 규칙으로 추출)
+  const cardSectionTitles = post.content_html
+    ? extractCardData(
+        {
+          title: post.title,
+          keyword: post.keyword,
+          category: post.category,
+          contentHtml: post.content_html,
+        },
+        { maxItems: 6, maxItemLen: 75 },
+      )
+        .filter((c) => c.type === "section")
+        .map((c) => (c as { title: string }).title)
+    : [];
 
   return (
     <>
@@ -190,8 +206,13 @@ export default async function PostDetail({
             {/* 자동 생성 썸네일 (대표이미지) */}
             <ThumbnailCard postId={post.id} title={post.title} />
 
-            {/* 카드뉴스 (AI 배경 + 정보 오버레이, 자동 생성 이미지 다운로드) */}
-            <CardNewsDownload postId={post.id} title={post.title} />
+            {/* 카드뉴스 (AI 배경 + 정보 오버레이, 자동 생성 이미지 다운로드 + alt 편집) */}
+            <CardNewsDownload
+              postId={post.id}
+              title={post.title}
+              keyword={post.keyword}
+              cardTitles={cardSectionTitles}
+            />
 
             {/* Publish (client component — server action 연결) */}
             <PublishForm
