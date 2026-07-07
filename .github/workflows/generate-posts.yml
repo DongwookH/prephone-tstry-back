@@ -119,14 +119,14 @@ jobs:
 
   # ─── 2단계: 썸네일 자동 생성 + 커밋 (새 카드 시스템: NVIDIA 배경 + PIL 오버레이) ───
   thumbnails:
-    name: Thumbnails (NVIDIA 카드)
-    # generate 잡이 끝난 뒤 실행 → 생성된 글의 썸네일 생성.
+    name: Thumbnails + 카드뉴스 (NVIDIA)
+    # generate 잡이 끝난 뒤 실행 → 생성된 글의 썸네일 + 카드뉴스 생성.
     needs: [generate]
-    # generate 일부가 실패해도 thumbnails는 실행(성공 글 썸네일 보존).
+    # generate 일부가 실패해도 실행(성공 글 이미지 보존).
     # !cancelled(): 워크플로 취소가 아닌 한 진행.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
@@ -165,14 +165,26 @@ jobs:
           npx --yes tsx scripts/regen-thumbnails.mjs 2>&1 | tee /tmp/thumbs.log
           echo "--- 요약 ---"; tail -n1 /tmp/thumbs.log
 
-      - name: 생성된 썸네일 커밋·push
+      - name: 오늘 글 카드뉴스 생성 (섹션 인포카드, 글당 최대 3장)
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          GOOGLE_SHEETS_CLIENT_EMAIL: ${{ secrets.GOOGLE_SHEETS_CLIENT_EMAIL }}
+          GOOGLE_SHEETS_PRIVATE_KEY: ${{ secrets.GOOGLE_SHEETS_PRIVATE_KEY }}
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          NOTO_FONT: /tmp/NotoSansKR.ttf
+        run: |
+          set -uo pipefail
+          npx --yes tsx scripts/regen-cardnews.mjs --max-cards 3 2>&1 | tee /tmp/cardnews.log
+          echo "--- 요약 ---"; tail -n1 /tmp/cardnews.log
+
+      - name: 생성된 썸네일·카드뉴스 커밋·push
         run: |
           set -uo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if [ -z "$(git status --porcelain public/thumbnails)" ]; then
-            echo "변경된 썸네일 없음"; exit 0
+          if [ -z "$(git status --porcelain public/thumbnails public/card-news)" ]; then
+            echo "변경된 이미지 없음"; exit 0
           fi
-          git add public/thumbnails
-          git commit -m "chore(thumbnail): 자동 생성 썸네일 (새 카드) [skip ci]"
+          git add public/thumbnails public/card-news
+          git commit -m "chore(images): 자동 생성 썸네일·카드뉴스 [skip ci]"
           git push

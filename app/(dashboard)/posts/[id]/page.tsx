@@ -4,7 +4,7 @@ import { Topbar } from "@/components/topbar";
 import { getPostByIdFromSheet } from "@/lib/sheets";
 import { CheckCircle2 } from "lucide-react";
 import { PostContentViewer } from "@/components/post-content-viewer";
-import { CardNewsCards } from "@/components/card-news-cards";
+import { CardNewsDownload } from "@/components/card-news-download";
 import { ThumbnailCard } from "@/components/thumbnail-card";
 import { TagsBlock } from "@/components/tags-block";
 import { PublishForm } from "@/components/publish-form";
@@ -190,14 +190,8 @@ export default async function PostDetail({
             {/* 자동 생성 썸네일 (대표이미지) */}
             <ThumbnailCard postId={post.id} title={post.title} />
 
-            {/* 카드뉴스 (1080×1080 5장: 표지 + 섹션 4) */}
-            <CardNewsCards
-              title={post.title}
-              keyword={post.keyword}
-              category={post.category}
-              contentHtml={post.content_html || ""}
-              idForFilename={post.id}
-            />
+            {/* 카드뉴스 (AI 배경 + 정보 오버레이, 자동 생성 이미지 다운로드) */}
+            <CardNewsDownload postId={post.id} title={post.title} />
 
             {/* Publish (client component — server action 연결) */}
             <PublishForm
