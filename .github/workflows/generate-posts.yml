@@ -117,16 +117,16 @@ jobs:
           echo "generate-daily.ts exit code: ${code:-unknown}"
           [ "${code:-0}" = "0" ] || exit 1
 
-  # ─── 2단계: 썸네일 자동 생성 + 커밋 ─────────────────
+  # ─── 2단계: 썸네일 자동 생성 + 커밋 (새 카드 시스템: NVIDIA 배경 + PIL 오버레이) ───
   thumbnails:
-    name: Thumbnails (Pillow)
+    name: Thumbnails (NVIDIA 카드)
     # generate 잡이 끝난 뒤 실행 → 생성된 글의 썸네일 생성.
     needs: [generate]
     # generate 일부가 실패해도 thumbnails는 실행(성공 글 썸네일 보존).
     # !cancelled(): 워크플로 취소가 아닌 한 진행.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -134,6 +134,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
 
       - name: Python + Pillow
         run: pip install --quiet Pillow
@@ -143,20 +152,18 @@ jobs:
           curl -sL "https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf" -o /tmp/NotoSansKR.ttf
           ls -la /tmp/NotoSansKR.ttf
 
-      - name: 오늘 글 메타 조회 + 썸네일 생성
+      - name: 오늘 글 썸네일 생성 (NVIDIA 배경 + 카드 오버레이)
         env:
-          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          GOOGLE_SHEETS_CLIENT_EMAIL: ${{ secrets.GOOGLE_SHEETS_CLIENT_EMAIL }}
+          GOOGLE_SHEETS_PRIVATE_KEY: ${{ secrets.GOOGLE_SHEETS_PRIVATE_KEY }}
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          # card-image.py가 NOTO_FONT로 한글 가변폰트 사용 (Linux엔 시스템 한글폰트 없음)
+          NOTO_FONT: /tmp/NotoSansKR.ttf
         run: |
           set -uo pipefail
-          posts=$(curl -sS -X GET "${PRODUCTION_URL}/api/cron/posts-today" \
-            -H "Authorization: Bearer ${CRON_SECRET}" --max-time 60)
-          count=$(echo "$posts" | jq '.count // 0')
-          echo "오늘 썸네일 대상: $count 개"
-          if [ "$count" = "0" ]; then echo "대상 없음 — 종료"; exit 0; fi
-          echo "$posts" | jq -c '.posts' \
-            | NOTO_FONT=/tmp/NotoSansKR.ttf OUT_DIR=public/thumbnails ASSET_DIR=scripts/assets \
-              python3 scripts/thumbnail.py
+          npx --yes tsx scripts/regen-thumbnails.mjs 2>&1 | tee /tmp/thumbs.log
+          echo "--- 요약 ---"; tail -n1 /tmp/thumbs.log
 
       - name: 생성된 썸네일 커밋·push
         run: |
@@ -167,5 +174,5 @@ jobs:
             echo "변경된 썸네일 없음"; exit 0
           fi
           git add public/thumbnails
-          git commit -m "chore(thumbnail): 자동 생성 썸네일 [skip ci]"
+          git commit -m "chore(thumbnail): 자동 생성 썸네일 (새 카드) [skip ci]"
           git push
