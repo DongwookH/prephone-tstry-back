@@ -20,6 +20,7 @@ export default auth((req) => {
 
     pathname.startsWith("/api/telegram/webhook") || // Telegram 서버가 직접 호출 — 시크릿 헤더로 자체 인증
     pathname.startsWith("/thumbnails") || // 자동 생성 썸네일 — 공개 접근 (백오피스 img, 티스토리 첨부)
+    pathname.startsWith("/card-news") || // 자동 생성 카드뉴스 — 공개 접근 (백오피스 img, 다운로드)
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon");
 
