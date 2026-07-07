@@ -49,9 +49,24 @@ function loadEnvLocal() {
 loadEnvLocal();
 
 const API_URL_BASE = "https://ai.api.nvidia.com/v1/genai";
-const PRIMARY_MODEL =
-  process.env.NVIDIA_IMAGE_MODEL || "black-forest-labs/flux.2-klein-4b";
-const FALLBACK_MODEL = "black-forest-labs/flux.1-schnell";
+
+// ⚠️ 상업용 라이선스 모델만 사용 (블로그는 사업용).
+//    flux.2-klein-4b: commercial/non-commercial 허용 · flux.1-schnell: Apache 2.0
+//    flux.1-dev, stable-diffusion-3.5-large 는 non-commercial 라이선스 → 사용 금지(로테이션 제외).
+//
+// 로테이션 풀 — 현재 klein만 활성.
+//   flux.1-schnell 은 상업용(Apache 2.0)이나 2026-07-07 기준 API가 무응답(HTTP 000, 90s 타임아웃)이라 잠정 제외.
+//   → 응답 정상화되면 아래 배열에 다시 추가하면 자동으로 로테이션에 합류.
+export const COMMERCIAL_MODELS = [
+  "black-forest-labs/flux.2-klein-4b",
+  // "black-forest-labs/flux.1-schnell", // 무응답 상태라 잠정 비활성 (복구 시 주석 해제)
+];
+
+/** 로테이션 인덱스로 상업용 모델 하나 선택 (카드마다 다른 모델 → 다양성). */
+export function pickModel(i = 0) {
+  const n = COMMERCIAL_MODELS.length;
+  return COMMERCIAL_MODELS[((i % n) + n) % n];
+}
 
 /** NIM 이미지 생성 엔드포인트 1회 호출. 실패 시 에러 throw(상태코드·본문 일부 포함). */
 async function callNimModel({ model, prompt, width, height, steps, seed }) {
@@ -63,6 +78,9 @@ async function callNimModel({ model, prompt, width, height, steps, seed }) {
   }
 
   const url = `${API_URL_BASE}/${model}`;
+  // 응답 없이 매달리는 모델(예: 한때 무응답이던 schnell) 대비 타임아웃 — 빨리 실패 후 폴백.
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 45000);
   let res;
   try {
     res = await fetch(url, {
@@ -73,9 +91,14 @@ async function callNimModel({ model, prompt, width, height, steps, seed }) {
         Accept: "application/json",
       },
       body: JSON.stringify({ prompt, width, height, steps, seed }),
+      signal: ctl.signal,
     });
   } catch (err) {
-    throw new Error(`[${model}] 네트워크 에러: ${err.message}`);
+    throw new Error(
+      `[${model}] ${err.name === "AbortError" ? "타임아웃(45s)" : "네트워크 에러"}: ${err.message}`,
+    );
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!res.ok) {
@@ -106,6 +129,7 @@ export async function generateBackgroundImage({
   steps = 4,
   seed = 0,
   outPath,
+  model, // 선호 모델(로테이션용). 실패 시 나머지 상업용 모델로 폴백.
 }) {
   if (!prompt || !prompt.trim()) {
     throw new Error("prompt가 필요합니다.");
@@ -114,9 +138,14 @@ export async function generateBackgroundImage({
     throw new Error("outPath가 필요합니다.");
   }
 
-  const attempts = [PRIMARY_MODEL, FALLBACK_MODEL].filter(
-    (m, i, arr) => arr.indexOf(m) === i, // 폴백이 우연히 primary와 같으면 1회만
-  );
+  // 선호 모델을 먼저 시도, 실패하면 나머지 상업용 모델로 폴백.
+  const preferred = COMMERCIAL_MODELS.includes(model)
+    ? model
+    : COMMERCIAL_MODELS[0];
+  const attempts = [
+    preferred,
+    ...COMMERCIAL_MODELS.filter((m) => m !== preferred),
+  ];
 
   const errors = [];
   for (const model of attempts) {
