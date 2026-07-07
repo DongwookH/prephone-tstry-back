@@ -152,34 +152,41 @@ function extractHook(inner: string): string | undefined {
   return undefined;
 }
 
-/** 체크리스트(✅) 추출 — ✅ 다음 텍스트를 한 항목씩. 최대 4개. */
-function extractChecklist(inner: string): string[] {
+/** 체크리스트(✅) 추출 — ✅ 다음 텍스트를 한 항목씩. maxItems/maxLen 조절 가능. */
+function extractChecklist(inner: string, maxItems = 4, maxLen = 50): string[] {
   // ✅ 다음 텍스트를 <br>나 줄바꿈, 또는 다음 ✅까지 추출
   const items: string[] = [];
+  const seen = new Set<string>();
   // ✅로 split해서 각 조각 정리
   const parts = inner.split(/✅\s*/);
   for (let i = 1; i < parts.length; i++) {
     // 첫 <br> 또는 ✅ 이전까지가 한 항목
     const raw = parts[i].split(/<br\s*\/?>/i)[0].split(/✅/)[0];
     const txt = stripTags(raw);
-    if (txt && txt.length >= 2 && txt.length <= 50) {
+    // 앞 16자(요금제명+가격 등 식별부) 기준 중복 제거 — K망/L망 표 중복 방지
+    const key = txt.replace(/\s+/g, "").slice(0, 16);
+    if (txt && txt.length >= 2 && txt.length <= maxLen && !seen.has(key)) {
+      seen.add(key);
       items.push(txt);
-      if (items.length >= 4) break;
+      if (items.length >= maxItems) break;
     }
   }
   return items;
 }
 
-/** 단계(1. 2. 3.) 추출 — <strong>N. 라벨</strong> 패턴. 최대 4개. */
-function extractSteps(inner: string): string[] {
+/** 단계(1. 2. 3.) 추출 — <strong>N. 라벨</strong> 패턴. maxItems/maxLen 조절 가능. */
+function extractSteps(inner: string, maxItems = 4, maxLen = 40): string[] {
   const items: string[] = [];
+  const seen = new Set<string>();
   const pattern = /<strong>\s*(\d+)\.\s*([^<]+?)<\/strong>/gi;
   let m: RegExpExecArray | null;
   while ((m = pattern.exec(inner)) !== null) {
     const txt = stripTags(m[2]).trim();
-    if (txt && txt.length <= 40) {
+    const key = txt.replace(/\s+/g, "");
+    if (txt && txt.length <= maxLen && !seen.has(key)) {
+      seen.add(key);
       items.push(txt);
-      if (items.length >= 4) break;
+      if (items.length >= maxItems) break;
     }
   }
   return items;
@@ -264,12 +271,19 @@ function extractKeyValueList(inner: string): string[] {
   return [];
 }
 
-export function extractCardData(opts: {
-  title: string;
-  keyword: string;
-  category: string;
-  contentHtml: string;
-}): CardData[] {
+export function extractCardData(
+  opts: {
+    title: string;
+    keyword: string;
+    category: string;
+    contentHtml: string;
+  },
+  cardOpts?: { maxItems?: number; maxItemLen?: number },
+): CardData[] {
+  // 인포카드(새 시스템)는 넉넉하게, 기존 백오피스 카드는 기본값(무regression) 유지.
+  const maxItems = cardOpts?.maxItems ?? 4;
+  const maxLenChk = cardOpts?.maxItemLen ?? 50;
+  const maxLenStep = cardOpts?.maxItemLen ?? 40;
   const cards: CardData[] = [];
 
   // 1. 표지 — 너비 1080 고정, 높이 가변
@@ -351,13 +365,25 @@ export function extractCardData(opts: {
       }
     }
 
-    // 인포그래픽 추출: 체크리스트 > 단계 > hook 우선순위
-    // 우선순위: 체크리스트(✅) > 단계(1.2.3.) > key-value 목록(strong 반복)
-    let bullets: string[] = extractChecklist(inner);
-    let bulletStyle: SectionCard["bulletStyle"] = "checklist";
-    if (bullets.length < 2) {
-      bullets = extractSteps(inner);
+    // 인포그래픽 추출 우선순위 — 제목이 "절차/단계/순서/과정"류면 단계를 먼저.
+    //   (그렇지 않으면 같은 섹션의 조건 체크리스트가 단계를 눌러 제목과 내용이 어긋남)
+    const isProcess = /절차|단계|순서|흐름|과정|가이드|방법|하는\s*법/.test(title);
+    let bullets: string[];
+    let bulletStyle: SectionCard["bulletStyle"];
+    if (isProcess) {
+      bullets = extractSteps(inner, maxItems, maxLenStep);
       bulletStyle = "steps";
+      if (bullets.length < 2) {
+        bullets = extractChecklist(inner, maxItems, maxLenChk);
+        bulletStyle = "checklist";
+      }
+    } else {
+      bullets = extractChecklist(inner, maxItems, maxLenChk);
+      bulletStyle = "checklist";
+      if (bullets.length < 2) {
+        bullets = extractSteps(inner, maxItems, maxLenStep);
+        bulletStyle = "steps";
+      }
     }
     if (bullets.length < 2) {
       // 마지막 보루: <p><strong>이름:</strong> 설명</p> 같은 반복 패턴
