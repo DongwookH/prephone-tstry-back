@@ -220,56 +220,65 @@ ${personaDesc}
 - 히어로 본문은 2~3 문장으로 짧게 (긴 문장 가독성 떨어짐)
 - 라인 높이 1.8~2.0 (여유 공간)
 
+## 📱 모바일 반응형 필수 규칙 (고정 px 금지)
+독자의 절반 이상이 모바일로 봐요. 아래 규칙을 꼭 지켜서 **PC·모바일 모두 안 깨지게** 만들어 주세요.
+1. **모든 \`font-size\`는 반드시 \`clamp(최소, Xvw, 최대)\` 형태로** 쓰세요. 고정 px(예: \`font-size:16px\`)는 절대 금지 — 모바일에서 글자가 안 줄어들어 제목·버튼 글씨가 2~3줄로 깨져요. (예: \`font-size:clamp(14.5px,3.9vw,16px)\`)
+2. **큰 컨테이너 \`padding\`도 \`clamp()\`로** 주세요. 모바일에선 좌우 여백이 줄어야 글자 폭이 확보돼요. (예: \`padding:clamp(24px,6vw,48px) clamp(20px,5vw,40px)\`)
+3. **2칸 배치(CTA 버튼, 목차)는 \`display:grid;grid-template-columns:1fr 1fr\` 쓰지 말고** 반드시 \`display:flex;flex-wrap:wrap\` + 자식 각각에 \`flex:1 1 calc(50% - 6px);min-width:150px;box-sizing:border-box;\`를 주세요. → PC에선 2단, 모바일 좁은 폭에선 1단으로 자동 전환돼요.
+   - **단, 목차처럼 한 칸 안에 "라벨 + 오른쪽 설명"을 좌우로 배치(space-between)하는 경우는 \`min-width:240px\`로 더 크게** 주세요. 안 그러면 모바일에서 칸이 너무 좁아 라벨 글씨가 쪼개져요. 그리고 좌우 각 \`<span>\`에 \`white-space:nowrap\`을 넣어 글자가 절대 줄바꿈되지 않게 하세요.
+4. **\`<style>\` 태그나 \`@media\` 미디어쿼리는 절대 쓰지 마세요.** 발행 시 자동으로 제거돼요. 반응형은 오직 인라인 \`style="..."\` 안의 \`clamp()\`·\`vw\`·\`flex-wrap\`으로만 처리하세요.
+5. **표(\`<table>\`)를 쓸 경우 반드시 \`<div style="overflow-x:auto;">\`로 감싸서** 모바일에서 가로 스크롤이 되게 하세요.
+
 \`\`\`html
 <!-- ① 히어로 박스 (옅은 라임 그라데이션 + 다크 텍스트, 토글 헤더 색상 통일) -->
-<div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);border-radius:24px;padding:48px 40px;margin-bottom:24px;border:1px solid #D4E89C;">
-  <h2 style="font-size:30px;font-weight:900;margin:0 0 24px;color:#191F28;line-height:1.3;letter-spacing:-0.02em;">{글 메인 제목}</h2>
-  <p style="font-size:17px;line-height:1.9;margin:0 0 16px;color:#191F28;font-weight:600;">{도입부 1문단 — 짧게 2~3문장. 주 키워드 첫 문장에 등장.}</p>
-  <p style="font-size:16px;line-height:1.9;margin:0 0 32px;color:#4E5968;font-weight:500;">이 글은 <strong style="color:#5F7C0E;font-weight:800;background:#FFFFFF;padding:2px 8px;border-radius:6px;">{핵심 단어}</strong>를 빠르게 끝내는 흐름과 꼭 체크해야 할 <strong style="color:#5F7C0E;font-weight:800;background:#FFFFFF;padding:2px 8px;border-radius:6px;">완료 포인트</strong>를 한 번에 정리했어요.</p>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-    <a href="${SITE_URL}/step2?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);">📱 개통 신청하기</a>
-    <a href="${SITE_URL}/kakao?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);">💬 카카오톡 문의</a>
-    <a href="${SITE_URL}/plans?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);">🔍 추가 정보 보기</a>
-    <a href="${SITE_URL}/usim-choice?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);">⬅️ 이전 글 보기</a>
+<div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);border-radius:24px;padding:clamp(24px,6vw,48px) clamp(20px,5vw,40px);margin-bottom:24px;border:1px solid #D4E89C;">
+  <h2 style="font-size:clamp(22px,5.5vw,30px);font-weight:900;margin:0 0 24px;color:#191F28;line-height:1.3;letter-spacing:-0.02em;">{글 메인 제목}</h2>
+  <p style="font-size:clamp(15px,4vw,17px);line-height:1.9;margin:0 0 16px;color:#191F28;font-weight:600;">{도입부 1문단 — 짧게 2~3문장. 주 키워드 첫 문장에 등장.}</p>
+  <p style="font-size:clamp(14.5px,3.9vw,16px);line-height:1.9;margin:0 0 32px;color:#4E5968;font-weight:500;">이 글은 <strong style="color:#5F7C0E;font-weight:800;background:#FFFFFF;padding:2px 8px;border-radius:6px;">{핵심 단어}</strong>를 빠르게 끝내는 흐름과 꼭 체크해야 할 <strong style="color:#5F7C0E;font-weight:800;background:#FFFFFF;padding:2px 8px;border-radius:6px;">완료 포인트</strong>를 한 번에 정리했어요.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:12px;">
+    <a href="${SITE_URL}/step2?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="flex:1 1 calc(50% - 6px);min-width:150px;box-sizing:border-box;display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);">📱 개통 신청하기</a>
+    <a href="${SITE_URL}/kakao?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="flex:1 1 calc(50% - 6px);min-width:150px;box-sizing:border-box;display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);">💬 카카오톡 문의</a>
+    <a href="${SITE_URL}/plans?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="flex:1 1 calc(50% - 6px);min-width:150px;box-sizing:border-box;display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);">🔍 추가 정보 보기</a>
+    <a href="${SITE_URL}/usim-choice?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="flex:1 1 calc(50% - 6px);min-width:150px;box-sizing:border-box;display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);">⬅️ 이전 글 보기</a>
   </div>
 </div>
 
 <!-- ② 핵심 정보 박스 (흰 카드 + 라임 라벨) -->
-<div style="background:#FFFFFF;border-radius:16px;padding:24px 28px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+<div style="background:#FFFFFF;border-radius:16px;padding:clamp(18px,5vw,24px) clamp(18px,5vw,28px);margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
   <div style="display:flex;align-items:flex-start;gap:12px;">
-    <span style="flex-shrink:0;display:inline-block;background:#9DC91A;color:#FFFFFF;font-weight:800;font-size:13px;padding:6px 12px;border-radius:20px;">핵심</span>
-    <p style="margin:0;font-size:15px;line-height:1.7;color:#191F28;">{핵심 한 줄 — 주 키워드 포함, 숫자 1개}</p>
+    <span style="flex-shrink:0;display:inline-block;background:#9DC91A;color:#FFFFFF;font-weight:800;font-size:clamp(12px,3.2vw,13px);padding:6px 12px;border-radius:20px;">핵심</span>
+    <p style="margin:0;font-size:clamp(14px,3.7vw,15px);line-height:1.7;color:#191F28;">{핵심 한 줄 — 주 키워드 포함, 숫자 1개}</p>
   </div>
-  <p style="margin:12px 0 0 0;padding-left:0;font-size:14px;line-height:1.7;color:#4E5968;">{부연 1~2문장}</p>
+  <p style="margin:12px 0 0 0;padding-left:0;font-size:clamp(13px,3.5vw,14px);line-height:1.7;color:#4E5968;">{부연 1~2문장}</p>
 </div>
 
 <!-- ③ 목차 박스 (흰 배경 + 그레이 보더) -->
-<div style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;padding:20px 24px;margin-bottom:32px;">
-  <div style="font-weight:800;font-size:15px;margin-bottom:16px;color:#191F28;">📌 목차 <span style="font-weight:500;font-size:12px;color:#8B95A1;">(클릭하면 해당 섹션으로 이동)</span></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-    <a href="#section-1" style="display:flex;justify-content:space-between;padding:12px 16px;border:1px solid #E5E8EB;border-radius:10px;text-decoration:none;background:#FFFFFF;"><span style="color:#191F28;font-weight:700;font-size:13px;">도입부(선택 이유)</span><span style="color:#5F7C0E;font-size:12px;text-decoration:underline;">왜 {키워드}인가</span></a>
-    <a href="#section-2" style="display:flex;justify-content:space-between;padding:12px 16px;border:1px solid #E5E8EB;border-radius:10px;text-decoration:none;background:#FFFFFF;"><span style="color:#191F28;font-weight:700;font-size:13px;">준비물</span><span style="color:#5F7C0E;font-size:12px;text-decoration:underline;">필수 체크</span></a>
-    <a href="#section-3" style="display:flex;justify-content:space-between;padding:12px 16px;border:1px solid #E5E8EB;border-radius:10px;text-decoration:none;background:#FFFFFF;"><span style="color:#191F28;font-weight:700;font-size:13px;">개통 절차</span><span style="color:#5F7C0E;font-size:12px;text-decoration:underline;">5분 흐름</span></a>
-    <a href="#section-4" style="display:flex;justify-content:space-between;padding:12px 16px;border:1px solid #E5E8EB;border-radius:10px;text-decoration:none;background:#FFFFFF;"><span style="color:#191F28;font-weight:700;font-size:13px;">요금제</span><span style="color:#5F7C0E;font-size:12px;text-decoration:underline;">3가지 추천</span></a>
-    <a href="#section-5" style="display:flex;justify-content:space-between;padding:12px 16px;border:1px solid #E5E8EB;border-radius:10px;text-decoration:none;background:#FFFFFF;"><span style="color:#191F28;font-weight:700;font-size:13px;">비용 정리</span><span style="color:#5F7C0E;font-size:12px;text-decoration:underline;">실제 드는 돈</span></a>
-    <a href="#section-6" style="display:flex;justify-content:space-between;padding:12px 16px;border:1px solid #E5E8EB;border-radius:10px;text-decoration:none;background:#FFFFFF;"><span style="color:#191F28;font-weight:700;font-size:13px;">Q&amp;A</span><span style="color:#5F7C0E;font-size:12px;text-decoration:underline;">자주 묻는 질문</span></a>
+<div style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;padding:clamp(16px,4.5vw,20px) clamp(18px,5vw,24px);margin-bottom:32px;">
+  <div style="font-weight:800;font-size:clamp(14px,3.7vw,15px);margin-bottom:16px;color:#191F28;">📌 목차 <span style="font-weight:500;font-size:clamp(11px,3vw,12px);color:#8B95A1;">(클릭하면 해당 섹션으로 이동)</span></div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;">
+    <a href="#section-1" style="flex:1 1 calc(50% - 5px);min-width:240px;box-sizing:border-box;display:flex;justify-content:space-between;gap:8px;padding:12px 16px;border:1px solid #E5E8EB;border-radius:10px;text-decoration:none;background:#FFFFFF;"><span style="color:#191F28;font-weight:700;font-size:clamp(12px,3.2vw,13px);white-space:nowrap;">도입부(선택 이유)</span><span style="color:#5F7C0E;font-size:clamp(11px,3vw,12px);text-decoration:underline;white-space:nowrap;">왜 {키워드}인가</span></a>
+    <a href="#section-2" style="flex:1 1 calc(50% - 5px);min-width:240px;box-sizing:border-box;display:flex;justify-content:space-between;gap:8px;padding:12px 16px;border:1px solid #E5E8EB;border-radius:10px;text-decoration:none;background:#FFFFFF;"><span style="color:#191F28;font-weight:700;font-size:clamp(12px,3.2vw,13px);white-space:nowrap;">준비물</span><span style="color:#5F7C0E;font-size:clamp(11px,3vw,12px);text-decoration:underline;white-space:nowrap;">필수 체크</span></a>
+    <a href="#section-3" style="flex:1 1 calc(50% - 5px);min-width:240px;box-sizing:border-box;display:flex;justify-content:space-between;gap:8px;padding:12px 16px;border:1px solid #E5E8EB;border-radius:10px;text-decoration:none;background:#FFFFFF;"><span style="color:#191F28;font-weight:700;font-size:clamp(12px,3.2vw,13px);white-space:nowrap;">개통 절차</span><span style="color:#5F7C0E;font-size:clamp(11px,3vw,12px);text-decoration:underline;white-space:nowrap;">5분 흐름</span></a>
+    <a href="#section-4" style="flex:1 1 calc(50% - 5px);min-width:240px;box-sizing:border-box;display:flex;justify-content:space-between;gap:8px;padding:12px 16px;border:1px solid #E5E8EB;border-radius:10px;text-decoration:none;background:#FFFFFF;"><span style="color:#191F28;font-weight:700;font-size:clamp(12px,3.2vw,13px);white-space:nowrap;">요금제</span><span style="color:#5F7C0E;font-size:clamp(11px,3vw,12px);text-decoration:underline;white-space:nowrap;">3가지 추천</span></a>
+    <a href="#section-5" style="flex:1 1 calc(50% - 5px);min-width:240px;box-sizing:border-box;display:flex;justify-content:space-between;gap:8px;padding:12px 16px;border:1px solid #E5E8EB;border-radius:10px;text-decoration:none;background:#FFFFFF;"><span style="color:#191F28;font-weight:700;font-size:clamp(12px,3.2vw,13px);white-space:nowrap;">비용 정리</span><span style="color:#5F7C0E;font-size:clamp(11px,3vw,12px);text-decoration:underline;white-space:nowrap;">실제 드는 돈</span></a>
+    <a href="#section-6" style="flex:1 1 calc(50% - 5px);min-width:240px;box-sizing:border-box;display:flex;justify-content:space-between;gap:8px;padding:12px 16px;border:1px solid #E5E8EB;border-radius:10px;text-decoration:none;background:#FFFFFF;"><span style="color:#191F28;font-weight:700;font-size:clamp(12px,3.2vw,13px);white-space:nowrap;">Q&amp;A</span><span style="color:#5F7C0E;font-size:clamp(11px,3vw,12px);text-decoration:underline;white-space:nowrap;">자주 묻는 질문</span></a>
   </div>
 </div>
 
 <!-- ④ 각 H2 섹션 (5~6개) — div + 헤더 div + 본문 div 평탄 구조 -->
 <!-- ✅ details/summary/section 사용 금지. 사용자가 본문 영역에 이미지를 자유롭게 추가할 수 있어야 함. -->
 <div class="ntc-section" id="section-1" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
-  <div style="padding:20px 24px 6px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">1) {H2 제목 — 예: 준비물 - 유심부터 인증까지 한 번에}</div>
+  <div style="padding:clamp(16px,4.5vw,20px) clamp(18px,5vw,24px) 6px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:clamp(16px,4.4vw,18px);font-weight:800;color:#191F28;line-height:1.4;">1) {H2 제목 — 예: 준비물 - 유심부터 인증까지 한 번에}</div>
   <!-- 부제 띠 (헤더 그라데이션 연속) -->
-  <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">{한 줄 부제 — 예: 비대면 개통은 "준비물"에서 승부가 납니다}</div>
-  <div style="padding:24px 28px;">
+  <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 clamp(18px,5vw,24px) 14px;font-size:clamp(12px,3.2vw,13px);color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">{한 줄 부제 — 예: 비대면 개통은 "준비물"에서 승부가 납니다}</div>
+  <div style="padding:clamp(18px,5vw,24px) clamp(18px,5vw,28px);">
     <!-- 라임 세로선 부제목 (H3 대신) -->
-    <div style="border-left:3px solid #9DC91A;padding-left:12px;font-weight:800;font-size:15px;margin-bottom:12px;color:#191F28;">{H3 부제목}</div>
-    <p style="font-size:15px;line-height:1.8;margin:0 0 16px;color:#333D4B;">{본문 1~2문단}</p>
+    <div style="border-left:3px solid #9DC91A;padding-left:12px;font-weight:800;font-size:clamp(14px,3.7vw,15px);margin-bottom:12px;color:#191F28;">{H3 부제목}</div>
+    <p style="font-size:clamp(14px,3.7vw,15px);line-height:1.8;margin:0 0 16px;color:#333D4B;">{본문 1~2문단}</p>
 
     <!-- 체크리스트 박스 (옅은 라임 배경) -->
-    <div style="background:#F4F9E0;border-radius:12px;padding:16px 20px;margin:16px 0;">
-      <div style="font-size:14px;line-height:2;color:#191F28;">
+    <div style="background:#F4F9E0;border-radius:12px;padding:clamp(13px,3.8vw,16px) clamp(15px,4.2vw,20px);margin:16px 0;">
+      <div style="font-size:clamp(13px,3.5vw,14px);line-height:2;color:#191F28;">
         ✅ {항목 1}<br/>
         ✅ {항목 2}<br/>
         ✅ {항목 3}
@@ -277,20 +286,20 @@ ${personaDesc}
     </div>
 
     <!-- 다음 H3 -->
-    <div style="border-left:3px solid #9DC91A;padding-left:12px;font-weight:800;font-size:15px;margin:24px 0 12px;color:#191F28;">{다음 H3}</div>
-    <p style="font-size:15px;line-height:1.8;margin:0;color:#333D4B;">{본문}</p>
+    <div style="border-left:3px solid #9DC91A;padding-left:12px;font-weight:800;font-size:clamp(14px,3.7vw,15px);margin:24px 0 12px;color:#191F28;">{다음 H3}</div>
+    <p style="font-size:clamp(14px,3.7vw,15px);line-height:1.8;margin:0;color:#333D4B;">{본문}</p>
   </div>
 </div>
 
 <!-- 다음 H2 섹션 — 동일한 section + 헤더 div + 본문 div 패턴 -->
 <div class="ntc-section" id="section-3" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
-  <div style="padding:20px 24px 6px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">3) 개통 절차 - 승인 후 충전하기가 진짜 끝!</div>
-  <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">{한 줄 부제 — 5분 흐름}</div>
-  <div style="padding:24px 28px;">
-    <div style="border-left:3px solid #9DC91A;padding-left:12px;font-weight:800;font-size:15px;margin-bottom:12px;color:#191F28;">비대면 개통 6단계(웹페이지 기준)</div>
-    <p style="font-size:15px;line-height:1.8;margin:0 0 16px;color:#333D4B;">아래 순서대로만 하면 어렵지 않아요.</p>
+  <div style="padding:clamp(16px,4.5vw,20px) clamp(18px,5vw,24px) 6px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:clamp(16px,4.4vw,18px);font-weight:800;color:#191F28;line-height:1.4;">3) 개통 절차 - 승인 후 충전하기가 진짜 끝!</div>
+  <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 clamp(18px,5vw,24px) 14px;font-size:clamp(12px,3.2vw,13px);color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">{한 줄 부제 — 5분 흐름}</div>
+  <div style="padding:clamp(18px,5vw,24px) clamp(18px,5vw,28px);">
+    <div style="border-left:3px solid #9DC91A;padding-left:12px;font-weight:800;font-size:clamp(14px,3.7vw,15px);margin-bottom:12px;color:#191F28;">비대면 개통 6단계(웹페이지 기준)</div>
+    <p style="font-size:clamp(14px,3.7vw,15px);line-height:1.8;margin:0 0 16px;color:#333D4B;">아래 순서대로만 하면 어렵지 않아요.</p>
     <!-- 단계 박스 (회색 라운드) -->
-    <div style="background:#F2F4F6;border-radius:12px;padding:18px 22px;margin:16px 0;font-size:14px;line-height:2;color:#333D4B;">
+    <div style="background:#F2F4F6;border-radius:12px;padding:clamp(14px,4vw,18px) clamp(16px,4.5vw,22px);margin:16px 0;font-size:clamp(13px,3.5vw,14px);line-height:2;color:#333D4B;">
       <div><strong>1. 접수페이지 접속</strong><br/>→ <a href="${SITE_URL}/step2?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="color:#5F7C0E;font-weight:700;">개통 신청 페이지 접속</a></div>
       <div style="margin-top:14px;"><strong>2. 본인인증 진행</strong><br/>→ 간편인증서로 본인 확인</div>
       <div style="margin-top:14px;"><strong>3. 유심번호 입력</strong><br/>→ KT 바로유심 / LG 모두의유심원칩 번호 정확히 입력</div>
@@ -303,25 +312,25 @@ ${personaDesc}
 
 <!-- ⑤ Q&A 섹션 — Q/A 모두 평탄 div (이전엔 details 내 details, 이젠 div + 라벨) -->
 <div class="ntc-section" id="section-6" style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;margin-bottom:16px;overflow:hidden;">
-  <div style="padding:20px 24px 6px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:18px;font-weight:800;color:#191F28;line-height:1.4;">6) Q&amp;A - {키워드} 자주 묻는 질문</div>
-  <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 24px 14px;font-size:13px;color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">개통 과정에서 생기는 질문 5가지</div>
-  <div style="padding:24px 28px;">
+  <div style="padding:clamp(16px,4.5vw,20px) clamp(18px,5vw,24px) 6px;background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);font-size:clamp(16px,4.4vw,18px);font-weight:800;color:#191F28;line-height:1.4;">6) Q&amp;A - {키워드} 자주 묻는 질문</div>
+  <div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);padding:0 clamp(18px,5vw,24px) 14px;font-size:clamp(12px,3.2vw,13px);color:#5F7C0E;font-weight:600;border-bottom:1px solid #D4E89C;">개통 과정에서 생기는 질문 5가지</div>
+  <div style="padding:clamp(18px,5vw,24px) clamp(18px,5vw,28px);">
     <div style="margin-bottom:16px;border-bottom:1px solid #E5E8EB;padding-bottom:16px;">
-      <div style="font-weight:700;font-size:15px;color:#191F28;">Q1. {질문}</div>
-      <p style="margin:12px 0 0;font-size:14px;line-height:1.8;color:#4E5968;">{답변 2~3문장}</p>
+      <div style="font-weight:700;font-size:clamp(14px,3.7vw,15px);color:#191F28;">Q1. {질문}</div>
+      <p style="margin:12px 0 0;font-size:clamp(13px,3.5vw,14px);line-height:1.8;color:#4E5968;">{답변 2~3문장}</p>
     </div>
     <div style="margin-bottom:16px;border-bottom:1px solid #E5E8EB;padding-bottom:16px;">
-      <div style="font-weight:700;font-size:15px;color:#191F28;">Q2. {질문}</div>
-      <p style="margin:12px 0 0;font-size:14px;line-height:1.8;color:#4E5968;">{답변}</p>
+      <div style="font-weight:700;font-size:clamp(14px,3.7vw,15px);color:#191F28;">Q2. {질문}</div>
+      <p style="margin:12px 0 0;font-size:clamp(13px,3.5vw,14px);line-height:1.8;color:#4E5968;">{답변}</p>
     </div>
     <!-- ... Q3, Q4, Q5 동일 패턴 -->
   </div>
 </div>
 
 <!-- ⑥ 최종 CTA (흰 카드 + 라임 강조) -->
-<div style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;padding:24px 28px;margin-top:24px;">
-  <p style="font-size:15px;line-height:1.8;margin:0 0 16px;color:#191F28;font-weight:700;">{핵심 메시지 한 번 더 — 예: 선불폰은 흐름만 알면 빠르게 끝나요. 특히 승인 후 충전요청까지 가야 진짜 완료라는 점, 꼭 기억해 주세요.}</p>
-  <p style="font-size:14px;line-height:1.8;margin:0 0 12px;color:#4E5968;">지금 바로 진행하려면 아래 링크를 열어두고 시작하세요.</p>
+<div style="background:#FFFFFF;border:1px solid #E5E8EB;border-radius:16px;padding:clamp(18px,5vw,24px) clamp(18px,5vw,28px);margin-top:24px;">
+  <p style="font-size:clamp(14px,3.7vw,15px);line-height:1.8;margin:0 0 16px;color:#191F28;font-weight:700;">{핵심 메시지 한 번 더 — 예: 선불폰은 흐름만 알면 빠르게 끝나요. 특히 승인 후 충전요청까지 가야 진짜 완료라는 점, 꼭 기억해 주세요.}</p>
+  <p style="font-size:clamp(13px,3.5vw,14px);line-height:1.8;margin:0 0 12px;color:#4E5968;">지금 바로 진행하려면 아래 링크를 열어두고 시작하세요.</p>
   <p style="margin:0;line-height:2;">
     ✅ <a href="${SITE_URL}/step2?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="color:#5F7C0E;font-weight:700;">개통 신청 페이지 접속</a><br/>
     ✅ 궁금한 건 바로 카톡으로 → <a href="${SITE_URL}/kakao?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="color:#5F7C0E;font-weight:700;">앤텔레콤 안심개통</a>
@@ -591,14 +600,14 @@ function buildHeroBox(
 ): string {
   const utm = `utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}`;
   const btn =
-    "display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);";
+    "flex:1 1 calc(50% - 6px);min-width:150px;box-sizing:border-box;display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);";
   const hl =
     "color:#5F7C0E;font-weight:800;background:#FFFFFF;padding:2px 8px;border-radius:6px;";
-  return `<div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);border-radius:24px;padding:48px 40px;margin-bottom:24px;border:1px solid #D4E89C;">
-  <h2 style="font-size:30px;font-weight:900;margin:0 0 24px;color:#191F28;line-height:1.3;letter-spacing:-0.02em;">${title}</h2>
-  <p style="font-size:17px;line-height:1.9;margin:0 0 16px;color:#191F28;font-weight:600;">${keyword} 때문에 막막하셨나요? 앤텔레콤 안심개통 케어통신이 복잡한 절차 없이 해결해 드립니다.</p>
-  <p style="font-size:16px;line-height:1.9;margin:0 0 32px;color:#4E5968;font-weight:500;">이 글은 <strong style="${hl}">${keyword}</strong>를 빠르게 끝내는 흐름과 꼭 체크해야 할 <strong style="${hl}">완료 포인트</strong>를 한 번에 정리했어요.</p>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+  return `<div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);border-radius:24px;padding:clamp(24px,6vw,48px) clamp(20px,5vw,40px);margin-bottom:24px;border:1px solid #D4E89C;">
+  <h2 style="font-size:clamp(22px,5.5vw,30px);font-weight:900;margin:0 0 24px;color:#191F28;line-height:1.3;letter-spacing:-0.02em;">${title}</h2>
+  <p style="font-size:clamp(15px,4vw,17px);line-height:1.9;margin:0 0 16px;color:#191F28;font-weight:600;">${keyword} 때문에 막막하셨나요? 앤텔레콤 안심개통 케어통신이 복잡한 절차 없이 해결해 드립니다.</p>
+  <p style="font-size:clamp(14.5px,3.9vw,16px);line-height:1.9;margin:0 0 32px;color:#4E5968;font-weight:500;">이 글은 <strong style="${hl}">${keyword}</strong>를 빠르게 끝내는 흐름과 꼭 체크해야 할 <strong style="${hl}">완료 포인트</strong>를 한 번에 정리했어요.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:12px;">
     <a href="${SITE_URL}/step2?${utm}" style="${btn}">📱 개통 신청하기</a>
     <a href="${SITE_URL}/kakao?${utm}" style="${btn}">💬 카카오톡 문의</a>
     <a href="${SITE_URL}/plans?${utm}" style="${btn}">🔍 추가 정보 보기</a>
