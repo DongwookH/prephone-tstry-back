@@ -186,7 +186,7 @@ const BACKGROUND_CONCEPTS = [
   "a desk scene with a smartphone, a cup of coffee, and a SIM card, top-down flat lay, natural light",
   "a modern smartphone standing upright on a clean minimal desk, soft window light, blurred background",
   "a tablet lying on a wooden table with a blurred Korean cafe background, natural light",
-  "a smartphone screen glowing softly on a desk in a dim cozy room, no visible people, warm atmosphere",
+  "a smartphone on a bright wooden desk next to a notebook and a pen, minimal, clean daylight, no people",
   "an assortment of SIM cards and eject tools neatly arranged on a marble surface, top-down flat lay, soft studio lighting",
   "a telecom store interior close-up, shelves with product displays blurred, empty of people, soft daylight",
 ];

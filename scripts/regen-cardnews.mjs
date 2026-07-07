@@ -79,17 +79,23 @@ async function main() {
     for (const c of sections) {
       const bg = join(tmpdir(), `cardnews-bg-${p.id}-${c.pageNum}.jpg`);
       const model = pickModel(rot++);
-      const prompt = buildPrompt({ topic: c.title, keyword: p.keyword });
-      let bgRes;
-      try {
-        bgRes = await generateBackgroundImage({ prompt, outPath: bg, model });
-      } catch {
-        try { bgRes = await generateBackgroundImage({ prompt, outPath: bg, model }); }
-        catch (e2) {
-          results.push({ id: p.id, page: c.pageNum, ok: false, reason: `배경실패: ${e2.message}` });
-          console.log(JSON.stringify(results.at(-1)));
-          continue;
+      // 최대 4회 재시도 — CONTENT_FILTERED에 걸리는 특정 컨셉이 있으므로,
+      // 재시도마다 topic을 살짝 바꿔 "다른 배경 컨셉"으로 회피한다.
+      let bgRes = null;
+      let lastErr = "";
+      for (let attempt = 0; attempt < 4 && !bgRes; attempt++) {
+        const topic = attempt === 0 ? c.title : `${c.title} ${attempt}`;
+        const prompt = buildPrompt({ topic, keyword: p.keyword });
+        try {
+          bgRes = await generateBackgroundImage({ prompt, outPath: bg, model });
+        } catch (e) {
+          lastErr = e.message || String(e);
         }
+      }
+      if (!bgRes) {
+        results.push({ id: p.id, page: c.pageNum, ok: false, reason: `배경실패(4회): ${lastErr}` });
+        console.log(JSON.stringify(results.at(-1)));
+        continue;
       }
 
       const outPath = join(OUT_DIR, `${p.id}-${c.pageNum}.png`);
