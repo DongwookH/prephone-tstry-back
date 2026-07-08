@@ -232,6 +232,24 @@ async function scrapeKeyword(context, keyword) {
     /* ignore */
   }
 
+  // ⚠️ 로그인 벽 감지 — Threads 검색결과는 SSR HTML로 오므로, 세션이 만료/degraded면
+  //    로그아웃 화면("Log in or sign up ...")이 렌더돼 게시글이 거의 안 잡힌다.
+  //    (2026-07-08 관측: 오전 6시 자동실행 때 일부 키워드가 이 상태 → 수확 급감)
+  //    감지되면 크게 경고 — 운영자가 threads-login.mjs로 세션을 갱신해야 함.
+  const bodyText = await page
+    .evaluate(() => document.body?.innerText?.slice(0, 3000) || "")
+    .catch(() => "");
+  const loggedOut =
+    /Log in or sign up|Continue with Instagram|Log in with username|로그인 또는 가입/.test(
+      bodyText,
+    );
+  if (loggedOut) {
+    log(
+      `  ⚠️⚠️ 로그인 벽 감지 (세션 만료 의심) — '${keyword}' 게시글이 거의 안 잡힐 수 있음. ` +
+        `scripts/threads-login.mjs로 세션 갱신 필요.`,
+    );
+  }
+
   // 인기글 더 로드되도록 사람처럼 스크롤 — 양·간격 랜덤
   const scrollRounds = 4 + Math.floor(Math.random() * 3); // 4~6번
   for (let i = 0; i < scrollRounds; i++) {
@@ -240,6 +258,22 @@ async function scrapeKeyword(context, keyword) {
     await page.waitForTimeout(1200 + Math.floor(Math.random() * 1800)); // 1.2~3s
   }
   await page.waitForTimeout(1500);
+
+  // SSR 게시글이 늦게/적게 뜨면 추가 스크롤로 더 로드 (오전 저수확·타이밍 편차 대응).
+  // 로그인 벽이면 재시도해도 소용없으니 건너뜀.
+  if (!loggedOut) {
+    for (let tries = 0; tries < 2; tries++) {
+      const linkCount = await page
+        .evaluate(() => document.querySelectorAll('a[href*="/post/"]').length)
+        .catch(() => 0);
+      if (linkCount >= 5) break;
+      log(`  게시글 링크 ${linkCount}개 — 추가 스크롤 재시도(${tries + 1}/2)`);
+      for (let i = 0; i < 3; i++) {
+        await page.mouse.wheel(0, 3000);
+        await page.waitForTimeout(1800);
+      }
+    }
+  }
 
   // 1차: 캡처된 JSON에서 게시글 추출
   const posts = [];
@@ -251,7 +285,8 @@ async function scrapeKeyword(context, keyword) {
   // 2차: JSON에서 못 찾으면 DOM 셀렉터로 fallback 추출
   //  → Threads 검색 결과는 SSR(HTML 임베드)로 와서 GraphQL API 응답이 없음
   if (posts.length === 0) {
-    log(`  JSON 캡처 0건 → DOM 셀렉터로 fallback 추출`);
+    // Threads 검색결과는 SSR HTML로만 옴(게시글 담은 JSON API 응답 없음) → DOM 파싱이 정식 경로.
+    log(`  게시글 추출: SSR HTML → DOM 파싱`);
     const domPosts = await page
       .evaluate(() => {
         const results = [];
@@ -366,7 +401,7 @@ async function scrapeKeyword(context, keyword) {
     .slice(0, TOP_PER_KEYWORD);
 
   log(
-    `  캡처 JSON ${captured.length}건 · 후보 ${byCode.size}개 · 필터 후 ${filtered.length}개`,
+    `  후보 ${byCode.size}개 · 필터 후 ${filtered.length}개${loggedOut ? " · ⚠️로그인벽(세션갱신 필요)" : ""}`,
   );
 
   // 디버그: 후보 0이면 응답 URL 호스트별 카운트 + 본문 일부 dump + 응답 JSON 저장
