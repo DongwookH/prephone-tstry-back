@@ -79,8 +79,11 @@ async function callNimModel({ model, prompt, width, height, steps, seed }) {
 
   const url = `${API_URL_BASE}/${model}`;
   // 응답 없이 매달리는 모델(예: 한때 무응답이던 schnell) 대비 타임아웃 — 빨리 실패 후 폴백.
+  // 정상 응답은 ~3초. 30초를 넘기면 엔드포인트가 지연/과부하 상태이므로 빨리 포기해
+  // 순차 생성이 잡 타임아웃(GHA)까지 밀리는 사태를 막는다. (2026-07-08 klein 지연 사고 대응)
+  const TIMEOUT_MS = Number(process.env.NVIDIA_TIMEOUT_MS) || 30000;
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 45000);
+  const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   let res;
   try {
     res = await fetch(url, {
@@ -95,7 +98,7 @@ async function callNimModel({ model, prompt, width, height, steps, seed }) {
     });
   } catch (err) {
     throw new Error(
-      `[${model}] ${err.name === "AbortError" ? "타임아웃(45s)" : "네트워크 에러"}: ${err.message}`,
+      `[${model}] ${err.name === "AbortError" ? `타임아웃(${Math.round(TIMEOUT_MS / 1000)}s)` : "네트워크 에러"}: ${err.message}`,
     );
   } finally {
     clearTimeout(timer);

@@ -1,0 +1,96 @@
+name: Backfill Images (썸네일·카드뉴스 보충)
+
+# 자가복구용 백필 잡.
+#
+# 왜 필요한가:
+#   메인 파이프라인(generate-posts.yml)의 이미지 생성은 NVIDIA NIM 엔드포인트에 의존한다.
+#   2026-07-08 관측: NVIDIA klein 엔드포인트가 일시적으로 지연(45s 타임아웃 연발)되어
+#   그 시간대에 돌던 이미지 생성 잡이 통째로 실패 → 그날 글에 썸네일·카드뉴스가 하나도 안 붙음.
+#   NVIDIA는 보통 1~2시간 내 회복되므로, 몇 시간 뒤 한 번 더 돌면서
+#   "아직 없는 이미지만" 채우면 이런 일시 장애가 자동으로 복구된다.
+#
+# 동작:
+#   regen-thumbnails.mjs / regen-cardnews.mjs 를 --skip-existing 으로 실행 →
+#   이미 있는 이미지는 건너뛰고(거의 즉시 종료), 빠진 것만 생성 후 커밋.
+#   정상인 날엔 전부 skip이라 커밋할 변경이 없어 그냥 통과한다.
+on:
+  schedule:
+    # 메인 실행(UTC 22:15 cron → 실제 ~KST 09~10시 발행)보다 몇 시간 뒤.
+    # UTC 04:00(KST 13:00) + GHA 지연 → 실제 ~KST 14~15시에 보충.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "수동 실행 사유 (선택)"
+        required: false
+        default: "manual backfill"
+
+concurrency:
+  group: backfill-images
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    name: Backfill (빠진 이미지만 --skip-existing)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Python + Pillow
+        run: pip install --quiet Pillow
+
+      - name: 노토산스 KR 폰트 다운로드
+        run: |
+          curl -sL "https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf" -o /tmp/NotoSansKR.ttf
+          ls -la /tmp/NotoSansKR.ttf
+
+      - name: 빠진 썸네일 보충 (--skip-existing)
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          GOOGLE_SHEETS_CLIENT_EMAIL: ${{ secrets.GOOGLE_SHEETS_CLIENT_EMAIL }}
+          GOOGLE_SHEETS_PRIVATE_KEY: ${{ secrets.GOOGLE_SHEETS_PRIVATE_KEY }}
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          NOTO_FONT: /tmp/NotoSansKR.ttf
+        run: |
+          set -uo pipefail
+          npx --yes tsx scripts/regen-thumbnails.mjs --skip-existing 2>&1 | tee /tmp/thumbs.log
+          echo "--- 요약 ---"; tail -n1 /tmp/thumbs.log
+
+      - name: 빠진 카드뉴스 보충 (--skip-existing)
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          GOOGLE_SHEETS_CLIENT_EMAIL: ${{ secrets.GOOGLE_SHEETS_CLIENT_EMAIL }}
+          GOOGLE_SHEETS_PRIVATE_KEY: ${{ secrets.GOOGLE_SHEETS_PRIVATE_KEY }}
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          NOTO_FONT: /tmp/NotoSansKR.ttf
+        run: |
+          set -uo pipefail
+          npx --yes tsx scripts/regen-cardnews.mjs --max-cards 3 --skip-existing 2>&1 | tee /tmp/cardnews.log
+          echo "--- 요약 ---"; tail -n1 /tmp/cardnews.log
+
+      - name: 보충분 커밋·push (변경 있을 때만)
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -z "$(git status --porcelain public/thumbnails public/card-news)" ]; then
+            echo "보충할 이미지 없음 (전부 정상)"; exit 0
+          fi
+          git add public/thumbnails public/card-news
+          git commit -m "chore(images): 빠진 썸네일·카드뉴스 백필 [skip ci]"
+          git push

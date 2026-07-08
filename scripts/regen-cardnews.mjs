@@ -55,6 +55,7 @@ function parseArgs(argv) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const maxCards = args["max-cards"] ? parseInt(args["max-cards"], 10) : 3;
+  const skipExisting = !!args["skip-existing"]; // 이미 있는 카드는 건너뜀(백필/재실행용)
 
   const { getTodayPosts } = await import("../lib/sheets.ts");
   const { extractCardData } = await import("../lib/extract-card-data.ts");
@@ -77,10 +78,20 @@ async function main() {
     const sections = cards.filter((c) => c.type === "section" && c.bullets && c.bullets.length >= 2).slice(0, maxCards);
 
     for (const c of sections) {
+      const outPath = join(OUT_DIR, `${p.id}-${c.pageNum}.png`);
+      // 백필/재실행 모드: 이미 만들어진 카드는 건너뜀 (NVIDIA 지연 사고 후 빠진 것만 채우기).
+      if (skipExisting && existsSync(outPath)) {
+        results.push({ id: p.id, page: c.pageNum, ok: true, skipped: true });
+        console.log(JSON.stringify(results.at(-1)));
+        rot++; // 로테이션 인덱스는 그대로 진행(모델 분포 유지)
+        continue;
+      }
       const bg = join(tmpdir(), `cardnews-bg-${p.id}-${c.pageNum}.jpg`);
       const model = pickModel(rot++);
       // 최대 4회 재시도 — CONTENT_FILTERED에 걸리는 특정 컨셉이 있으므로,
       // 재시도마다 topic을 살짝 바꿔 "다른 배경 컨셉"으로 회피한다.
+      // 단, 타임아웃·네트워크·5xx·429(엔드포인트 지연/과부하)는 재시도해도 같은 벽이므로
+      // 즉시 포기하고 다음 카드로 넘어간다 → 순차 생성이 잡 타임아웃까지 밀리는 것 방지.
       let bgRes = null;
       let lastErr = "";
       for (let attempt = 0; attempt < 4 && !bgRes; attempt++) {
@@ -90,15 +101,15 @@ async function main() {
           bgRes = await generateBackgroundImage({ prompt, outPath: bg, model });
         } catch (e) {
           lastErr = e.message || String(e);
+          if (/타임아웃|네트워크 에러|HTTP 5\d\d|HTTP 000|HTTP 429/.test(lastErr)) break;
         }
       }
       if (!bgRes) {
-        results.push({ id: p.id, page: c.pageNum, ok: false, reason: `배경실패(4회): ${lastErr}` });
+        results.push({ id: p.id, page: c.pageNum, ok: false, reason: `배경실패: ${lastErr}` });
         console.log(JSON.stringify(results.at(-1)));
         continue;
       }
 
-      const outPath = join(OUT_DIR, `${p.id}-${c.pageNum}.png`);
       const input = JSON.stringify({
         bg_path: bgRes.outPath,
         page: `${c.pageNum}/${c.totalPages}`,

@@ -55,6 +55,7 @@ function parseArgs(argv) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const skipExisting = !!args["skip-existing"]; // 이미 있는 썸네일은 건너뜀(백필/재실행용)
   const { getTodayPosts } = await import("../lib/sheets.ts");
   const { buildPrompt, generateBackgroundImage } = await import("./nvidia-image.mjs");
 
@@ -67,6 +68,14 @@ async function main() {
 
   const results = [];
   for (const p of posts) {
+    const outPath = join(OUT_DIR, `${p.id}.png`);
+    // 백필/재실행 모드: 이미 만들어진 썸네일은 건너뜀 (NVIDIA 지연 사고 후 빠진 것만 채우기).
+    if (skipExisting && existsSync(outPath)) {
+      results.push({ id: p.id, ok: true, skipped: true });
+      console.log(JSON.stringify(results.at(-1)));
+      continue;
+    }
+
     let meta = null;
     try { meta = JSON.parse(p.image_urls || ""); } catch {}
     if (!meta || !meta.lines) {
@@ -81,16 +90,21 @@ async function main() {
     try {
       bgRes = await generateBackgroundImage({ prompt, outPath: bg });
     } catch (e1) {
-      // 1회 재시도
-      try { bgRes = await generateBackgroundImage({ prompt, outPath: bg }); }
-      catch (e2) {
+      // 타임아웃·네트워크·5xx·429(엔드포인트 지연)면 재시도해도 같은 벽 → 즉시 포기.
+      // 그 외(콘텐츠 필터 등)만 1회 재시도.
+      const down = /타임아웃|네트워크 에러|HTTP 5\d\d|HTTP 000|HTTP 429/.test(e1.message || "");
+      let e2 = e1;
+      if (!down) {
+        try { bgRes = await generateBackgroundImage({ prompt, outPath: bg }); }
+        catch (err) { e2 = err; }
+      }
+      if (!bgRes) {
         results.push({ id: p.id, ok: false, reason: `배경실패: ${e2.message}` });
         console.log(JSON.stringify(results.at(-1)));
         continue;
       }
     }
 
-    const outPath = join(OUT_DIR, `${p.id}.png`);
     const input = JSON.stringify({
       bg_path: bgRes.outPath,
       title_lines: meta.lines,
