@@ -225,6 +225,30 @@ export function stripEmoji(s: string): string {
     .trim();
 }
 
+/**
+ * 매장 홍보·자기소개성 글 판별 — 예시로 쓰면 '광고 각도'를 학습시켜 톤이 나빠짐.
+ * 스크랩 인기글 중 이런 글은 예시 풀에서 제외한다.
+ */
+function looksLikeAd(text = ""): boolean {
+  const t = text.replace(/\s+/g, " ");
+  return /자기소개|매장\s*(운영|오픈|입니다|이에요)|오픈했|판매[·/]?\s*매입|중고폰\s*(전문|매입|판매)|010[-\s]?\d{2,4}[-\s]?\d{3,4}|카톡|오픈\s*채팅|공동구매|\d{3,4}명\s*프로젝트|맞팔|팔로우\s*(해|환영|맞)/.test(
+    t,
+  );
+}
+
+/**
+ * 댓글 잘 붙는 글의 '각도' 예시 (뼈대만 — 문장 복붙 금지용 참고).
+ * 스크랩 인기글이 광고 위주거나 세션 문제로 빈약할 때도 모델이 좋은 각도를 잡도록 항상 주입.
+ * ⚠️ 이모지 없음 · AI 티 없음 · 우리 니치(선불폰/유심/미납/비대면) — 각도별로 서로 다르게.
+ */
+const GOOD_ANGLE_EXEMPLARS: string[] = [
+  "[공감 페인포인트] 요금 밀려서 정지된 폰, 그냥 버려야 하나 고민했는데 알고 보니 살릴 방법이 있더라고요.",
+  "[내 케이스 vs 너 케이스] KT 요금 미납이랑 KT 단말기 할부 미납은 완전 다른 얘기예요. 한쪽은 그냥 개통되고, 한쪽은 폰을 못 씁니다.",
+  "[찬반 유발] 선불폰 쓰면 손해라던데, 저는 후불 쓸 때보다 통신비가 줄었어요. 상황 따라 다른 것 같더라고요.",
+  "[경험담 디테일] 비대면으로 유심 신청하고 개통까지 딱 5분 걸렸어요. 매장 갈 필요가 없더라고요.",
+  "[구체 상황 지목 질문] SKT 정지된 채로 유심만 바꾸면 되는 줄 아는 분들 많던데, 그게 안 될 때가 있어요.",
+];
+
 export async function generateThreadsDraftsFromPosts(opts: {
   keyword: string;
   posts: ScrapedPost[];
@@ -254,7 +278,10 @@ export async function generateThreadsDraftsFromPosts(opts: {
     );
 
   // 인기글 요약 — 본문/지표만 (링크/작성자는 분석엔 불필요, 프롬프트 절약)
-  const ranked = [...posts]
+  // 매장 홍보·자기소개 글은 예시로 부적합(광고 각도 학습) → 제외. 다 걸러지면 원본 사용.
+  const nonAd = posts.filter((p) => !looksLikeAd(p.text || ""));
+  const pool = nonAd.length > 0 ? nonAd : posts;
+  const ranked = [...pool]
     .sort((a, b) => engagementScore(b) - engagementScore(a))
     .slice(0, 8);
   const sampleList =
@@ -327,7 +354,10 @@ ${styleBrief}
 - "잘 모르겠어요, 아시는 분?" — 정보 부탁
 - "직접 경험담의 디테일" — 다른 사람도 자기 경험 공유하고 싶어짐
 
-# 📚 최근 우리 니치(선불폰·알뜰폰·유심)에서 잘 터진 실제 인기글 (각도·후킹 방식만 차용, 문장 복사·번역·재배열 절대 금지)
+# ✍️ 댓글 잘 붙는 글의 '각도' 예시 (뼈대만 참고 — 문장 복붙 금지, 이 각도로 "${keyword}" 주제를 새로 써라)
+${GOOD_ANGLE_EXEMPLARS.map((e) => `- ${e}`).join("\n")}
+
+# 📚 최근 우리 니치(선불폰·알뜰폰·유심)에서 잘 터진 실제 인기글 (각도·후킹 방식만 차용, 문장 복사·번역·재배열 절대 금지. 매장 홍보·자기소개 글은 이미 걸러냄)
 ${sampleList}
 
 # 🏢 우리 회사 정보 (이 사실만 사용, 가격/정책 창작 금지)
