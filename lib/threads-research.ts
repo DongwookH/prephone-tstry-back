@@ -207,6 +207,24 @@ function pickCopyStyleSet(keyword: string, count: number): CopyStyle[] {
  * @param posts 인기글 (이미 필터·랭킹된 상위)
  * @param count 생성할 초안 수 (기본 2)
  */
+/**
+ * 이모지·이모티콘 제거 — 쓰레드 글은 이모지 없이 텍스트만.
+ * 프롬프트로도 금지하지만 모델이 가끔 넣으므로 코드에서 확실히 제거(안전장치).
+ * Extended_Pictographic(얼굴·사물·하트 등) + 국기(지역표시자) + 변형선택자·키캡·ZWJ 제거 후
+ * 이모지 자리에 남은 이중 공백을 정리한다.
+ */
+export function stripEmoji(s: string): string {
+  return s
+    .replace(
+      /[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{20E3}\u{200D}]/gu,
+      "",
+    )
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ +\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export async function generateThreadsDraftsFromPosts(opts: {
   keyword: string;
   posts: ScrapedPost[];
@@ -276,7 +294,7 @@ ${styleBrief}
   (메인 글에서 이미 답을 줬다면 셀프 댓글은 그 답의 조건·절차·근거를 덧붙인다.)
 - ❌ "어때요?" 같은 막연한 질문 X (질문 유도형도 반드시 '구체적 상황'을 지목).
 - 디자인된 마케팅 카피처럼 X → 친구가 정보 흘리듯 ✓ (반말/존댓말 다양하게).
-- 이모지 0~3개 (과하면 광고처럼 보임).
+- **이모지·이모티콘 절대 금지 — 한 글자도 넣지 마라(0개).** 그림문자 없이 텍스트만으로 담백하게. (이모지는 광고·AI 티가 확 남)
 - 과장/허위 ("무조건" "100%") 금지 — 신뢰 손상 + 디부스트.
 
 ## 🚫 AI 티 나는 표현 금지 (사람이 쓴 SNS 글처럼 — 아래 패턴 감지 시 다시 써라)
@@ -286,7 +304,7 @@ ${styleBrief}
 3. **기계적 3연속 나열** — "빠르고, 간편하고, 저렴하게" 식으로 항상 3개씩 리듬 맞추는 것. 2개나 4개로 흩뜨리거나 문장으로 풀어라.
 4. **"단순히 X가 아니라 Y" / "~뿐만 아니라 ~까지" 병렬 남용** — "단순한 유심이 아니라 자유입니다" 류의 대구(對句) 금지. 그냥 X는 X라고.
 5. **모든 문장 길이·구조가 똑같음** — 사람은 짧은 문장과 긴 문장을 섞는다. 리듬을 일부러 흐트러뜨려라.
-6. **과도한 이모지·느낌표** — 문장마다 이모지, 느낌표 연발(!!!) 금지. 이모지는 글 전체 0~3개, 느낌표는 있어도 1개.
+6. **이모지·느낌표** — 이모지·이모티콘은 아예 쓰지 마라(글 전체 0개). 느낌표도 연발(!!!) 금지, 있어도 1개.
 7. **영업·광고 톤 상투어** — "지금 바로", "놓치지 마세요", "주목하세요", "여러분!", "확인해보세요". 친구 말투로.
 8. **속 빈 마무리** — "당신의 선택에 달렸습니다", "새로운 시작을 응원합니다", "더 나은 내일" 같은 공허한 긍정 엔딩 금지.
 9. **번역체·문어체** — "~하실 수 있습니다", "~인 것으로 보여집니다", "~라고 할 수 있겠습니다" 남발. 구어체로 짧게.
@@ -440,14 +458,14 @@ ${faqCtx}
       const replies = Array.isArray(d.self_replies)
         ? d.self_replies
             .filter((r) => typeof r === "string")
-            .map((r) => r.trim().slice(0, 500))
+            .map((r) => stripEmoji(r).slice(0, 500))
             .filter(Boolean)
             .slice(0, 3)
         : [];
       return {
-        draft_text: d.draft_text.trim().slice(0, 500),
+        draft_text: stripEmoji(d.draft_text).slice(0, 500),
         insight: (d.insight || "").trim().slice(0, 200),
-        topic_tag: topic || undefined,
+        topic_tag: stripEmoji(topic) || undefined,
         self_replies: replies.length > 0 ? replies : undefined,
       };
     })
