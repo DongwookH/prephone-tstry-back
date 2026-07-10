@@ -154,14 +154,19 @@ function extractHook(inner: string): string | undefined {
 
 /** 체크리스트(✅) 추출 — ✅ 다음 텍스트를 한 항목씩. maxItems/maxLen 조절 가능. */
 function extractChecklist(inner: string, maxItems = 4, maxLen = 50): string[] {
-  // ✅ 다음 텍스트를 <br>나 줄바꿈, 또는 다음 ✅까지 추출
+  // ✅ 다음 텍스트를 <br>·블록 닫힘 태그, 또는 다음 ✅까지 추출
   const items: string[] = [];
   const seen = new Set<string>();
   // ✅로 split해서 각 조각 정리
   const parts = inner.split(/✅\s*/);
   for (let i = 1; i < parts.length; i++) {
-    // 첫 <br> 또는 ✅ 이전까지가 한 항목
-    const raw = parts[i].split(/<br\s*\/?>/i)[0].split(/✅/)[0];
+    // 첫 <br>/블록 닫힘 또는 ✅ 이전까지가 한 항목.
+    // 블록 닫힘(</div> 등)도 종결자로 인정해야 박스의 "마지막 항목"이
+    // 뒤따르는 본문을 삼켜 길이 초과로 탈락하지 않는다 (2026-07-10 버그).
+    // </strong> 같은 인라인 닫힘은 항목 내부 강조이므로 종결자가 아님.
+    const raw = parts[i]
+      .split(/<br\s*\/?>|<\/(?:div|p|li|td|th|tr|ul|ol|h[1-6])>/i)[0]
+      .split(/✅/)[0];
     const txt = stripTags(raw);
     // 앞 16자(요금제명+가격 등 식별부) 기준 중복 제거 — K망/L망 표 중복 방지
     const key = txt.replace(/\s+/g, "").slice(0, 16);
