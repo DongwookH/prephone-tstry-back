@@ -379,3 +379,22 @@ export async function searchThreadsKeyword(opts: {
   const data = (await res.json()) as { data?: ThreadsSearchPost[] };
   return data.data ?? [];
 }
+
+/** 발행 글 1건의 인사이트 (views·likes·replies·reposts·quotes). 실패 시 throw. */
+export async function getMediaInsights(
+  mediaId: string,
+  accessToken: string,
+): Promise<Record<string, number>> {
+  const url = `${THREADS_API}/${mediaId}/insights?metric=views,likes,replies,reposts,quotes&access_token=${encodeURIComponent(accessToken)}`;
+  const res = await fetch(url);
+  const j = (await res.json()) as {
+    data?: { name: string; values?: { value: number }[]; total_value?: { value: number } }[];
+    error?: { message: string };
+  };
+  if (!res.ok) throw new Error(`insights 실패(${mediaId}): ${j.error?.message ?? res.status}`);
+  const out: Record<string, number> = {};
+  for (const m of j.data ?? []) {
+    out[m.name] = m.total_value?.value ?? m.values?.[0]?.value ?? 0;
+  }
+  return out;
+}

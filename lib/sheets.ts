@@ -1757,3 +1757,71 @@ export async function getRecentResearchPosts(opts?: {
     .sort((a, b) => researchEngagementScore(b) - researchEngagementScore(a))
     .slice(0, limit);
 }
+
+// ─── 성과 수집 시트 ───────────────────────────
+const METRICS_SHEET = "metrics_daily";
+const METRICS_HEADERS = ["date", "source", "key", "pageviews", "sessions", "step2", "conversions", "extra"];
+const THREADS_METRICS_SHEET = "threads_metrics";
+const THREADS_METRICS_HEADERS = ["date", "media_id", "draft_id", "keyword", "style", "published_at", "views", "likes", "replies", "reposts", "quotes"];
+
+async function ensureSheetWithHeaders(title: string, headers: string[]): Promise<void> {
+  const sheets = getClient();
+  const id = mainSheetId();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: id, fields: "sheets.properties.title" });
+  const exists = meta.data.sheets?.some((s) => s.properties?.title === title);
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: id,
+      requestBody: { requests: [{ addSheet: { properties: { title } } }] },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: id,
+      range: `${title}!A1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [headers] },
+    });
+  }
+}
+
+export async function appendMetricsDaily(rows: (string | number)[][]): Promise<void> {
+  if (rows.length === 0) return;
+  await ensureSheetWithHeaders(METRICS_SHEET, METRICS_HEADERS);
+  const sheets = getClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: mainSheetId(),
+    range: `${METRICS_SHEET}!A:H`,
+    valueInputOption: "RAW",
+    requestBody: { values: rows },
+  });
+}
+
+export async function appendThreadsMetrics(rows: (string | number)[][]): Promise<void> {
+  if (rows.length === 0) return;
+  await ensureSheetWithHeaders(THREADS_METRICS_SHEET, THREADS_METRICS_HEADERS);
+  const sheets = getClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: mainSheetId(),
+    range: `${THREADS_METRICS_SHEET}!A:K`,
+    valueInputOption: "RAW",
+    requestBody: { values: rows },
+  });
+}
+
+/** posts 시트 ga_pageviews(O열) 갱신 — updatePostStatus의 행 탐색 패턴 재사용. */
+export async function updatePostGaPageviews(postId: string, pageviews: number): Promise<void> {
+  const sheets = getClient();
+  const id = mainSheetId();
+  const idCol = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: "posts!A:A" });
+  const rows = idCol.data.values ?? [];
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i]?.[0] === postId) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: id,
+        range: `posts!O${i + 1}`,
+        valueInputOption: "RAW",
+        requestBody: { values: [[pageviews]] },
+      });
+      return;
+    }
+  }
+}
