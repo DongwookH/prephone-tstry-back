@@ -31,9 +31,16 @@
  *  MAX_AGE_HOURS            기본 48
  *  TOP_PER_KEYWORD          기본 8
  *  HEADLESS                 기본 "true". "false"로 두면 브라우저 창 보이기 (디버그용)
+ *  TELEGRAM_BOT_TOKEN       텔레그램 알림용 봇 토큰 (없으면 알림 skip)
+ *  TELEGRAM_CHAT_ID         알림 받을 채팅 ID
+ *  MIN_TOTAL_ALERT          총 수확이 이 값 미만이면 텔레그램 경고. 기본 5
+ *
+ * 플래그:
+ *  --notify-test            텔레그램 알림 발송만 테스트하고 즉시 종료 (Threads 무접속, 세션 불필요)
  */
 
 import { readFileSync, existsSync } from "fs";
+import { fileURLToPath } from "node:url";
 import { chromium as rawChromium } from "playwright";
 
 // stealth 플러그인 — 설치돼 있으면 사용, 없으면 raw playwright 사용 (점진적 강화)
@@ -52,41 +59,31 @@ try {
 }
 
 // .env.local 자동 로드 (Mac launchd에서 환경변수 주입 편의)
-try {
-  if (existsSync(".env.local")) {
-    const env = readFileSync(".env.local", "utf8");
-    for (const line of env.split("\n")) {
-      const m = line.match(/^([A-Z_]+)=(.*)$/);
-      if (m && !process.env[m[1]]) {
-        process.env[m[1]] = m[2].replace(/^"|"$/g, "").replace(/\\n/g, "\n");
-      }
-    }
+function loadEnvFile(p) {
+  if (!existsSync(p)) return false;
+  for (const line of readFileSync(p, "utf8").split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const eq = t.indexOf("=");
+    if (eq < 1) continue;
+    const k = t.slice(0, eq).trim();
+    if (!k || process.env[k] !== undefined) continue;
+    let v = t.slice(eq + 1).trim();
+    if (
+      v.length >= 2 &&
+      ((v[0] === '"' && v.endsWith('"')) || (v[0] === "'" && v.endsWith("'")))
+    )
+      v = v.slice(1, -1);
+    process.env[k] = v.replace(/\\n/g, "\n"); // GOOGLE_SHEETS_PRIVATE_KEY 등 \n 이스케이프 호환
   }
-} catch {
-  /* ignore */
+  return true;
 }
-
-// .env.local 폴백 #2 — 스크립트 파일 기준 절대경로라 launchd의 cwd가 web/이 아니어도 찾는다.
-// (위 로더는 process.cwd() 기준 상대경로라 launchd 설정에 따라 못 찾을 수 있음 — 이중 안전장치)
 try {
-  const envP = new URL("../.env.local", import.meta.url).pathname;
-  if (existsSync(envP)) {
-    for (const line of readFileSync(envP, "utf8").split(/\r?\n/)) {
-      const t = line.trim();
-      if (!t || t.startsWith("#")) continue;
-      const eq = t.indexOf("=");
-      if (eq < 0) continue;
-      const k = t.slice(0, eq).trim();
-      if (!k || process.env[k] !== undefined) continue;
-      let v = t.slice(eq + 1).trim();
-      if (
-        v.length >= 2 &&
-        ((v[0] === '"' && v.endsWith('"')) || (v[0] === "'" && v.endsWith("'")))
-      )
-        v = v.slice(1, -1);
-      process.env[k] = v;
-    }
-  }
+  // 스크립트 위치 기준 우선 (launchd cwd 무관), 없으면 cwd 폴백
+  const loaded = loadEnvFile(
+    fileURLToPath(new URL("../.env.local", import.meta.url)),
+  );
+  if (!loaded) loadEnvFile(".env.local");
 } catch {
   /* ignore */
 }
@@ -104,10 +101,23 @@ async function notifyTelegram(text) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chat, text: text.slice(0, 4000) }),
     });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      log(`텔레그램 발송 실패: HTTP ${res.status} — ${body.slice(0, 200)}`);
+    }
     return res.ok;
-  } catch {
+  } catch (e) {
+    log(`텔레그램 발송 에러: ${e.message}`);
     return false;
   }
+}
+
+// --notify-test: 알림 발송만 확인하고 즉시 종료.
+// SESSION/CRON_SECRET 가드보다 먼저 실행돼야 함 — 세션이 죽은 상황(진단 대상)에서도 동작해야 하므로.
+if (process.argv.includes("--notify-test")) {
+  const ok = await notifyTelegram("✅ 스크래퍼 텔레그램 알림 테스트");
+  log(ok ? "알림 테스트 발송됨" : "알림 실패 (env 확인)");
+  process.exit(ok ? 0 : 1);
 }
 
 // 세션은 (1) env JSON 또는 (2) 파일 경로 둘 다 지원.
@@ -548,12 +558,6 @@ async function ingest(keyword, posts) {
 }
 
 async function main() {
-  if (process.argv.includes("--notify-test")) {
-    const ok = await notifyTelegram("✅ 스크래퍼 텔레그램 알림 테스트");
-    log(ok ? "알림 테스트 발송됨" : "알림 실패 (env 확인)");
-    process.exit(ok ? 0 : 1);
-  }
-
   const HEADLESS = (process.env.HEADLESS ?? "true").toLowerCase() !== "false";
   log(
     `키워드 ${KEYWORDS.length}개: ${KEYWORDS.join(", ")} | headless=${HEADLESS} | mode=${SCRAPE_ONLY ? "scrape-only" : INGEST_MODE}`,
@@ -626,7 +630,9 @@ async function main() {
       `⚠️ Threads 스크래퍼 상태 이상\n` +
         (sawLoginWall ? "· 로그인벽 감지 — 세션 만료 의심\n" : "") +
         `· 오늘 수확 ${totalHarvest}건 (기준 ${MIN_TOTAL_ALERT})\n` +
-        `조치: cd web && node scripts/threads-login.mjs 로 세션 갱신`,
+        (sawLoginWall
+          ? "조치: cd web && node scripts/threads-login.mjs 로 세션 갱신"
+          : "조치: 로그 확인 (세션은 정상 감지됨)"),
     );
   }
 }
