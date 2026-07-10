@@ -249,6 +249,28 @@ const GOOD_ANGLE_EXEMPLARS: string[] = [
   "[구체 상황 지목 질문] SKT 정지된 채로 유심만 바꾸면 되는 줄 아는 분들 많던데, 그게 안 될 때가 있어요.",
 ];
 
+// 2차 자기비평(편집자) 패스용 체크리스트 — 초안을 이 기준으로 점검·재작성.
+// 메인 프롬프트의 "AI 티 금지 12개"를 편집자 관점으로 압축한 것.
+const AI_TELL_CHECKLIST: string[] = [
+  "이모지·이모티콘이 한 글자라도 있으면 전부 삭제 (본문·셀프댓글·태그 전부 0개).",
+  "과장 상징·거창한 수식('게임체인저·혁명적·인생을 바꾸는·필수템·신세계') → 담담한 사실로.",
+  "뜬구름 형용사('놀라운·완벽한·환상적인·압도적인·최고의') → 구체 사실로 교체.",
+  "기계적 3연속 나열('빠르고 간편하고 저렴하게') → 2개나 4개로 흩뜨리거나 문장으로 풀기.",
+  "'단순히 X가 아니라 Y' / '~뿐만 아니라 ~까지' 대구(對句) 남용 → 그냥 X는 X라고.",
+  "모든 문장 길이·구조가 똑같으면 짧은 문장·긴 문장을 섞어 리듬을 흐트러뜨리기.",
+  "영업 상투어('지금 바로·놓치지 마세요·주목하세요·여러분!·확인해보세요') → 친구 말투로.",
+  "속 빈 마무리('당신의 선택에 달렸습니다·새로운 시작을 응원합니다·더 나은 내일') 삭제.",
+  "번역체·문어체('~하실 수 있습니다·~인 것으로 보여집니다') → 구어체로 짧게.",
+  "가짜 친근 도입부('사실은요·솔직히 말하면·여기서 팁 하나')를 후크로 쓰면 빼고 바로 본론.",
+  "아포리즘·명언조('선불폰은 자유의 다른 이름') → 구체적 사실로.",
+  "'다·나' 종결로만 딱딱하게 나열 → '~거든요·~더라고요·~잖아요' 말끝을 섞기.",
+  "낚시/보류가 스타일에 안 맞는데 억지로 쓰였으면 본문에서 답을 주는 톤으로.",
+  "'디자인된 마케팅 카피' 냄새 → 친구가 정보 흘리듯 자연스럽게.",
+  "본문 길이 100~280자 유지(280 초과 절대 금지), 벽글이면 줄바꿈으로 호흡.",
+  "미성년자·외국인 관련 표현이 있으면 초안 전체를 내국인 성인 대상으로 다시 쓰기.",
+  "셀프댓글이 '핵심은 망 선택이에요' 정형문이거나 '어때요?/경험 있으세요?' 되묻기면 답 주는 톤으로.",
+];
+
 export async function generateThreadsDraftsFromPosts(opts: {
   keyword: string;
   posts: ScrapedPost[];
@@ -479,7 +501,17 @@ ${faqCtx}
     },
   );
 
-  const drafts = Array.isArray(result.drafts) ? result.drafts : [];
+  const rawDrafts = Array.isArray(result.drafts) ? result.drafts : [];
+
+  // ── 2차 자기비평(편집자) 패스 — best-effort ─────────────
+  // 1차 초안을 AI 티·이모지·낚시·광고톤·길이 기준으로 별도 호출에서 점검·재작성.
+  // 실패하면 원본 초안으로 진행(생성 자체는 절대 깨뜨리지 않음).
+  const drafts = await critiqueAndRewriteDrafts({
+    keyword,
+    drafts: rawDrafts,
+    isDelinquencyTopic,
+  });
+
   return drafts
     .filter((d) => d && typeof d.draft_text === "string" && d.draft_text.trim())
     .map((d) => {
@@ -500,6 +532,105 @@ ${faqCtx}
       };
     })
     .slice(0, count);
+}
+
+/**
+ * 2차 자기비평(편집자) 패스 — 1차 초안을 별도 Gemini 호출로 점검·재작성.
+ * "새 눈"으로 AI 티·이모지·낚시·광고톤·길이·정책위반을 잡아 고친 최종본을 돌려준다.
+ *
+ * 안전장치(검수가 오히려 손해나면 원본을 그대로 씀):
+ *  - drafts가 비었으면 그대로 반환(검수할 게 없음).
+ *  - 호출/파싱 실패 → 원본 초안 반환(생성 파이프라인을 깨뜨리지 않음).
+ *  - 재작성 결과 개수가 원본보다 적거나 본문이 비면 → 원본 초안 반환.
+ */
+async function critiqueAndRewriteDrafts(opts: {
+  keyword: string;
+  drafts: GeneratedThreadsDraft[];
+  isDelinquencyTopic: boolean;
+}): Promise<GeneratedThreadsDraft[]> {
+  const { keyword, drafts, isDelinquencyTopic } = opts;
+  if (drafts.length === 0) return drafts;
+  console.info(
+    `[threads] 2차 자기비평 패스 실행 — "${keyword}" 초안 ${drafts.length}개`,
+  );
+
+  const draftsJson = JSON.stringify({ drafts }, null, 2);
+  const checklist = AI_TELL_CHECKLIST.map((c, i) => `${i + 1}. ${c}`).join("\n");
+  const netRule = isDelinquencyTopic
+    ? "이 글은 미납/정지 케이스라 '망 선택' 답은 OK지만, 정형문('핵심은 망 선택이에요')은 매번 새 문장으로."
+    : `이 글은 미납/정지 케이스가 아니다 → 본문·셀프댓글에서 '망 선택/다른 통신사 망/미납 이력/정지폰' 얘기를 빼고, 오직 "${keyword}"의 실제 주제로만 답하게 고쳐라.`;
+
+  const critiquePrompt = `당신은 한국 SNS(Threads) 게시글을 다듬는 깐깐한 편집자입니다.
+아래는 "${keyword}" 주제로 1차 작성된 초안 JSON입니다.
+이 초안들을 **아래 체크리스트로 냉정하게 점검하고, 걸리는 부분만 고쳐** 최종본을 출력하세요.
+
+# 편집 원칙
+- **이미 자연스럽고 사람이 쓴 것 같은 부분은 그대로 둔다.** 멀쩡한 문장을 굳이 바꾸지 마라(과잉편집 금지).
+- 문제가 있는 초안만, 문제 있는 부분만 고쳐라. 각도·주제·핵심 메시지는 유지.
+- 고칠 때도 "친구가 정보 흘리듯" 담백한 구어체를 유지. 더 광고처럼 만들지 마라.
+- **초안 개수(${drafts.length}개)와 JSON 구조(draft_text, topic_tag, self_replies, insight)를 그대로 유지.**
+- self_replies의 개수·역할(답 보강 → 프로필 링크 유도)도 유지하되 위 문제만 정리.
+
+# 점검 체크리스트 (하나라도 걸리면 그 부분을 고쳐라)
+${checklist}
+
+# 통신망 관련 사실 (고칠 때 이 사실만 사용, 창작 금지)
+- 선불 유심은 선결제라 요금 미납이 있어도 개통 자체는 막히지 않는다(KT/LG/SKT 미납 → KT망·LG망 개통 가능).
+- 유일한 예외: KT 단말기 할부금 미납이면 그 단말기엔 KT 유심을 못 쓰니 LG망 유심으로 개통.
+- "같은 망은 미납 이력이 따라붙어 막힌다"는 틀린 공식 — 쓰지 마라.
+- ${netRule}
+
+# insight 필드
+- 각 초안의 insight는 "무엇을 왜 고쳤는지(또는 문제없어 유지)" 한 줄로 갱신.
+
+# 출력 (JSON만, 코드펜스 X, 문자열 안 줄바꿈은 \\n으로 escape)
+{
+  "drafts": [
+    {
+      "draft_text": "{고친 메인 글 본문 — 줄바꿈은 \\n}",
+      "topic_tag": "{주제 태그}",
+      "self_replies": ["{셀프 댓글1}", "{셀프 댓글2}"],
+      "insight": "{무엇을 왜 고쳤는지 한 줄}"
+    }
+  ]
+}
+
+# 점검할 초안 JSON
+${draftsJson}`;
+
+  try {
+    const result = await generateJSON<{ drafts: GeneratedThreadsDraft[] }>(
+      critiquePrompt,
+      {
+        // 편집 패스는 창작보다 보수적으로 — 온도 낮춤
+        generationConfig: { temperature: 0.4, maxOutputTokens: 4096 },
+      },
+    );
+    const revised = Array.isArray(result.drafts) ? result.drafts : [];
+    const usable = revised.filter(
+      (d) => d && typeof d.draft_text === "string" && d.draft_text.trim(),
+    );
+    if (process.env.THREADS_DEBUG) {
+      const rc = (a: GeneratedThreadsDraft[]) =>
+        a.map((d) => (d.self_replies?.length ?? 0)).join(",");
+      console.info(
+        `[threads][debug] 셀프댓글 개수 raw=[${rc(drafts)}] → revised=[${rc(usable)}]`,
+      );
+    }
+    // 검수가 초안을 잃어버리면(개수 감소) 신뢰 불가 → 원본 유지
+    if (usable.length < drafts.length) {
+      console.warn(
+        `[threads] 자기비평 결과 개수 부족(${usable.length}/${drafts.length}) — 원본 초안 사용`,
+      );
+      return drafts;
+    }
+    return usable;
+  } catch (e) {
+    console.warn(
+      `[threads] 자기비평 패스 실패 — 원본 초안 사용: ${(e as Error).message}`,
+    );
+    return drafts;
+  }
 }
 
 // ─── 주간 자동화 — 1주치 스케줄 + 일괄 생성 ─────────────
