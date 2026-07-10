@@ -97,6 +97,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async jwt({ token, account }) {
       // 최초 로그인 — account 정보로 토큰 채우기
       if (account) {
+        if (account.refresh_token) {
+          // 크론용 영속화. account 분기는 로그인 콜백(node 런타임)에서만 실행되므로
+          // dynamic import가 edge(middleware) 번들을 오염시키지 않는다.
+          try {
+            const { saveGaRefreshToken } = await import("@/lib/ga-token");
+            await saveGaRefreshToken(account.refresh_token);
+          } catch (e) {
+            console.error("[auth] GA refresh token 저장 실패 (로그인은 계속):", e);
+          }
+        }
         return {
           ...token,
           accessToken: account.access_token,
