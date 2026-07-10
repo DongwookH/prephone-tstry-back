@@ -66,6 +66,50 @@ try {
   /* ignore */
 }
 
+// .env.local 폴백 #2 — 스크립트 파일 기준 절대경로라 launchd의 cwd가 web/이 아니어도 찾는다.
+// (위 로더는 process.cwd() 기준 상대경로라 launchd 설정에 따라 못 찾을 수 있음 — 이중 안전장치)
+try {
+  const envP = new URL("../.env.local", import.meta.url).pathname;
+  if (existsSync(envP)) {
+    for (const line of readFileSync(envP, "utf8").split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t || t.startsWith("#")) continue;
+      const eq = t.indexOf("=");
+      if (eq < 0) continue;
+      const k = t.slice(0, eq).trim();
+      if (!k || process.env[k] !== undefined) continue;
+      let v = t.slice(eq + 1).trim();
+      if (
+        v.length >= 2 &&
+        ((v[0] === '"' && v.endsWith('"')) || (v[0] === "'" && v.endsWith("'")))
+      )
+        v = v.slice(1, -1);
+      process.env[k] = v;
+    }
+  }
+} catch {
+  /* ignore */
+}
+
+const MIN_TOTAL_ALERT = parseInt(process.env.MIN_TOTAL_ALERT || "5", 10);
+
+/** 텔레그램 알림 (best-effort, 실패해도 throw 안 함). */
+async function notifyTelegram(text) {
+  const tk = process.env.TELEGRAM_BOT_TOKEN;
+  const chat = process.env.TELEGRAM_CHAT_ID;
+  if (!tk || !chat) return false;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${tk}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chat, text: text.slice(0, 4000) }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 // 세션은 (1) env JSON 또는 (2) 파일 경로 둘 다 지원.
 // Mac 운영 시엔 scripts/threads-session.json 파일 방식이 더 편함.
 let SESSION = process.env.THREADS_SESSION_COOKIES;
@@ -192,6 +236,9 @@ function collectPosts(root, out, seen) {
   }
 }
 
+// 로그인벽 감지 시 true — scrapeKeyword(키워드 루프 지역 스코프) 밖 main()까지 전달하기 위한 모듈 레벨 플래그.
+let sawLoginWall = false;
+
 async function scrapeKeyword(context, keyword) {
   const page = await context.newPage();
   const captured = [];
@@ -248,6 +295,7 @@ async function scrapeKeyword(context, keyword) {
       `  ⚠️⚠️ 로그인 벽 감지 (세션 만료 의심) — '${keyword}' 게시글이 거의 안 잡힐 수 있음. ` +
         `scripts/threads-login.mjs로 세션 갱신 필요.`,
     );
+    sawLoginWall = true;
   }
 
   // 인기글 더 로드되도록 사람처럼 스크롤 — 양·간격 랜덤
@@ -500,6 +548,12 @@ async function ingest(keyword, posts) {
 }
 
 async function main() {
+  if (process.argv.includes("--notify-test")) {
+    const ok = await notifyTelegram("✅ 스크래퍼 텔레그램 알림 테스트");
+    log(ok ? "알림 테스트 발송됨" : "알림 실패 (env 확인)");
+    process.exit(ok ? 0 : 1);
+  }
+
   const HEADLESS = (process.env.HEADLESS ?? "true").toLowerCase() !== "false";
   log(
     `키워드 ${KEYWORDS.length}개: ${KEYWORDS.join(", ")} | headless=${HEADLESS} | mode=${SCRAPE_ONLY ? "scrape-only" : INGEST_MODE}`,
@@ -554,12 +608,26 @@ async function main() {
   }
 
   await browser.close();
+
+  let totalHarvest = 0;
   if (SCRAPE_ONLY) {
     log(`완료 — scrape-only 모드 (전송 없음)`);
   } else if (INGEST_MODE === "drafts") {
+    totalHarvest = totalCreated;
     log(`완료 — 총 초안 ${totalCreated}건 생성`);
   } else {
+    totalHarvest = totalStored;
     log(`완료 — 총 ${totalStored}건 축적`);
+  }
+
+  // scrape-only(테스트/점검용)는 알림 대상 아님. 그 외 로그인벽 감지되었거나 수확이 기준 미달이면 1회 알림.
+  if (!SCRAPE_ONLY && (sawLoginWall || totalHarvest < MIN_TOTAL_ALERT)) {
+    await notifyTelegram(
+      `⚠️ Threads 스크래퍼 상태 이상\n` +
+        (sawLoginWall ? "· 로그인벽 감지 — 세션 만료 의심\n" : "") +
+        `· 오늘 수확 ${totalHarvest}건 (기준 ${MIN_TOTAL_ALERT})\n` +
+        `조치: cd web && node scripts/threads-login.mjs 로 세션 갱신`,
+    );
   }
 }
 
