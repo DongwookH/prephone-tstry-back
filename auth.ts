@@ -104,7 +104,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             const { saveGaRefreshToken } = await import("@/lib/ga-token");
             await saveGaRefreshToken(account.refresh_token);
           } catch (e) {
-            console.error("[auth] GA refresh token 저장 실패 (로그인은 계속):", e);
+            console.error(
+              "[auth] GA refresh token 저장 실패 (로그인은 계속):",
+              e instanceof Error ? e.message : String(e),
+            );
           }
         }
         return {
