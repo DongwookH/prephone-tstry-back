@@ -177,7 +177,7 @@ jobs:
           NOTO_FONT: /tmp/NotoSansKR.ttf
         run: |
           set -uo pipefail
-          npx --yes tsx scripts/regen-cardnews.mjs --max-cards 3 2>&1 | tee /tmp/cardnews.log
+          npx --yes tsx scripts/regen-cardnews.mjs --max-cards 4 2>&1 | tee /tmp/cardnews.log
           echo "--- 요약 ---"; tail -n1 /tmp/cardnews.log
 
       - name: 생성된 썸네일·카드뉴스 커밋·push

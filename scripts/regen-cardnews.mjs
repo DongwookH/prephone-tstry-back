@@ -9,7 +9,7 @@
  * 문구는 extractCardData(post, {maxItems, maxItemLen})의 섹션 카드에서:
  *   title/subtitle/bullets/bulletStyle/pageNum/totalPages
  *
- * 실행: npx tsx scripts/regen-cardnews.mjs [--ids p-...,p-...] [--limit N] [--max-cards 3]
+ * 실행: npx tsx scripts/regen-cardnews.mjs [--ids p-...,p-...] [--limit N] [--max-cards 4]
  */
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -54,7 +54,7 @@ function parseArgs(argv) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const maxCards = args["max-cards"] ? parseInt(args["max-cards"], 10) : 3;
+  const maxCards = args["max-cards"] ? parseInt(args["max-cards"], 10) : 4;
   const skipExisting = !!args["skip-existing"]; // 이미 있는 카드는 건너뜀(백필/재실행용)
 
   const { getTodayPosts } = await import("../lib/sheets.ts");

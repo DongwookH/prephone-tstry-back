@@ -84,7 +84,7 @@ jobs:
           NOTO_FONT: /tmp/NotoSansKR.ttf
         run: |
           set -uo pipefail
-          npx --yes tsx scripts/regen-cardnews.mjs --max-cards 3 --skip-existing 2>&1 | tee /tmp/cardnews.log
+          npx --yes tsx scripts/regen-cardnews.mjs --max-cards 4 --skip-existing 2>&1 | tee /tmp/cardnews.log
           echo "--- 요약 ---"; tail -n1 /tmp/cardnews.log
 
       - name: 보충분 커밋·push (변경 있을 때만)
