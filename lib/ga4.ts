@@ -250,14 +250,19 @@ export async function getPagePathPageviews(
   accessToken: string,
   days = 30,
   limit = 200,
+  propertyIdOverride?: string,
 ): Promise<Record<string, number>> {
-  const data = await runReport(accessToken, {
-    dateRanges: [{ startDate: daysAgo(days - 1), endDate: "today" }],
-    dimensions: [{ name: "pagePath" }],
-    metrics: [{ name: "screenPageViews" }],
-    orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }],
-    limit: String(limit),
-  });
+  const data = await runReport(
+    accessToken,
+    {
+      dateRanges: [{ startDate: daysAgo(days - 1), endDate: "today" }],
+      dimensions: [{ name: "pagePath" }],
+      metrics: [{ name: "screenPageViews" }],
+      orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }],
+      limit: String(limit),
+    },
+    propertyIdOverride,
+  );
   const out: Record<string, number> = {};
   for (const r of data.rows ?? []) {
     const path = r.dimensionValues?.[0]?.value ?? "";
@@ -415,6 +420,64 @@ export function aggregateOverview(stats: BlogStats[]): GAOverview {
     bounceRate: weightSum > 0 ? weightedBounce / weightSum : 0,
     avgSessionDuration: weightSum > 0 ? weightedDuration / weightSum : 0,
   };
+}
+
+export type UtmFunnelRow = { campaign: string; sessions: number; step2Views: number };
+
+/**
+ * ntelecomsafe GA4 — 어제 하루 utm_campaign별 세션 + /step2 도달 페이지뷰.
+ * campaign은 블로그 글의 utm_campaign={키워드-슬러그} 규칙과 매칭된다.
+ *
+ * 두 번째 리포트는 dimensionFilter에 쓰는 필드(pagePath)를 dimensions에도 포함시킨다.
+ * GA4 Data API는 dimensionFilter의 필터 대상 필드가 요청의 dimensions에 포함되어
+ * 있어야 하므로(포함되지 않은 필드로 필터링 시 400 에러 가능), sessionCampaignName +
+ * pagePath 두 dimension으로 조회한 뒤 campaign별로 screenPageViews를 합산한다.
+ */
+export async function getUtmCampaignFunnel(
+  accessToken: string,
+  propertyId: string,
+): Promise<UtmFunnelRow[]> {
+  const dateRanges = [{ startDate: "yesterday", endDate: "yesterday" }];
+  const [sessions, step2] = await Promise.all([
+    runReport(
+      accessToken,
+      {
+        dateRanges,
+        dimensions: [{ name: "sessionCampaignName" }],
+        metrics: [{ name: "sessions" }],
+        limit: "200",
+      },
+      propertyId,
+    ),
+    runReport(
+      accessToken,
+      {
+        dateRanges,
+        dimensions: [{ name: "sessionCampaignName" }, { name: "pagePath" }],
+        metrics: [{ name: "screenPageViews" }],
+        dimensionFilter: {
+          filter: {
+            fieldName: "pagePath",
+            stringFilter: { matchType: "CONTAINS", value: "/step2" },
+          },
+        },
+        limit: "200",
+      },
+      propertyId,
+    ),
+  ]);
+  const out = new Map<string, UtmFunnelRow>();
+  for (const r of sessions.rows ?? []) {
+    const c = r.dimensionValues?.[0]?.value ?? "";
+    if (!c || c === "(not set)") continue;
+    out.set(c, { campaign: c, sessions: parseInt(r.metricValues?.[0]?.value ?? "0", 10), step2Views: 0 });
+  }
+  for (const r of step2.rows ?? []) {
+    const c = r.dimensionValues?.[0]?.value ?? "";
+    const row = out.get(c);
+    if (row) row.step2Views += parseInt(r.metricValues?.[0]?.value ?? "0", 10);
+  }
+  return [...out.values()].sort((a, b) => b.sessions - a.sessions);
 }
 
 export { GA4Error };
