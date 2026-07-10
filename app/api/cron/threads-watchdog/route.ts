@@ -101,6 +101,34 @@ export async function POST(req: Request) {
     }
   }
 
+  // ── 3) Threads API 토큰 만료 임박 경고 (D-7부터, 하루 1회) ──
+  try {
+    const { getThreadsToken } = await import("@/lib/threads");
+    const token = await getThreadsToken();
+    if (token?.expires_at) {
+      const daysLeft = Math.floor(
+        (new Date(token.expires_at).getTime() - now) / 86_400_000,
+      );
+      if (daysLeft <= 7) {
+        const todayKst = new Date(now + 9 * 3_600_000)
+          .toISOString()
+          .slice(0, 10);
+        const warned = await getTgState("token_expiry_warned");
+        if (warned !== todayKst) {
+          await sendTelegram(
+            `🔑 <b>Threads API 토큰 만료 D-${Math.max(daysLeft, 0)}</b>\n` +
+              `만료: ${kstLabel(token.expires_at)}\n` +
+              `대시보드 설정 → Threads 재연결로 갱신하세요. (만료되면 자동 발행 중단)`,
+          );
+          await setTgState("token_expiry_warned", todayKst);
+          actions.push(`토큰 만료 D-${daysLeft} 경고 발송`);
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[watchdog] 토큰 만료 검사 실패:", e);
+  }
+
   return NextResponse.json({
     ok: true,
     overdue: overdue.length,
