@@ -98,14 +98,29 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // 최초 로그인 — account 정보로 토큰 채우기
       if (account) {
         if (account.refresh_token) {
-          // 크론용 영속화. account 분기는 로그인 콜백(node 런타임)에서만 실행되므로
-          // dynamic import가 edge(middleware) 번들을 오염시키지 않는다.
+          // 크론용 영속화 — 시트 쓰기는 node 라우트에 위임.
+          // ⚠️ 여기서 sheets(googleapis)를 import하면(dynamic이라도) middleware의
+          //    edge 번들 그래프에 걸려 Vercel Edge 패키징이 배포를 거부한다
+          //    (2026-07-10 실측: "unsupported modules: node:http…").
+          //    fetch는 edge에서 안전하므로 자체 cron 라우트로 POST만 한다.
           try {
-            const { saveGaRefreshToken } = await import("@/lib/ga-token");
-            await saveGaRefreshToken(account.refresh_token);
+            const base =
+              process.env.NEXTAUTH_URL ??
+              process.env.PRODUCTION_URL ??
+              "https://prephone-tstry-back.vercel.app";
+            if (process.env.CRON_SECRET) {
+              await fetch(`${base}/api/cron/persist-ga-token`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${process.env.CRON_SECRET}`,
+                },
+                body: JSON.stringify({ refresh_token: account.refresh_token }),
+              });
+            }
           } catch (e) {
             console.error(
-              "[auth] GA refresh token 저장 실패 (로그인은 계속):",
+              "[auth] GA refresh token 저장 위임 실패 (로그인은 계속):",
               e instanceof Error ? e.message : String(e),
             );
           }
