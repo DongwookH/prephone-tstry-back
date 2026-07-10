@@ -191,3 +191,18 @@ jobs:
           git add public/thumbnails public/card-news
           git commit -m "chore(images): 자동 생성 썸네일·카드뉴스 [skip ci]"
           git push
+
+      - name: 실패 시 텔레그램 알림
+        if: always()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          thumbs=$(tail -n1 /tmp/thumbs.log 2>/dev/null || echo '{}')
+          cards=$(tail -n1 /tmp/cardnews.log 2>/dev/null || echo '{}')
+          msg=$(node scripts/build-image-alert.mjs "$JOB_STATUS" "$thumbs" "$cards" "메인(썸네일 잡)" "백필(00:30·04:00 UTC)이 자동 재시도합니다.")
+          if [ -n "$msg" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+              -d chat_id="${TG_CHAT}" --data-urlencode "text=${msg}" >/dev/null || true
+          fi
