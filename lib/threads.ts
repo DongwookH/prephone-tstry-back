@@ -380,7 +380,10 @@ export async function searchThreadsKeyword(opts: {
   return data.data ?? [];
 }
 
-/** 발행 글 1건의 인사이트 (views·likes·replies·reposts·quotes). 실패 시 throw. */
+/**
+ * 발행 글 1건의 인사이트 (views·likes·replies·reposts·quotes). 실패 시 throw.
+ * ⚠️ url에 access_token 포함 — 이 URL·원본 에러 객체를 통째로 로깅하지 말 것 (.message만).
+ */
 export async function getMediaInsights(
   mediaId: string,
   accessToken: string,

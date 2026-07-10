@@ -42,6 +42,8 @@ loadEnvLocal();
 
 const DRY = process.argv.includes("--dry-run");
 const errors: string[] = [];
+/** 소스(Tistory GA·ntelecom GA·Threads) 중 하나라도 실제 수집에 성공했는지. */
+let anySourceOk = false;
 const kstToday = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
 
 /** 텔레그램 HTML parse_mode용 이스케이프. 제목·본문 등 외부 데이터를 메시지에 넣기 전 필수. */
@@ -81,6 +83,7 @@ async function main() {
         topPosts.push({ id, title: post?.title ?? id, pv });
       }
       topPosts.sort((a, b) => b.pv - a.pv);
+      anySourceOk = true;
       console.log(`[tistory] 매칭 ${byId.size}글 / GA 경로 ${Object.keys(pvByPath).length}개`);
     } catch (e) {
       errors.push(`Tistory GA: ${(e as Error).message}`);
@@ -93,6 +96,7 @@ async function main() {
   if (gaToken && ntelProp) {
     try {
       funnel = await getUtmCampaignFunnel(gaToken, ntelProp);
+      anySourceOk = true;
       const rows = funnel.map((f) => [kstToday, "ntelecom", f.campaign, 0, f.sessions, f.step2Views, 0, ""]);
       if (!DRY) await appendMetricsDaily(rows);
       console.log(`[ntelecom] 캠페인 ${funnel.length}개`);
@@ -143,6 +147,11 @@ async function main() {
         console.warn(`[threads] ${d.id} insights 실패: ${(e as Error).message}`);
       }
     }
+    // per-item 실패가 전건이면(권한 문제 등) 조용히 넘어가지 않고 브리핑에 표면화
+    if (drafts.length > 0 && rows.length === 0) {
+      errors.push(`Threads insights 전건 실패(${drafts.length}건)`);
+    }
+    if (rows.length > 0) anySourceOk = true;
     if (!DRY) await appendThreadsMetrics(rows);
     console.log(`[threads] ${rows.length}/${drafts.length}건 수집`);
   } catch (e) {
@@ -178,8 +187,7 @@ async function main() {
   if (!DRY) await sendTelegram(report);
 
   console.log(JSON.stringify({ ok: true, errors: errors.length, dry: DRY }));
-  // 전 소스 실패 시에만 실패 처리 (부분 실패는 브리핑에 표기하고 성공)
-  if (errors.length >= 3) process.exit(1);
+  if (!anySourceOk) process.exit(1); // 전 소스 실패 시에만 빨강 (부분 실패는 브리핑에 표기하고 성공)
 }
 
 main().catch((e) => {
