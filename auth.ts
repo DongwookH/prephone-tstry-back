@@ -109,7 +109,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               process.env.PRODUCTION_URL ??
               "https://prephone-tstry-back.vercel.app";
             if (process.env.CRON_SECRET) {
-              await fetch(`${base}/api/cron/persist-ga-token`, {
+              const res = await fetch(`${base}/api/cron/persist-ga-token`, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
@@ -117,6 +117,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 },
                 body: JSON.stringify({ refresh_token: account.refresh_token }),
               });
+              if (!res.ok) {
+                // 401=CRON_SECRET 불일치, 500=시트 쓰기 실패 — 무음이면 "재로그인 반복" 루프에 빠짐
+                console.error(
+                  `[auth] GA refresh token 저장 위임 실패: HTTP ${res.status}`,
+                );
+              }
+            } else {
+              console.error("[auth] CRON_SECRET 미설정 — GA refresh token 저장 스킵");
             }
           } catch (e) {
             console.error(
