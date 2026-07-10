@@ -28,6 +28,7 @@ const SUMMARY_HOUR_KST = 21;
  *  1) 연체(예약+20분 초과 미발행 승인 초안) 발견 → 텔레그램 알림 + [지금 발행] 버튼
  *     (같은 알림은 60분에 1번만)
  *  2) KST 21시 이후 첫 실행 → 오늘 요약 1회 발송
+ *  3) 토큰 만료 D-7 경고 (하루 1회)
  */
 export async function POST(req: Request) {
   const authHeader = req.headers.get("authorization");
@@ -110,18 +111,18 @@ export async function POST(req: Request) {
         (new Date(token.expires_at).getTime() - now) / 86_400_000,
       );
       if (daysLeft <= 7) {
-        const todayKst = new Date(now + 9 * 3_600_000)
-          .toISOString()
-          .slice(0, 10);
         const warned = await getTgState("token_expiry_warned");
         if (warned !== todayKst) {
-          await sendTelegram(
-            `🔑 <b>Threads API 토큰 만료 D-${Math.max(daysLeft, 0)}</b>\n` +
+          const dLabel = Math.max(daysLeft, 0);
+          const sent = await sendTelegram(
+            `🔑 <b>Threads API 토큰 만료 D-${dLabel}</b>\n` +
               `만료: ${kstLabel(token.expires_at)}\n` +
               `대시보드 설정 → Threads 재연결로 갱신하세요. (만료되면 자동 발행 중단)`,
           );
-          await setTgState("token_expiry_warned", todayKst);
-          actions.push(`토큰 만료 D-${daysLeft} 경고 발송`);
+          if (sent) {
+            await setTgState("token_expiry_warned", todayKst);
+            actions.push(`토큰 만료 D-${dLabel} 경고 발송`);
+          }
         }
       }
     }
