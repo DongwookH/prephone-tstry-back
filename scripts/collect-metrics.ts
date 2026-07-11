@@ -54,7 +54,7 @@ function escapeHtml(s: string): string {
 async function main() {
   const { getGaAccessTokenForCron } = await import("../lib/ga-token");
   const { getPagePathPageviews, getUtmCampaignFunnel } = await import("../lib/ga4");
-  const { getAllPosts, updatePostGaPageviews, appendMetricsDaily, appendThreadsMetrics, getThreadsDrafts } = await import("../lib/sheets");
+  const { getAllPosts, updatePostGaPageviews, appendMetricsDaily, appendThreadsMetrics, getThreadsDrafts, getGaProperties } = await import("../lib/sheets");
   const { getThreadsToken, getMediaInsights } = await import("../lib/threads");
   const { styleFromInsight, matchPostByPath } = await import("../lib/metrics-utils");
   const { sendTelegram } = await import("../lib/telegram");
@@ -67,15 +67,40 @@ async function main() {
   }
 
   // a) Tistory 글별 조회수 → posts.ga_pageviews (누적 30일)
+  //    블로그가 5개(settings의 ga_property 행, 대시보드 통계와 동일 소스)라
+  //    속성별로 조회하고, 경로 매칭은 그 속성의 블로그(tistory_url 호스트) 글로만 한정
+  //    (블로그가 달라도 pagePath는 "/123"처럼 겹칠 수 있음 — 호스트 스코프 필수).
   const topPosts: { id: string; title: string; pv: number }[] = [];
   if (gaToken) {
     try {
-      const pvByPath = await getPagePathPageviews(gaToken, 30, 500);
+      const props = await getGaProperties();
+      if (props.length === 0) throw new Error("settings에 활성 ga_property 없음");
       const posts = (await getAllPosts()).filter((p) => p.tistory_url);
       const byId = new Map<string, number>();
-      for (const [path, pv] of Object.entries(pvByPath)) {
-        const id = matchPostByPath(path, posts);
-        if (id) byId.set(id, (byId.get(id) ?? 0) + pv);
+      let pathTotal = 0;
+      const propErrors: string[] = [];
+      for (const prop of props) {
+        try {
+          const origin = new URL(prop.tistory_url).origin;
+          const blogPosts = posts.filter((p) => {
+            try {
+              return new URL(p.tistory_url).origin === origin;
+            } catch {
+              return false;
+            }
+          });
+          const pvByPath = await getPagePathPageviews(gaToken, 30, 500, prop.property_id);
+          pathTotal += Object.keys(pvByPath).length;
+          for (const [path, pv] of Object.entries(pvByPath)) {
+            const id = matchPostByPath(path, blogPosts);
+            if (id) byId.set(id, (byId.get(id) ?? 0) + pv);
+          }
+        } catch (e) {
+          propErrors.push(`${prop.label}: ${(e as Error).message}`);
+        }
+      }
+      if (propErrors.length > 0) {
+        errors.push(`Tistory GA 일부 속성 실패: ${propErrors.join(" / ")}`);
       }
       for (const [id, pv] of byId) {
         if (!DRY) await updatePostGaPageviews(id, pv);
@@ -83,8 +108,11 @@ async function main() {
         topPosts.push({ id, title: post?.title ?? id, pv });
       }
       topPosts.sort((a, b) => b.pv - a.pv);
-      anySourceOk = true;
-      console.log(`[tistory] 매칭 ${byId.size}글 / GA 경로 ${Object.keys(pvByPath).length}개`);
+      // 한 속성이라도 조회에 성공했으면 소스 자체는 살아있는 것 (매칭 0은 URL 미기록 문제)
+      if (propErrors.length < props.length) anySourceOk = true;
+      console.log(
+        `[tistory] 속성 ${props.length - propErrors.length}/${props.length}개 조회 · GA 경로 ${pathTotal}개 · 매칭 ${byId.size}글`,
+      );
     } catch (e) {
       errors.push(`Tistory GA: ${(e as Error).message}`);
     }
