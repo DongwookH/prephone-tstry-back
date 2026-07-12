@@ -90,6 +90,13 @@ async function main() {
           if (ids.length !== 1) continue;
           const post = postsById0.get(ids[0]);
           if (!post || post.tistory_url) continue;
+          // 글 URL만 기록 (공지·카테고리 등 방어 — 백필 스크립트와 동일 기준)
+          try {
+            const lu = new URL(item.link);
+            if (lu.origin !== origin || !/^\/\d+$/.test(lu.pathname)) continue;
+          } catch {
+            continue;
+          }
           if (!DRY) await updatePostTistoryUrl(post.id, item.link);
           post.tistory_url = item.link; // 이번 실행 내 재매칭 방지 (같은 id가 여러 item에 안 나오지만 방어적으로)
           filled++;
