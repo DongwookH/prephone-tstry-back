@@ -1825,3 +1825,22 @@ export async function updatePostGaPageviews(postId: string, pageviews: number): 
     }
   }
 }
+
+/** posts 시트 tistory_url(M열) 갱신 — updatePostGaPageviews와 동일 패턴. */
+export async function updatePostTistoryUrl(postId: string, url: string): Promise<void> {
+  const sheets = getClient();
+  const id = mainSheetId();
+  const idCol = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: "posts!A:A" });
+  const rows = idCol.data.values ?? [];
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i]?.[0] === postId) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: id,
+        range: `posts!M${i + 1}`,
+        valueInputOption: "RAW",
+        requestBody: { values: [[url]] },
+      });
+      return;
+    }
+  }
+}
