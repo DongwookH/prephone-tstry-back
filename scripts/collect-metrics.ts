@@ -54,7 +54,7 @@ function escapeHtml(s: string): string {
 async function main() {
   const { getGaAccessTokenForCron } = await import("../lib/ga-token");
   const { getPagePathPageviews, getUtmCampaignFunnel } = await import("../lib/ga4");
-  const { getAllPosts, updatePostGaPageviews, appendMetricsDaily, appendThreadsMetrics, getThreadsDrafts, getGaProperties } = await import("../lib/sheets");
+  const { getAllPosts, updatePostGaPageviews, updatePostTistoryUrl, appendMetricsDaily, appendThreadsMetrics, getThreadsDrafts, getGaProperties } = await import("../lib/sheets");
   const { getThreadsToken, getMediaInsights } = await import("../lib/threads");
   const { styleFromInsight, matchPostByPath } = await import("../lib/metrics-utils");
   const { sendTelegram } = await import("../lib/telegram");
@@ -64,6 +64,46 @@ async function main() {
     gaToken = await getGaAccessTokenForCron();
   } catch (e) {
     errors.push(`GA 토큰: ${(e as Error).message}`);
+  }
+
+  // a0) 신규 발행 글 URL 자동 채움 — 블로그 RSS(최신 10개)에서 data-filename의 글 ID 추출
+  //     a)가 조회수 매칭에 쓰는 posts.tistory_url을 발행 직후부터 채워둬야 다음 GA
+  //     매칭 정확도가 올라간다. 보강 단계 — 실패해도 errors에만 기록하고 다른 소스는
+  //     계속 진행(anySourceOk에는 관여 안 함, 소스 자체가 아니라 보강이므로).
+  try {
+    const { extractPostIds, parseRssItems } = await import("../lib/tistory-match");
+    const props0 = await getGaProperties();
+    const allPosts0 = await getAllPosts();
+    const postsById0 = new Map(allPosts0.map((p) => [p.id, p]));
+    let filled = 0;
+    const rssErrors: string[] = [];
+    for (const prop of props0) {
+      if (!prop.tistory_url) continue;
+      try {
+        const origin = new URL(prop.tistory_url).origin;
+        const res = await fetch(`${origin}/rss`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const xml = await res.text();
+        const items = parseRssItems(xml);
+        for (const item of items) {
+          const ids = extractPostIds(item.description);
+          if (ids.length !== 1) continue;
+          const post = postsById0.get(ids[0]);
+          if (!post || post.tistory_url) continue;
+          if (!DRY) await updatePostTistoryUrl(post.id, item.link);
+          post.tistory_url = item.link; // 이번 실행 내 재매칭 방지 (같은 id가 여러 item에 안 나오지만 방어적으로)
+          filled++;
+        }
+      } catch (e) {
+        rssErrors.push(`${prop.label}: ${(e as Error).message}`);
+      }
+    }
+    if (rssErrors.length > 0) {
+      errors.push(`URL 자동 채움 일부 실패: ${rssErrors.join(" / ")}`);
+    }
+    console.log(`[url-fill] ${filled}건 채움`);
+  } catch (e) {
+    errors.push(`URL 자동 채움: ${(e as Error).message}`);
   }
 
   // a) Tistory 글별 조회수 → posts.ga_pageviews (누적 30일)
