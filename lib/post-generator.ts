@@ -1,4 +1,5 @@
 import { generateJSON } from "./gemini";
+import { hasNumberKeepingClaim } from "./content-guards";
 import {
   getGlobalContext,
   getCategoryContext,
@@ -820,6 +821,15 @@ export async function generatePost(opts: {
     opts.keyword,
     utmCampaign,
   );
+
+  // 사실 가드 — "번호 유지/살림" 오정보(미납 시 번호는 못 살림, 새 번호 발급)가
+  // 감지되면 통째로 실패시킨다 → generate-daily가 항목당 3회 재시도로 재생성.
+  const guardTarget = `${finalTitle}\n${result.meta_description ?? ""}\n${htmlWithHero}`;
+  if (hasNumberKeepingClaim(guardTarget)) {
+    throw new Error(
+      "사실 가드: '번호 그대로/유지' 표현 감지 — 미납 시 번호 유지 불가(새 번호), 재생성 필요",
+    );
+  }
 
   return {
     title: finalTitle,

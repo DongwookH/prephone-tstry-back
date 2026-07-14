@@ -6,6 +6,7 @@
 
 import { generateJSON } from "./gemini";
 import { getGlobalContext, getFaqExcerpt } from "./knowledge";
+import { hasNumberKeepingClaim } from "./content-guards";
 
 /** GHA Playwright 스크레이퍼가 넘기는 인기글 1건. */
 export interface ScrapedPost {
@@ -535,6 +536,18 @@ ${faqCtx}
         topic_tag: stripEmoji(topic) || undefined,
         self_replies: replies.length > 0 ? replies : undefined,
       };
+    })
+    // 사실 가드 — "번호 유지/살림" 표현이 남아 있으면 초안 폐기 (절대 발행 금지).
+    // 폐기로 슬롯이 비면 fill-missing 크론이 다음 실행에서 재생성한다.
+    .filter((d) => {
+      const joined = [d.draft_text, ...(d.self_replies ?? [])].join("\n");
+      if (hasNumberKeepingClaim(joined)) {
+        console.warn(
+          `[threads] 사실 가드 — 번호 유지 표현 감지, 초안 폐기: "${d.draft_text.replace(/\n/g, " ").slice(0, 50)}…"`,
+        );
+        return false;
+      }
+      return true;
     })
     .slice(0, count);
 }
