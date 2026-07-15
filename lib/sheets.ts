@@ -1807,7 +1807,45 @@ export async function appendThreadsMetrics(rows: (string | number)[][]): Promise
   });
 }
 
-/** posts 시트 ga_pageviews(O열) 갱신 — updatePostStatus의 행 탐색 패턴 재사용. */
+/**
+ * posts 시트 ga_pageviews(O열) 일괄 갱신 — A:A 1회 읽기 + values.batchUpdate 1회.
+ *
+ * ⚠️ per-post 갱신(updatePostGaPageviews)을 수십 건 루프로 돌리면 건당 읽기+쓰기가
+ *    발생해 Sheets API 분당 읽기 쿼터(60/min/user)를 초과한다 (2026-07-15 실사고:
+ *    URL 백필로 매칭이 78건이 되자 수집 크론 전체가 quota 에러로 연쇄 실패).
+ */
+export async function updatePostsGaPageviewsBatch(
+  entries: { id: string; pageviews: number }[],
+): Promise<number> {
+  if (entries.length === 0) return 0;
+  const sheets = getClient();
+  const id = mainSheetId();
+  const idCol = await sheets.spreadsheets.values.get({
+    spreadsheetId: id,
+    range: "posts!A:A",
+  });
+  const rows = idCol.data.values ?? [];
+  const rowById = new Map<string, number>();
+  for (let i = 1; i < rows.length; i++) {
+    const v = rows[i]?.[0];
+    if (v) rowById.set(String(v), i + 1);
+  }
+  const data = entries
+    .filter((e) => rowById.has(e.id))
+    .map((e) => ({
+      range: `posts!O${rowById.get(e.id)}`,
+      values: [[e.pageviews]],
+    }));
+  if (data.length === 0) return 0;
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: id,
+    requestBody: { valueInputOption: "RAW", data },
+  });
+  return data.length;
+}
+
+/** posts 시트 ga_pageviews(O열) 갱신 — updatePostStatus의 행 탐색 패턴 재사용.
+ *  ⚠️ 루프에서 다건 호출 금지 (쿼터) — 다건은 updatePostsGaPageviewsBatch 사용. */
 export async function updatePostGaPageviews(postId: string, pageviews: number): Promise<void> {
   const sheets = getClient();
   const id = mainSheetId();

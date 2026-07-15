@@ -54,7 +54,7 @@ function escapeHtml(s: string): string {
 async function main() {
   const { getGaAccessTokenForCron } = await import("../lib/ga-token");
   const { getPagePathPageviews, getUtmCampaignFunnel } = await import("../lib/ga4");
-  const { getAllPosts, updatePostGaPageviews, updatePostTistoryUrl, appendMetricsDaily, appendThreadsMetrics, getThreadsDrafts, getGaProperties } = await import("../lib/sheets");
+  const { getAllPosts, updatePostsGaPageviewsBatch, updatePostTistoryUrl, appendMetricsDaily, appendThreadsMetrics, getThreadsDrafts, getGaProperties } = await import("../lib/sheets");
   const { getThreadsToken, getMediaInsights } = await import("../lib/threads");
   const { styleFromInsight, matchPostByPath } = await import("../lib/metrics-utils");
   const { sendTelegram } = await import("../lib/telegram");
@@ -66,15 +66,25 @@ async function main() {
     errors.push(`GA 토큰: ${(e as Error).message}`);
   }
 
+  // 시트는 한 번만 읽고 a0·a가 공유 — 반복 읽기는 Sheets 분당 쿼터(60/min)를 갉아먹는다.
+  // (a0가 URL을 채우면 아래 allPosts의 같은 객체를 in-memory로도 갱신하므로 a)가 재읽기 불필요)
+  const gaProps = await getGaProperties().catch((e) => {
+    errors.push(`ga_property 설정 읽기: ${(e as Error).message}`);
+    return [] as Awaited<ReturnType<typeof getGaProperties>>;
+  });
+  const allPosts = await getAllPosts().catch((e) => {
+    errors.push(`posts 읽기: ${(e as Error).message}`);
+    return [] as Awaited<ReturnType<typeof getAllPosts>>;
+  });
+
   // a0) 신규 발행 글 URL 자동 채움 — 블로그 RSS(최신 10개)에서 data-filename의 글 ID 추출
   //     a)가 조회수 매칭에 쓰는 posts.tistory_url을 발행 직후부터 채워둬야 다음 GA
   //     매칭 정확도가 올라간다. 보강 단계 — 실패해도 errors에만 기록하고 다른 소스는
   //     계속 진행(anySourceOk에는 관여 안 함, 소스 자체가 아니라 보강이므로).
   try {
     const { extractPostIds, parseRssItems } = await import("../lib/tistory-match");
-    const props0 = await getGaProperties();
-    const allPosts0 = await getAllPosts();
-    const postsById0 = new Map(allPosts0.map((p) => [p.id, p]));
+    const props0 = gaProps;
+    const postsById0 = new Map(allPosts.map((p) => [p.id, p]));
     let filled = 0;
     const rssErrors: string[] = [];
     for (const prop of props0) {
@@ -120,9 +130,9 @@ async function main() {
   const topPosts: { id: string; title: string; pv: number }[] = [];
   if (gaToken) {
     try {
-      const props = await getGaProperties();
+      const props = gaProps;
       if (props.length === 0) throw new Error("settings에 활성 ga_property 없음");
-      const posts = (await getAllPosts()).filter((p) => p.tistory_url);
+      const posts = allPosts.filter((p) => p.tistory_url);
       const byId = new Map<string, number>();
       let pathTotal = 0;
       const propErrors: string[] = [];
@@ -149,8 +159,14 @@ async function main() {
       if (propErrors.length > 0) {
         errors.push(`Tistory GA 일부 속성 실패: ${propErrors.join(" / ")}`);
       }
+      // 일괄 쓰기 (1읽기+1쓰기) — per-post 루프는 분당 쿼터 초과 (2026-07-15 사고)
+      if (!DRY) {
+        const written = await updatePostsGaPageviewsBatch(
+          [...byId].map(([id, pageviews]) => ({ id, pageviews })),
+        );
+        console.log(`[tistory] ga_pageviews 일괄 갱신 ${written}건`);
+      }
       for (const [id, pv] of byId) {
-        if (!DRY) await updatePostGaPageviews(id, pv);
         const post = posts.find((p) => p.id === id);
         topPosts.push({ id, title: post?.title ?? id, pv });
       }
