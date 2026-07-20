@@ -1414,8 +1414,12 @@ export async function getActiveThreadsKeywords(): Promise<ThreadsKeywordRow[]> {
       mainSheetId(),
       THREADS_KEYWORDS_SHEET,
     );
-  } catch {
-    return [];
+  } catch (err) {
+    // 탭이 아직 없는 신규 설치만 "풀 없음"으로 취급.
+    // 쿼터 초과 등 일시 오류를 빈 배열로 삼키면 호출부가 "풀이 비었다"고
+    // 오판해 슬롯을 비우거나 중복 시드를 추가하므로 반드시 던진다.
+    if (/unable to parse range/i.test((err as Error).message ?? "")) return [];
+    throw err;
   }
   return all.filter(
     (r) =>

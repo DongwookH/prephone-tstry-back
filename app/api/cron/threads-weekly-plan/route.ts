@@ -113,24 +113,33 @@ export async function POST(req: Request) {
   }
 
   // 6) 초안 1개 생성 — 최근 축적된 인기글을 참고자료로 주입 (없으면 KB만으로 진행)
+  //    생성은 확률적으로 빈손이 될 수 있어(파싱 실패·사실 가드 컷) 짧게 재시도.
+  //    3회 × ~15s + 시트 읽기 ≈ 50s — maxDuration 60s 내. 초과 시 GHA 재시도가 커버.
   const researchPosts = await getRecentResearchPosts().catch(() => []);
-  let drafts: Awaited<ReturnType<typeof generateThreadsDraftsFromPosts>>;
-  try {
-    drafts = await generateThreadsDraftsFromPosts({
-      keyword: kw,
-      posts: researchPosts, // 축적된 인기글 (비어 있으면 프롬프트가 KB만 사용)
-      count: 1,
-    });
-  } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: (err as Error).message, keyword: kw, index },
-      { status: 500 },
-    );
+  const MAX_ATTEMPTS = 3;
+  let draft: Awaited<ReturnType<typeof generateThreadsDraftsFromPosts>>[number] | undefined;
+  let lastError = "Gemini가 초안을 만들지 못함";
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS && !draft; attempt++) {
+    try {
+      const drafts = await generateThreadsDraftsFromPosts({
+        keyword: kw,
+        posts: researchPosts, // 축적된 인기글 (비어 있으면 프롬프트가 KB만 사용)
+        count: 1,
+      });
+      draft = drafts[0];
+      if (!draft && attempt < MAX_ATTEMPTS) {
+        console.warn(`[weekly-plan] "${kw}" 초안 0개 — 재시도 ${attempt}/${MAX_ATTEMPTS}`);
+      }
+    } catch (err) {
+      lastError = (err as Error).message;
+      if (attempt < MAX_ATTEMPTS) {
+        console.warn(`[weekly-plan] "${kw}" 생성 실패(${lastError}) — 재시도 ${attempt}/${MAX_ATTEMPTS}`);
+      }
+    }
   }
-  const draft = drafts[0];
   if (!draft) {
     return NextResponse.json(
-      { ok: false, error: "Gemini가 초안을 만들지 못함", keyword: kw, index },
+      { ok: false, error: lastError, keyword: kw, index },
       { status: 500 },
     );
   }

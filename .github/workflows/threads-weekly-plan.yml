@@ -40,10 +40,9 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -uo pipefail
-          total=0
-          fail=0
-          for i in $(seq 0 23); do
-            echo "▶ [$i/23] 생성 요청"
+          call_index() {
+            local i=$1
+            local response http_status body kw sched
             response=$(curl -sS \
               -w "\nHTTP_STATUS:%{http_code}\n" \
               -X POST "${PRODUCTION_URL}/api/cron/threads-weekly-plan" \
@@ -55,23 +54,64 @@ jobs:
             http_status=$(echo "$response" | grep "HTTP_STATUS:" | cut -d: -f2 | tr -d ' ')
             body=$(echo "$response" | sed '/HTTP_STATUS:/d')
             if [ "$http_status" = "200" ]; then
-              total=$((total + 1))
               kw=$(echo "$body" | jq -r '.keyword // "?"')
               sched=$(echo "$body" | jq -r '.scheduled_at // "?"')
               echo "✓ $i: $kw → $sched"
-            else
-              fail=$((fail + 1))
-              echo "::warning::index $i 실패 (HTTP $http_status)"
-              echo "$body" | head -5
+              return 0
             fi
+            echo "::warning::index $i 실패 (HTTP $http_status)"
+            echo "$body" | head -5
+            return 1
+          }
+
+          total=0
+          failed=""
+          for i in $(seq 0 23); do
+            echo "▶ [$i/23] 생성 요청"
+            if call_index "$i"; then total=$((total + 1)); else failed="$failed $i"; fi
             sleep 2
           done
+
+          # 실패 index 재시도 패스 — 일시 오류(시트 읽기 실패·Gemini 빈손)는
+          # 한 번 더 부르면 대부분 성공. 빈 슬롯이 그대로 발행 주간에 남는 것 방지.
+          if [ -n "$failed" ]; then
+            echo "🔁 실패 index 재시도:$failed"
+            sleep 15
+            still=""
+            for i in $failed; do
+              echo "▶ [retry $i] 생성 요청"
+              if call_index "$i"; then total=$((total + 1)); else still="$still $i"; fi
+              sleep 2
+            done
+            failed="$still"
+          fi
+
+          fail=$(echo "$failed" | wc -w | tr -d ' ')
+          echo "PLAN_TOTAL=$total" >> "$GITHUB_ENV"
+          echo "PLAN_FAIL=$fail" >> "$GITHUB_ENV"
+          echo "PLAN_FAILED_IDX=${failed# }" >> "$GITHUB_ENV"
 
           {
             echo "## 🧵 Threads Weekly Plan"
             echo ""
             echo "**성공:** $total / 24"
-            echo "**실패:** $fail"
+            echo "**실패:** $fail${failed:+ (index${failed})}"
             echo ""
             echo "👉 검토: ${PRODUCTION_URL}/threads"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 실패 시 텔레그램 알림
+        if: always()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          fail="${PLAN_FAIL:-24}"
+          total="${PLAN_TOTAL:-0}"
+          if [ "$JOB_STATUS" != "success" ] || [ "$fail" -gt 0 ]; then
+            msg=$(printf '⚠️ Threads 주간 초안 생성 이상\n· 성공 %s / 24, 실패 %s (index %s)\n· 빈 슬롯은 주간 일정에 "초안 없음"으로 남음\n조치: gh workflow run threads-weekly-plan.yml 재실행' \
+              "$total" "$fail" "${PLAN_FAILED_IDX:-?}")
+            curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+              -d chat_id="${TG_CHAT}" --data-urlencode "text=${msg}" >/dev/null || true
+          fi
