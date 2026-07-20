@@ -25,7 +25,8 @@
  *  INGEST_URL               기본 https://prephone-tstry-back.vercel.app/api/threads/research/ingest (drafts 모드용)
  *  STORE_URL                기본 https://prephone-tstry-back.vercel.app/api/threads/research/store (store 모드용)
  *  RESEARCH_KEYWORDS        쉼표구분. 기본: 선불폰,알뜰폰,유심,비대면개통,선불유심,핸드폰요금미납,요금미납,핸드폰정지,앤텔레콤,선불요금제
- *  RESEARCH_ACCOUNTS        쉼표구분 대상 계정 핸들 (예: competitor_a,@competitor_b). "@" 있어도/없어도 됨. 기본 빈 문자열(스킵).
+ *  RESEARCH_ACCOUNTS        쉼표구분 대상 계정 핸들 (예: competitor_a,@competitor_b). "@" 있어도/없어도 됨.
+ *                            기본: pick_sunbul,ezytel.guide,orimobile.mvno,misskim9815 (운영자 지정, 2026-07-20)
  *                            각 계정의 프로필 페이지(https://www.threads.net/@핸들)를 검색과 동일하게 파싱해 축적.
  *  OUR_USERNAME             우리 계정(제외). 기본 safe_ntel
  *  MIN_LIKES                기본 10
@@ -151,7 +152,11 @@ const KEYWORDS = (
   .map((s) => s.trim())
   .filter(Boolean);
 // 대상 계정 프로필 스크래핑 (검색 키워드 대신 특정 계정 타임라인을 훑고 싶을 때). "@" 접두사는 있어도/없어도 허용.
-const ACCOUNTS = (process.env.RESEARCH_ACCOUNTS || "")
+// 기본 4개: 운영자 지정 니치 계정 (2026-07-20)
+const ACCOUNTS = (
+  process.env.RESEARCH_ACCOUNTS ||
+  "pick_sunbul,ezytel.guide,orimobile.mvno,misskim9815"
+)
   .split(",")
   .map((s) => s.trim().replace(/^@/, ""))
   .filter(Boolean);
