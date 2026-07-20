@@ -21,23 +21,27 @@
 // 손님 표지가 없으면 위반. (한국어 주어 생략형은 여기서 못 잡음 — 2차
 // 비평 패스와 프롬프트 규칙이 보완. 오탐 비용 = 초안 1건 재생성, 저렴)
 
-const FIRST_PERSON = /저도|제가|저는|제\s*폰|제\s*명의|제\s*상황|제\s*착각|내가|나도|내\s*폰|내\s*명의/;
+const FIRST_PERSON =
+  /저도|제가|저는|저처럼|저\s*같은|제\s*폰|제\s*명의|제\s*상황|제\s*착각|내가|나도|내\s*폰|내\s*명의/;
 const VICTIM_EVENT =
-  /거절|퇴짜|정지|미납|연체|먹통|멈췄|밀려|밀렸|신용불량|막막|당황|던질\s*뻔|그랬|겪었|겪어봤|착각|안\s*될\s*줄|못\s*했|안\s*된다고|안된다고/;
+  /거절|퇴짜|정지|미납|연체|먹통|멈췄|밀려|밀렸|신용불량|막막|당황|폭탄|던질\s*뻔|그랬|겪었|겪어봤|착각|안\s*될\s*줄|못\s*했|안\s*된다고|안된다고/;
 const CUSTOMER_MARKER =
   /손님|고객|문의|오신\s*분|주신\s*분|해\s*드린|해드린|드렸|드린\s*분|사례|여러분/;
+/** 독자에게 묻는 2인칭 문장 표지 — 주어 생략형 판정에서 제외용. */
+const READER_QUESTION =
+  /있으세요|있으신가요|계신가요|셨나요|하셨어요|신가요|다고요|시죠|어때요/;
+/** 시간 앵커 — 한국어 주어 생략 경험담("지난달에 폰이 먹통 됐거든요")의 단서. */
+const TIME_ANCHOR = /지난\s*[주달]|어제|엊그제|그저께|얼마\s*전|요전/;
 
 /** "화자 본인이 고객 피해 상황을 겪었다"는 문장이 있으면 true. */
 export function hasFirstPersonVictimClaim(text: string): boolean {
   const t = (text || "").replace(/<[^>]+>/g, " ");
   for (const sent of t.split(/[.!?…]+|\n+/)) {
-    if (
-      FIRST_PERSON.test(sent) &&
-      VICTIM_EVENT.test(sent) &&
-      !CUSTOMER_MARKER.test(sent)
-    ) {
-      return true;
-    }
+    if (CUSTOMER_MARKER.test(sent) || !VICTIM_EVENT.test(sent)) continue;
+    // (a) 명시적 1인칭 + 피해 사건
+    if (FIRST_PERSON.test(sent)) return true;
+    // (b) 주어 생략형: 시간 앵커 + 피해 사건, 독자용 질문이 아니면 화자 경험담으로 판정
+    if (TIME_ANCHOR.test(sent) && !READER_QUESTION.test(sent)) return true;
   }
   return false;
 }

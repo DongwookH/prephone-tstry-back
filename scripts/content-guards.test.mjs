@@ -67,6 +67,36 @@ test("손님 사례 시점 — 통과 (올바른 프레이밍)", () => {
   );
 });
 
+test("주어 생략형·저처럼 변형 — 차단 (7/20 감사에서 가드가 놓친 실사례)", () => {
+  assert.equal(
+    hasFirstPersonVictimClaim("지난달에 쓰던 폰이 갑자기 먹통 돼서 엄청 당황했어요. 급하게 새 폰 찾아봤거든요"),
+    true,
+  );
+  assert.equal(
+    hasFirstPersonVictimClaim("지난달에 SKT 요금 밀려서 폰이 갑자기 멈췄거든요"),
+    true,
+  );
+  assert.equal(
+    hasFirstPersonVictimClaim("저처럼 소액결제 실수로 통신비 폭탄 맞아본 분들 많으실 것 같은데"),
+    true,
+  );
+});
+
+test("시간 앵커라도 손님 사례·독자 질문이면 통과", () => {
+  assert.equal(
+    hasFirstPersonVictimClaim("지난주에 오신 손님, 폰이 갑자기 먹통 됐다더라고요"),
+    false,
+  );
+  assert.equal(
+    hasFirstPersonVictimClaim("지난달에 요금 밀려서 정지되셨나요? 해결 방법이 있어요"),
+    false,
+  );
+  assert.equal(
+    hasFirstPersonVictimClaim("어제 개통해 드린 분도 미납 이력이 있었지만 5분 만에 끝났어요"),
+    false,
+  );
+});
+
 test("업체 1인칭(피해 아님)·일반 정보 문장 — 통과", () => {
   assert.equal(hasFirstPersonVictimClaim("이런 문의 진짜 많이 받아요. 제가 바로 도와드릴게요"), false);
   assert.equal(hasFirstPersonVictimClaim("요금 밀려서 폰 정지됐다고요? 해결 방법이 있어요"), false);
