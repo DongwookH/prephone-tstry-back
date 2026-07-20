@@ -20,15 +20,31 @@ type TextPost = { text?: string };
  * 니치 글 우선, 무관 글은 최대 maxOffNiche개까지만 (니치 글이 모자라면 무관 글로 채움).
  * 반환 순서: 니치(참여도순) → 무관(참여도순).
  */
+/**
+ * 중복 판정 키 — 같은 글이 다른 키워드/계정 경로로 두 번 축적될 수 있고
+ * (시트 중복 키가 keyword+본문), 파서에 따라 본문 앞에 "@핸들 "이 붙기도 해서
+ * 선두 멘션 제거 + 공백 제거 + 소문자로 정규화해 비교한다.
+ */
+function dedupKey(text: string): string {
+  return (text || "")
+    .replace(/^@[\w.]+\s*/, "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
 export function selectResearchReferences<T extends TextPost>(
   posts: T[],
   limit: number,
   maxOffNiche = 2,
 ): T[] {
   if (limit <= 0) return [];
+  const seen = new Set<string>();
   const niche: T[] = [];
   const offNiche: T[] = [];
   for (const p of posts) {
+    const key = dedupKey(p.text || "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
     (NICHE_PATTERN.test(p.text || "") ? niche : offNiche).push(p);
   }
   // 니치가 충분하면 무관 글 쿼터(maxOffNiche)만큼만 양보, 모자라면 무관 글로 채움

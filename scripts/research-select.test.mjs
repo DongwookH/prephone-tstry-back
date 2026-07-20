@@ -56,6 +56,18 @@ test("전체가 limit 미만 → 전부 반환", () => {
   assert.equal(out.length, 3);
 });
 
+test("중복 본문 제거 — @핸들 접두사 변형도 같은 글로 판정", () => {
+  const posts = [
+    { text: "현직 폰팔이로서 말합니다 지금 바꾸지 마세요", likes: 765 },
+    { text: "@phonesinsa_uman 현직 폰팔이로서 말합니다 지금 바꾸지 마세요", likes: 765 },
+    niche(1),
+    niche(1), // 완전 동일 본문
+    niche(2),
+  ];
+  const out = selectResearchReferences(posts, 8);
+  assert.equal(out.length, 3); // 폰팔이 1 + niche(1) 1 + niche(2) 1
+});
+
 test("니치 내 참여도 순서 유지", () => {
   const posts = [viral(0), niche(3), niche(1), niche(2)];
   const out = selectResearchReferences(posts, 3);
