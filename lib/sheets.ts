@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import type { sheets_v4 } from "googleapis";
+import { selectResearchReferences } from "./research-select";
 
 /**
  * Google Sheets API 클라이언트.
@@ -1722,7 +1723,8 @@ export async function appendResearchPosts(
 
 /**
  * 최근 N일 내 축적된 인기글을 ScrapedPost 형태로 반환.
- * 참여도(engagementScore) 내림차순으로 상위 limit개.
+ * 참여도(engagementScore) 내림차순 정렬 후, 니치 관련 글 우선으로 limit개 선별
+ * (무관 바이럴 글은 각도 참고용 최대 2개 — lib/research-select.ts 참조).
  *
  * @param opts.days  조회 범위 (기본 7일)
  * @param opts.limit 반환 개수 (기본 8)
@@ -1755,7 +1757,7 @@ export async function getRecentResearchPosts(opts?: {
     return isFinite(n) ? n : 0;
   };
 
-  return all
+  const sorted = all
     .filter((r) => {
       if (!r.text?.trim()) return false;
       const t = new Date(r.scraped_at || "").getTime();
@@ -1769,8 +1771,8 @@ export async function getRecentResearchPosts(opts?: {
       reposts: toNum(r.reposts),
       author: r.author || undefined,
     }))
-    .sort((a, b) => researchEngagementScore(b) - researchEngagementScore(a))
-    .slice(0, limit);
+    .sort((a, b) => researchEngagementScore(b) - researchEngagementScore(a));
+  return selectResearchReferences(sorted, limit);
 }
 
 // ─── 성과 수집 시트 ───────────────────────────
