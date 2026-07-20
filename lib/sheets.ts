@@ -1589,9 +1589,10 @@ const THREADS_RESEARCH_HEADERS = [
   "likes",      // E
   "replies",    // F
   "reposts",    // G
+  "author",     // H
 ];
 
-/** threads_research_posts 시트가 없으면 생성 + 헤더. settings 패턴과 동일. */
+/** threads_research_posts 시트가 없으면 생성 + 헤더. 있어도 헤더가 옛 버전이면 갱신 (threads_drafts 패턴과 동일). */
 export async function ensureThreadsResearchSheet(): Promise<void> {
   const sheets = getClient();
   const id = mainSheetId();
@@ -1611,9 +1612,16 @@ export async function ensureThreadsResearchSheet(): Promise<void> {
         ],
       },
     });
+  }
+  // 헤더가 옛 버전이면 갱신 (A~H 8컬럼). 기존 데이터 행은 건드리지 않음.
+  const headerRow = await readRange(id, `${THREADS_RESEARCH_SHEET}!A1:H1`);
+  const cur = headerRow[0] || [];
+  const needsPatch =
+    cur.length < THREADS_RESEARCH_HEADERS.length || !cur.includes("author");
+  if (needsPatch) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: id,
-      range: `${THREADS_RESEARCH_SHEET}!A1:G1`,
+      range: `${THREADS_RESEARCH_SHEET}!A1:H1`,
       valueInputOption: "RAW",
       requestBody: { values: [THREADS_RESEARCH_HEADERS] },
     });
@@ -1702,6 +1710,7 @@ export async function appendResearchPosts(
       p.likes ?? 0,
       p.replies ?? 0,
       p.reposts ?? 0,
+      p.author ?? "",
     ]);
   }
 
@@ -1732,6 +1741,7 @@ export async function getRecentResearchPosts(opts?: {
     likes: string;
     replies: string;
     reposts: string;
+    author: string;
   }[];
   try {
     all = await readSheetAsObjects(mainSheetId(), THREADS_RESEARCH_SHEET);
@@ -1757,6 +1767,7 @@ export async function getRecentResearchPosts(opts?: {
       likes: toNum(r.likes),
       replies: toNum(r.replies),
       reposts: toNum(r.reposts),
+      author: r.author || undefined,
     }))
     .sort((a, b) => researchEngagementScore(b) - researchEngagementScore(a))
     .slice(0, limit);

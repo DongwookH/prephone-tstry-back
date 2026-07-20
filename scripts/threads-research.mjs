@@ -24,7 +24,9 @@
  *  INGEST_MODE              "store"(기본) | "drafts" — 수집 결과 전송 방식
  *  INGEST_URL               기본 https://prephone-tstry-back.vercel.app/api/threads/research/ingest (drafts 모드용)
  *  STORE_URL                기본 https://prephone-tstry-back.vercel.app/api/threads/research/store (store 모드용)
- *  RESEARCH_KEYWORDS        쉼표구분. 기본: 선불폰,알뜰폰,유심,비대면개통,선불유심
+ *  RESEARCH_KEYWORDS        쉼표구분. 기본: 선불폰,알뜰폰,유심,비대면개통,선불유심,핸드폰요금미납,요금미납,핸드폰정지,앤텔레콤,선불요금제
+ *  RESEARCH_ACCOUNTS        쉼표구분 대상 계정 핸들 (예: competitor_a,@competitor_b). "@" 있어도/없어도 됨. 기본 빈 문자열(스킵).
+ *                            각 계정의 프로필 페이지(https://www.threads.net/@핸들)를 검색과 동일하게 파싱해 축적.
  *  OUR_USERNAME             우리 계정(제외). 기본 safe_ntel
  *  MIN_LIKES                기본 10
  *  MIN_REPLIES              기본 2
@@ -142,10 +144,16 @@ const STORE_URL =
 // INGEST_MODE: "store"(기본, 시트 축적) | "drafts"(예전 동작, 즉시 초안 생성)
 const INGEST_MODE = (process.env.INGEST_MODE || "store").toLowerCase();
 const KEYWORDS = (
-  process.env.RESEARCH_KEYWORDS || "선불폰,알뜰폰,유심,비대면개통,선불유심"
+  process.env.RESEARCH_KEYWORDS ||
+  "선불폰,알뜰폰,유심,비대면개통,선불유심,핸드폰요금미납,요금미납,핸드폰정지,앤텔레콤,선불요금제"
 )
   .split(",")
   .map((s) => s.trim())
+  .filter(Boolean);
+// 대상 계정 프로필 스크래핑 (검색 키워드 대신 특정 계정 타임라인을 훑고 싶을 때). "@" 접두사는 있어도/없어도 허용.
+const ACCOUNTS = (process.env.RESEARCH_ACCOUNTS || "")
+  .split(",")
+  .map((s) => s.trim().replace(/^@/, ""))
   .filter(Boolean);
 const OUR_USERNAME = (process.env.OUR_USERNAME || "safe_ntel").toLowerCase();
 const MIN_LIKES = parseInt(process.env.MIN_LIKES || "3", 10);
@@ -249,7 +257,8 @@ function collectPosts(root, out, seen) {
 // 로그인벽 감지 시 true — scrapeKeyword(키워드 루프 지역 스코프) 밖 main()까지 전달하기 위한 모듈 레벨 플래그.
 let sawLoginWall = false;
 
-async function scrapeKeyword(context, keyword) {
+// label: 키워드(예: "선불폰") 또는 "@핸들"(대상 계정 프로필) — "@"로 시작하면 프로필 URL로 분기.
+async function scrapeKeyword(context, label) {
   const page = await context.newPage();
   const captured = [];
 
@@ -269,14 +278,22 @@ async function scrapeKeyword(context, keyword) {
     }
   });
 
-  const q = encodeURIComponent(keyword);
-  const url = `https://www.threads.net/search?q=${q}&serp_type=default`;
-  log(`검색: ${keyword} → ${url}`);
+  const isAccount = label.startsWith("@");
+  let url;
+  if (isAccount) {
+    const handle = label.slice(1);
+    url = `https://www.threads.net/@${encodeURIComponent(handle)}`;
+    log(`계정: ${label} → ${url}`);
+  } else {
+    const q = encodeURIComponent(label);
+    url = `https://www.threads.net/search?q=${q}&serp_type=default`;
+    log(`검색: ${label} → ${url}`);
+  }
 
   try {
     await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
   } catch {
-    log(`  goto 타임아웃(계속): ${keyword}`);
+    log(`  goto 타임아웃(계속): ${label}`);
   }
 
   // 디버그: 최종 페이지 정보
@@ -302,7 +319,7 @@ async function scrapeKeyword(context, keyword) {
     );
   if (loggedOut) {
     log(
-      `  ⚠️⚠️ 로그인 벽 감지 (세션 만료 의심) — '${keyword}' 게시글이 거의 안 잡힐 수 있음. ` +
+      `  ⚠️⚠️ 로그인 벽 감지 (세션 만료 의심) — '${label}' 게시글이 거의 안 잡힐 수 있음. ` +
         `scripts/threads-login.mjs로 세션 갱신 필요.`,
     );
     sawLoginWall = true;
@@ -467,7 +484,7 @@ async function scrapeKeyword(context, keyword) {
     // captured[0]을 /tmp에 저장 — 우리가 직접 구조 분석 가능
     if (captured.length > 0) {
       try {
-        const dumpPath = `/tmp/threads-debug-${keyword}.json`;
+        const dumpPath = `/tmp/threads-debug-${label.replace(/^@/, "at-")}.json`;
         const { writeFileSync } = await import("fs");
         writeFileSync(dumpPath, JSON.stringify(captured[0], null, 2));
         log(`  [디버그] 첫 응답 JSON: ${dumpPath}`);
@@ -560,7 +577,7 @@ async function ingest(keyword, posts) {
 async function main() {
   const HEADLESS = (process.env.HEADLESS ?? "true").toLowerCase() !== "false";
   log(
-    `키워드 ${KEYWORDS.length}개: ${KEYWORDS.join(", ")} | headless=${HEADLESS} | mode=${SCRAPE_ONLY ? "scrape-only" : INGEST_MODE}`,
+    `키워드 ${KEYWORDS.length}개${ACCOUNTS.length > 0 ? ` + 계정 ${ACCOUNTS.length}개` : ""}: ${KEYWORDS.join(", ")}${ACCOUNTS.length > 0 ? ` | 계정: ${ACCOUNTS.map((a) => `@${a}`).join(", ")}` : ""} | headless=${HEADLESS} | mode=${SCRAPE_ONLY ? "scrape-only" : INGEST_MODE}`,
   );
 
   // 진짜 Chrome 사용 시도 → 실패 시 번들 chromium fallback (지문 차이 큼)
@@ -607,6 +624,23 @@ async function main() {
       log(`  키워드 실패 (계속): ${kw} — ${err.message}`);
     }
     // 키워드 간 5~15초 랜덤 텀 (사람처럼)
+    const wait = 5000 + Math.floor(Math.random() * 10000);
+    await new Promise((r) => setTimeout(r, wait));
+  }
+
+  // 대상 계정 프로필 스크래핑 — 키워드 루프와 동일한 방식(파싱·필터·텀)으로 순회.
+  for (const handle of ACCOUNTS) {
+    const label = `@${handle}`;
+    try {
+      const posts = await scrapeKeyword(context, label);
+      const r = await ingest(label, posts);
+      log(`  ${modeLabel}(${label}):`, JSON.stringify(r));
+      totalCreated += r.created || 0;
+      totalStored += r.stored || 0;
+    } catch (err) {
+      log(`  계정 실패 (계속): ${label} — ${err.message}`);
+    }
+    // 계정 간에도 동일하게 5~15초 랜덤 텀 (사람처럼)
     const wait = 5000 + Math.floor(Math.random() * 10000);
     await new Promise((r) => setTimeout(r, wait));
   }
