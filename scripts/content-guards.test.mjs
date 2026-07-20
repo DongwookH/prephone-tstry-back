@@ -9,7 +9,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hasNumberKeepingClaim } from "../lib/content-guards.ts";
+import {
+  hasNumberKeepingClaim,
+  hasFirstPersonVictimClaim,
+} from "../lib/content-guards.ts";
 
 test("실제 발행됐던 오정보 문구 — 전부 차단", () => {
   assert.equal(hasNumberKeepingClaim("이 방법만 알면 기존 번호 그대로 쓸 수 있고"), true);
@@ -35,6 +38,40 @@ test("번호와 무관한 문장·일반 문구는 통과", () => {
   assert.equal(hasNumberKeepingClaim("유심번호 입력 후 요금제 선택"), false);
   assert.equal(hasNumberKeepingClaim("전화번호 안내를 확인하세요"), false);
   assert.equal(hasNumberKeepingClaim(""), false);
+});
+
+// ─── 1인칭 고객 경험담 가드 (2026-07-20 운영자 지시: 경험담은 손님 사례 시점) ───
+
+test("1인칭 피해 경험담 — 차단 (실제 발생 사례)", () => {
+  assert.equal(
+    hasFirstPersonVictimClaim("지난주에 4대 통신사 다 돌았는데, 전부 제 명의로는 개통 안 된다고 퇴짜 맞았어요."),
+    true,
+  );
+  assert.equal(hasFirstPersonVictimClaim("저도 예전에 그랬는데, 통신사마다 기준이 달라요"), true);
+  assert.equal(hasFirstPersonVictimClaim("근데 제 착각이었어요. 당연히 안 될 줄 알았거든요"), true);
+  assert.equal(hasFirstPersonVictimClaim("제가 요금 밀려서 폰 정지당했을 때 알게 된 방법이에요"), true);
+});
+
+test("손님 사례 시점 — 통과 (올바른 프레이밍)", () => {
+  assert.equal(
+    hasFirstPersonVictimClaim("어제 개통 문의 주신 손님이 4대 통신사에서 다 거절당하셨다더라고요."),
+    false,
+  );
+  assert.equal(
+    hasFirstPersonVictimClaim("손님 중에 요금 미납으로 정지된 폰 때문에 막막해하시던 분이 계셨어요"),
+    false,
+  );
+  assert.equal(
+    hasFirstPersonVictimClaim("개통해 드린 분 사례인데, 신용불량 이력이 있어도 5분 만에 끝났어요"),
+    false,
+  );
+});
+
+test("업체 1인칭(피해 아님)·일반 정보 문장 — 통과", () => {
+  assert.equal(hasFirstPersonVictimClaim("이런 문의 진짜 많이 받아요. 제가 바로 도와드릴게요"), false);
+  assert.equal(hasFirstPersonVictimClaim("요금 밀려서 폰 정지됐다고요? 해결 방법이 있어요"), false);
+  assert.equal(hasFirstPersonVictimClaim("선불폰은 신용조회 없이 개통돼요"), false);
+  assert.equal(hasFirstPersonVictimClaim(""), false);
 });
 
 test("HTML이 섞여 있어도 감지 (블로그 본문)", () => {
