@@ -33,6 +33,32 @@ test("올바른 표현('새 번호' / '번호는 새로')은 통과", () => {
   assert.equal(hasNumberKeepingClaim("새 번호도 내 명의로 쓸 수 있는 핵심이죠"), false);
 });
 
+test("투폰/두 번째 회선 맥락 — 정상 회선 번호 유지는 사실이므로 통과 (7/21 블로그 오탐 사례)", () => {
+  assert.equal(
+    hasNumberKeepingClaim("투폰 개통해도 지금 쓰는 번호는 그대로 유지됩니다"),
+    false,
+  );
+  assert.equal(
+    hasNumberKeepingClaim("기존 번호는 그대로 두고 두 번째 번호를 하나 더 만드는 거예요"),
+    false,
+  );
+  assert.equal(
+    hasNumberKeepingClaim("세컨폰이라 원래 번호 그대로 쓰면서 업무용 번호를 새로 받아요"),
+    false,
+  );
+});
+
+test("투폰 맥락이라도 미납·정지·부활 문맥이 근처면 여전히 차단", () => {
+  assert.equal(
+    hasNumberKeepingClaim("미납 있어도 투폰으로 기존 번호 그대로 쓸 수 있어요"),
+    true,
+  );
+  assert.equal(
+    hasNumberKeepingClaim("정지된 번호도 투폰 개통하면 그대로 살릴 수 있다니까요"),
+    true,
+  );
+});
+
 test("번호와 무관한 문장·일반 문구는 통과", () => {
   assert.equal(hasNumberKeepingClaim("선불폰은 신용조회 없이 개통돼요"), false);
   assert.equal(hasNumberKeepingClaim("유심번호 입력 후 요금제 선택"), false);

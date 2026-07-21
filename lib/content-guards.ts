@@ -57,6 +57,17 @@ const NEW_AFTER = /^(?:은|는|도|를|가)?\s*새로/;
 /** 검사 창 반경 (번호 앞뒤 글자 수) — 짧은 절 안의 결합만 잡는다. */
 const WINDOW = 14;
 
+// 투폰/두 번째 회선 예외 (2026-07-21 블로그 오탐 수정):
+// "지금 쓰는 번호는 그대로 두고 두 번째 번호를 새로" — 정상 사용 중인 기존
+// 회선의 번호 유지는 사실이라 정당. 단, 미납·정지·부활 문맥이 같이 있으면
+// 원래 막으려던 오정보("미납이어도 번호 유지")이므로 예외를 주지 않는다.
+const SECOND_LINE_CONTEXT =
+  /두\s*번째|투\s*폰|세컨|하나\s*더|추가\s*(번호|회선|개통)|번호[를는은도가]?\s*새로/;
+const DELINQUENCY_CONTEXT =
+  /미납|연체|정지|직권|해지|밀린|밀려|살리|살릴|살린|살려|부활|먹통|신용불량/;
+/** 예외 판단용 광역 문맥 반경 — 같은 문장/절 수준. */
+const CONTEXT_WINDOW = 60;
+
 /**
  * "번호를 유지/살린다"는 주장·암시(부정문 포함)가 있으면 true.
  * HTML이 섞여 있어도 동작 (태그 제거 후 검사).
@@ -70,7 +81,16 @@ export function hasNumberKeepingClaim(text: string): boolean {
     const isNewNumber = NEW_BEFORE.test(before) || NEW_AFTER.test(after);
     if (!isNewNumber) {
       const windowText = t.slice(Math.max(0, idx - WINDOW), idx + 2 + WINDOW);
-      if (KEEP_WORDS.test(windowText)) return true;
+      if (KEEP_WORDS.test(windowText)) {
+        const ctx = t.slice(
+          Math.max(0, idx - CONTEXT_WINDOW),
+          idx + 2 + CONTEXT_WINDOW,
+        );
+        // 투폰 맥락이면서 미납·부활 문맥이 아니면 정당한 표현
+        if (!(SECOND_LINE_CONTEXT.test(ctx) && !DELINQUENCY_CONTEXT.test(ctx))) {
+          return true;
+        }
+      }
     }
     idx = t.indexOf("번호", idx + 2);
   }
