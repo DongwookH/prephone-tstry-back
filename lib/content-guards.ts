@@ -96,3 +96,38 @@ export function hasNumberKeepingClaim(text: string): boolean {
   }
   return false;
 }
+
+// ─── 컴플라이언스 금지어 (프로젝트 공통 규칙 CLAUDE.md, 2026-07-23 사업주 확정) ───
+// 게재 콘텐츠(블로그·스레드)에 절대 나오면 안 되는 단어. 대체 표현은 fix 참고.
+// ⚠️ disclaimer 문구("…본사가 아닌 회원이 운영…")는 가드 통과 후 코드가 삽입하므로
+//    이 검사는 반드시 "모델 산출물"에만 적용할 것 (최종 HTML 재검사 금지).
+const COMPLIANCE_BANNED: ReadonlyArray<{ word: string; fix: string }> = [
+  { word: "외국인등록증", fix: "외국인 안내는 '여권 + 매장 방문' 프레임으로만" },
+  { word: "더지통신", fix: "내부 상호 — 브랜드는 '앤텔레콤 안심개통'" },
+  { word: "앤스마트", fix: "내부 전산명 — 언급 금지" },
+  { word: "다이소", fix: "유심 안내는 KT 바로유심·LG 모두의 원칩만" },
+  { word: "스카이라이프", fix: "유심 안내는 KT 바로유심·LG 모두의 원칩만" },
+  { word: "24시간", fix: "개통 시간: 신규 08:00~21:50, 번호이동 10:00~19:50" },
+  { word: "공식", fix: "'인증판매점'으로 바꾸거나 표현 삭제 (NRC 컴플라이언스)" },
+  { word: "본사", fix: "'인증판매점'으로 (NRC 컴플라이언스)" },
+  { word: "직영", fix: "'인증판매점' 또는 '매장'으로 (NRC 컴플라이언스)" },
+  { word: "고객센터", fix: "'1:1 채팅 상담'으로 (NRC 컴플라이언스)" },
+  { word: "개통센터", fix: "'매장'으로 (NRC 컴플라이언스)" },
+];
+
+/**
+ * 컴플라이언스 금지어 검사 — 걸린 단어 목록 반환 (없으면 빈 배열).
+ * HTML 태그 제거 + 공백 정규화 후 부분 문자열 매칭.
+ * (공백을 통째로 제거하면 "기본 사용"→"본사" 같은 경계 오탐이 생기므로 하지 않는다)
+ */
+export function findComplianceBannedWords(text: string): string[] {
+  const t = (text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  return COMPLIANCE_BANNED.filter((b) => t.includes(b.word)).map((b) => b.word);
+}
+
+/** 재시도 프롬프트에 넣을 수 있는 교정 힌트 문자열. */
+export function complianceFixHints(words: string[]): string {
+  return COMPLIANCE_BANNED.filter((b) => words.includes(b.word))
+    .map((b) => `"${b.word}" → ${b.fix}`)
+    .join("; ");
+}

@@ -1,5 +1,9 @@
 import { generateJSON } from "./gemini";
-import { hasNumberKeepingClaim } from "./content-guards";
+import {
+  hasNumberKeepingClaim,
+  findComplianceBannedWords,
+  complianceFixHints,
+} from "./content-guards";
 import {
   getGlobalContext,
   getCategoryContext,
@@ -113,15 +117,23 @@ ${globalCtx}
 
 ${catCtx}
 
-# ❓ 공식 FAQ (이 글 주제 관련 항목 발췌 — 더지통신 259문항 中. 사실 근거로만 사용, 운영 에러코드는 본문에 옮기지 말 것)
+# ❓ 운영 FAQ (이 글 주제 관련 항목 발췌 — 259문항 中. 사실 근거로만 사용, 운영 에러코드는 본문에 옮기지 말 것)
 
 ${faqCtx}
 
 ⚠️ **위 KB에 없는 가격·정책·FAQ는 절대 만들지 마세요.**
-- 가격: 02-plans 표 그대로
+- 가격: 02-plans 표 그대로 (확정가 외 숫자 단정 금지)
 - 정책 (약정, 위약금, 회선 한도, 미성년자 등): 04-faq / 06-cases 그대로
 - 케이스별 가능 여부: 01-services / 06-cases 그대로
-- 정보가 없으면 "자세한 내용은 [공식 사이트] 또는 [카톡 문의]에서 확인해 주세요" 식으로 우회
+- 정보가 없으면 "자세한 내용은 홈페이지 또는 1:1 채팅 상담(카톡)에서 확인해 주세요" 식으로 우회
+
+## 🚫 게재 금지어 (하나라도 쓰면 글 전체가 폐기됩니다 — 컴플라이언스)
+- "외국인등록증" — 외국인 안내가 필요하면 "여권 지참 후 매장 방문" 프레임으로만
+- "더지통신", "앤스마트" — 내부 상호/전산명, 절대 노출 금지
+- "다이소", "스카이라이프" — 유심 구매 안내는 KT 바로유심·LG 모두의 원칩만 언급
+- "24시간" — 개통 시간은 신규 08:00~21:50, 번호이동 10:00~19:50(일·명절 당일 불가)
+- "공식", "본사", "직영" — 우리는 "인증판매점"이다. 자기 지칭·타사 지칭 모두 이 단어들 금지
+- "고객센터", "개통센터" — 상담 안내는 "1:1 채팅 상담(카카오 채널)"로
 
 ---
 
@@ -841,10 +853,25 @@ export async function generatePost(opts: {
     );
   }
 
+  // 컴플라이언스 가드 — 금지어(외국인등록증·다이소·공식·고객센터 등) 감지 시
+  // 통째로 실패시킨다 → generate-daily가 항목당 3회 재시도로 재생성.
+  const bannedHits = findComplianceBannedWords(guardTarget);
+  if (bannedHits.length > 0) {
+    throw new Error(
+      `컴플라이언스 가드: 금지어 감지 [${bannedHits.join(", ")}] — ${complianceFixHints(bannedHits)}`,
+    );
+  }
+
+  // 인증판매점 고지(disclaimer) — 모든 블로그 글 하단 필수 (CLAUDE.md 규칙).
+  // ⚠️ 가드 통과 "후" 삽입 — 고지 문구 자체에 '본사'가 들어가므로 순서 변경 금지.
+  const DISCLAIMER_HTML =
+    '<p style="margin-top:32px;padding:12px 16px;background:#F9FAFB;border-radius:8px;font-size:12px;color:#8B95A1;line-height:1.6;">앤텔레콤 안심개통은 앤텔레콤의 인증 온라인 판매점으로, 본사가 아닌 회원이 운영합니다.</p>';
+  const htmlWithDisclaimer = htmlWithHero + "\n" + DISCLAIMER_HTML;
+
   return {
     title: finalTitle,
     meta_description: result.meta_description?.trim() || "",
-    content_html: htmlWithHero,
+    content_html: htmlWithDisclaimer,
     char_count: charCount,
     seo_score: seoScore,
     utm_campaign: utmCampaign,

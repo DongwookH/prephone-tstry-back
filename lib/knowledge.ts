@@ -103,6 +103,29 @@ export function getCategoryContext(category: string): string {
 // 생성이 60초를 넘겨 504가 난다. 그래서 카테고리/키워드로 관련 섹션만 발췌.
 type FaqSection = { name: string; text: string };
 
+// 게재 금지 주제어가 든 FAQ 항목은 프롬프트에 아예 주입하지 않는다 (컴플라이언스,
+// CLAUDE.md 2026-07-23). 모델이 참고자료에서 금지어를 본문으로 옮기는 사고의 근원 차단.
+// (공식/고객센터 같은 "표현" 금지어는 사실까지 버리면 손해라 출력 가드에서만 잡는다)
+const FAQ_ITEM_BANNED_TOPICS = [
+  "외국인", // 외국인등록증·거소증 등 포함 항목 전체
+  "다이소",
+  "스카이라이프",
+  "앤스마트",
+  "더지통신",
+] as const;
+
+/** 섹션 텍스트에서 금지 주제어가 포함된 "### Q." 항목만 제거. */
+function stripBannedFaqItems(sectionText: string): string {
+  const parts = sectionText.split(/(?=^### )/m);
+  return parts
+    .filter((p, i) => {
+      if (i === 0 && !p.startsWith("### ")) return true; // "## 섹션명" 머리글은 유지
+      return !FAQ_ITEM_BANNED_TOPICS.some((w) => p.includes(w));
+    })
+    .join("")
+    .trim();
+}
+
 const faqParsed: { header: string; sections: FaqSection[] } = (() => {
   const raw = fsCache.get("04-faq") ?? "";
   if (!raw) return { header: "", sections: [] };
@@ -113,7 +136,7 @@ const faqParsed: { header: string; sections: FaqSection[] } = (() => {
   for (const line of raw.split("\n")) {
     if (line.startsWith("## ")) {
       if (cur) {
-        cur.text = buf.join("\n").trim();
+        cur.text = stripBannedFaqItems(buf.join("\n").trim());
         sections.push(cur);
       }
       cur = { name: line.slice(3).trim(), text: "" };
@@ -125,7 +148,7 @@ const faqParsed: { header: string; sections: FaqSection[] } = (() => {
     }
   }
   if (cur) {
-    cur.text = buf.join("\n").trim();
+    cur.text = stripBannedFaqItems(buf.join("\n").trim());
     sections.push(cur);
   }
   return { header: headerBuf.join("\n").trim(), sections };

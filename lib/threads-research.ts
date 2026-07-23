@@ -9,6 +9,7 @@ import { getGlobalContext, getFaqExcerpt } from "./knowledge";
 import {
   hasNumberKeepingClaim,
   hasFirstPersonVictimClaim,
+  findComplianceBannedWords,
 } from "./content-guards";
 
 /** GHA Playwright 스크레이퍼가 넘기는 인기글 1건. */
@@ -406,8 +407,15 @@ ${sampleList}
 # 🏢 우리 회사 정보 (이 사실만 사용, 가격/정책 창작 금지)
 ${globalCtx}
 
-# ❓ 공식 FAQ (더지통신 259문항 中 이 주제 관련 발췌 — 개통/요금/절차/유심 사실 근거. 없는 내용 창작 금지, 운영코드는 본문에 옮기지 말 것)
+# ❓ 운영 FAQ (259문항 中 이 주제 관련 발췌 — 개통/요금/절차/유심 사실 근거. 없는 내용 창작 금지, 운영코드는 본문에 옮기지 말 것)
 ${faqCtx}
+
+# 🚫 게재 금지어 (본문·셀프 댓글에 하나라도 쓰면 초안 전체 폐기 — 컴플라이언스)
+- "외국인등록증" / "더지통신" / "앤스마트" — 내부 정보·차단 주제, 절대 노출 금지
+- "다이소" / "스카이라이프" — 유심 안내는 KT 바로유심·LG 모두의 원칩만
+- "24시간" — 개통 시간은 신규 08:00~21:50, 번호이동 10:00~19:50(일·명절 당일 불가)
+- "공식" / "본사" / "직영" — 우리는 "인증판매점". 자기 지칭·타사 지칭 모두 금지
+- "고객센터" / "개통센터" — 상담 안내는 "1:1 채팅 상담(카카오 채널)"로
 
 # 📡 통신망 선택 — 올바른 사실 (2026-07 운영자 확인. 아래 내용만 사실로 사용)
 - 선불 유심은 선결제 구조라 **요금 미납이 있어도 개통 자체는 막히지 않는다**:
@@ -572,6 +580,14 @@ ${faqCtx}
       if (hasFirstPersonVictimClaim(joined)) {
         console.warn(
           `[threads] 페르소나 가드 — 1인칭 고객 경험담 감지, 초안 폐기: "${d.draft_text.replace(/\n/g, " ").slice(0, 50)}…"`,
+        );
+        return false;
+      }
+      // 컴플라이언스 가드 — 금지어(외국인등록증·다이소·공식·고객센터 등) 감지 시 폐기.
+      const bannedHits = findComplianceBannedWords(joined);
+      if (bannedHits.length > 0) {
+        console.warn(
+          `[threads] 컴플라이언스 가드 — 금지어 [${bannedHits.join(", ")}] 감지, 초안 폐기: "${d.draft_text.replace(/\n/g, " ").slice(0, 50)}…"`,
         );
         return false;
       }

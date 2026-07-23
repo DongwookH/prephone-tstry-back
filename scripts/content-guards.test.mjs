@@ -12,6 +12,8 @@ import assert from "node:assert/strict";
 import {
   hasNumberKeepingClaim,
   hasFirstPersonVictimClaim,
+  findComplianceBannedWords,
+  complianceFixHints,
 } from "../lib/content-guards.ts";
 
 test("실제 발행됐던 오정보 문구 — 전부 차단", () => {
@@ -139,4 +141,52 @@ test("HTML이 섞여 있어도 감지 (블로그 본문)", () => {
     hasNumberKeepingClaim('<div>번호를 그대로 유지하고 싶으신 분 (번호이동)</div>'),
     true,
   );
+});
+
+// ─── 컴플라이언스 금지어 가드 (CLAUDE.md 2026-07-23) ───────────────
+
+test("컴플라이언스 — 실제 발행됐던 위반 문구 전부 감지", () => {
+  assert.deepEqual(
+    findComplianceBannedWords("자세한 유심 가이드는 공식 사이트에서 확인하실 수 있어요"),
+    ["공식"],
+  );
+  assert.deepEqual(
+    findComplianceBannedWords("다이소 U+망 유심(빨간색)도 호환돼요"),
+    ["다이소"],
+  );
+  assert.deepEqual(
+    findComplianceBannedWords("외국인등록증이 있고 간편인증서가 있다면 비대면 개통이 가능합니다"),
+    ["외국인등록증"],
+  );
+  assert.deepEqual(
+    findComplianceBannedWords("통신사 직영점에 방문하여 해제 요청을 해야 합니다"),
+    ["직영"],
+  );
+  assert.deepEqual(
+    findComplianceBannedWords("고객센터 1899-7700으로 전화주세요"),
+    ["고객센터"],
+  );
+  assert.deepEqual(findComplianceBannedWords("24시간 언제든 셀프개통!"), ["24시간"]);
+  assert.deepEqual(findComplianceBannedWords("스카이라이프 유심도 가능해요"), ["스카이라이프"]);
+});
+
+test("컴플라이언스 — 복수 금지어 동시 감지 + HTML 제거", () => {
+  const hits = findComplianceBannedWords(
+    '<p>본사 공식 개통센터에서 24시간 상담해 드려요</p>',
+  );
+  assert.deepEqual(hits.sort(), ["24시간", "개통센터", "공식", "본사"].sort());
+});
+
+test("컴플라이언스 — 정상 표현은 통과 (경계 오탐 회귀 방지)", () => {
+  assert.deepEqual(findComplianceBannedWords("앤텔레콤 안심개통은 인증판매점입니다"), []);
+  assert.deepEqual(findComplianceBannedWords("기본 사용법을 알려드려요"), []); // "본사" 경계 오탐 X
+  assert.deepEqual(findComplianceBannedWords("궁금한 점은 1:1 채팅 상담(카카오 채널)으로!"), []);
+  assert.deepEqual(findComplianceBannedWords("개통 성공 사례가 많아요"), []);
+  assert.deepEqual(findComplianceBannedWords(""), []);
+});
+
+test("컴플라이언스 — 교정 힌트 생성", () => {
+  const hints = complianceFixHints(["공식", "고객센터"]);
+  assert.ok(hints.includes("인증판매점"));
+  assert.ok(hints.includes("1:1 채팅 상담"));
 });
