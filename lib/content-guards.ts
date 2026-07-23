@@ -99,8 +99,6 @@ export function hasNumberKeepingClaim(text: string): boolean {
 
 // ─── 컴플라이언스 금지어 (프로젝트 공통 규칙 CLAUDE.md, 2026-07-23 사업주 확정) ───
 // 게재 콘텐츠(블로그·스레드)에 절대 나오면 안 되는 단어. 대체 표현은 fix 참고.
-// ⚠️ disclaimer 문구("…본사가 아닌 회원이 운영…")는 가드 통과 후 코드가 삽입하므로
-//    이 검사는 반드시 "모델 산출물"에만 적용할 것 (최종 HTML 재검사 금지).
 const COMPLIANCE_BANNED: ReadonlyArray<{ word: string; fix: string }> = [
   { word: "외국인등록증", fix: "외국인 안내는 '여권 + 매장 방문' 프레임으로만" },
   { word: "더지통신", fix: "내부 상호 — 브랜드는 '앤텔레콤 안심개통'" },

@@ -862,16 +862,12 @@ export async function generatePost(opts: {
     );
   }
 
-  // 인증판매점 고지(disclaimer) — 모든 블로그 글 하단 필수 (CLAUDE.md 규칙).
-  // ⚠️ 가드 통과 "후" 삽입 — 고지 문구 자체에 '본사'가 들어가므로 순서 변경 금지.
-  const DISCLAIMER_HTML =
-    '<p style="margin-top:32px;padding:12px 16px;background:#F9FAFB;border-radius:8px;font-size:12px;color:#8B95A1;line-height:1.6;">앤텔레콤 안심개통은 앤텔레콤의 인증 온라인 판매점으로, 본사가 아닌 회원이 운영합니다.</p>';
-  const htmlWithDisclaimer = htmlWithHero + "\n" + DISCLAIMER_HTML;
+  // (disclaimer 고지 문구는 글에 넣지 않는다 — 2026-07-23 사업주 결정)
 
   return {
     title: finalTitle,
     meta_description: result.meta_description?.trim() || "",
-    content_html: htmlWithDisclaimer,
+    content_html: htmlWithHero,
     char_count: charCount,
     seo_score: seoScore,
     utm_campaign: utmCampaign,
