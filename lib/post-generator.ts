@@ -614,15 +614,19 @@ ${
  * Gemini가 가끔 히어로 박스 없이 본문 섹션부터 시작 → 없으면 코드가 자동 prepend.
  * 이미 라임 그라데이션 히어로로 시작하면 그대로 둠.
  */
-function ensureHeroBox(
+export function ensureHeroBox(
   html: string,
   title: string,
   keyword: string,
   utmCampaign: string,
 ): string {
   const head = html.slice(0, 700);
-  // 이미 히어로 박스(라임 그라데이션 F4F9E0)로 시작하면 그대로
-  if (/linear-gradient[^;"']*F4F9E0/i.test(head)) return html;
+  // 히어로 박스 = 라임 그라데이션 + 제목 <h2>가 "함께" 있어야 함.
+  // 섹션 헤더 div도 같은 그라데이션(F4F9E0)을 쓰므로 그라데이션만 보면
+  // 히어로 없이 "1) 섹션"으로 시작하는 글을 놓친다 (2026-07-24 전수검사로 발견).
+  if (/linear-gradient[^;"']*F4F9E0/i.test(head) && /<h2[\s>]/i.test(head)) {
+    return html;
+  }
   return buildHeroBox(title, keyword, utmCampaign) + "\n" + html;
 }
 
