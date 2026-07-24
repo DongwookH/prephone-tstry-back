@@ -92,6 +92,8 @@ function buildPrompt(opts: {
   bannedTitleWords?: string[];
   /** 재시도 회차 (0=첫 시도, 1=재시도). 재시도 시 더 강한 압박 문구. */
   retryAttempt?: number;
+  /** 직전 시도의 가드 폐기 사유 — 재시도 프롬프트에 교정 지시로 주입. */
+  retryFeedback?: string;
 }): string {
   const { keyword, category, subKeywords, persona, utmCampaign } = opts;
   const recentTitles = opts.recentTitles ?? [];
@@ -132,8 +134,16 @@ ${faqCtx}
 - "더지통신", "앤스마트" — 내부 상호/전산명, 절대 노출 금지
 - "다이소", "스카이라이프" — 유심 구매 안내는 KT 바로유심·LG 모두의 원칩만 언급
 - "24시간" — 개통 시간은 신규 08:00~21:50, 번호이동 10:00~19:50(일·명절 당일 불가)
-- "공식", "본사", "직영" — 우리는 "인증판매점"이다. 자기 지칭·타사 지칭 모두 이 단어들 금지
-- "고객센터", "개통센터" — 상담 안내는 "1:1 채팅 상담(카카오 채널)"로
+- "공식", "본사", "직영" — 우리는 "인증판매점"이다. 자기 지칭·타사 지칭 모두 이 단어들 금지.
+  대체 표현: "편의점 공식 앱" ✗ → "편의점 앱" ✓ / "공식 사이트·홈페이지" ✗ → "홈페이지" ✓ / "통신사 직영점" ✗ → "통신사 매장" ✓
+- "고객센터", "개통센터" — 상담 안내는 "1:1 채팅 상담(카카오 채널)"로. "고객센터에 문의" ✗ → "1:1 채팅 상담으로 문의" ✓${
+    opts.retryFeedback
+      ? `
+
+## 🔴 직전 시도가 아래 사유로 폐기됐습니다 — 같은 실수를 반복하면 또 폐기됩니다. 이번엔 반드시 고치세요:
+${opts.retryFeedback}`
+      : ""
+  }
 
 ---
 
@@ -696,6 +706,8 @@ export async function generatePost(opts: {
   recentTitles?: string[];
   /** 이번 글 강제 후킹 패턴 (1~20). 미지정 시 recentTitles 분석으로 자동 결정. */
   forcedPattern?: HookPatternId;
+  /** 직전 시도의 가드 폐기 사유 (generate-daily 재시도 시 전달) — 교정 지시로 주입. */
+  retryFeedback?: string;
 }): Promise<GeneratedPost> {
   const category = opts.category || "일반";
   const subKeywords = opts.subKeywords?.slice(0, 5) || [];
@@ -745,6 +757,7 @@ export async function generatePost(opts: {
       forcedPattern,
       bannedTitleWords: effectiveBanned,
       retryAttempt: attempt,
+      retryFeedback: opts.retryFeedback,
     });
 
     const r = await generateJSON<GeneratedPost>(prompt, {

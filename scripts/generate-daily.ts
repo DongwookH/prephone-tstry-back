@@ -165,6 +165,7 @@ function todayKstCompact(): string {
 async function generateAndSaveOne(
   libs: LibModules,
   item: PlanItem,
+  retryFeedback?: string,
 ): Promise<{ id: string; title: string; charCount: number; seoScore: number }> {
   const {
     appendPosts,
@@ -194,6 +195,7 @@ async function generateAndSaveOne(
     recentTitles,
     // ACTIVE_PATTERN_IDS로 이미 검증했으므로 HookPatternId로 안전 캐스팅
     forcedPattern: fp as Parameters<typeof generatePost>[0]["forcedPattern"],
+    retryFeedback,
   });
 
   const now = new Date().toISOString();
@@ -371,9 +373,12 @@ async function main(): Promise<void> {
     );
 
     let ok = false;
+    // 직전 시도의 가드 폐기 사유 — 다음 시도 프롬프트에 교정 지시로 주입
+    // (사유 없이 같은 프롬프트로 재시도하면 같은 금지어를 반복해 3회 전부 소진하는 문제 방지)
+    let lastGuardError: string | undefined;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const r = await generateAndSaveOne(libs, item);
+        const r = await generateAndSaveOne(libs, item, lastGuardError);
         console.log(
           `✅ ${item.keyword} → ${r.id} | ${r.title} | ${r.charCount}자 | SEO ${r.seoScore} (시도 ${attempt})`,
         );
@@ -384,6 +389,8 @@ async function main(): Promise<void> {
       } catch (err) {
         const msg = (err as Error).message || String(err);
         console.log(`  …시도 ${attempt}/3 실패: ${msg}`);
+        // 가드 사유만 피드백으로 전달 (API 오류·429 등은 프롬프트에 넣어봐야 무의미)
+        lastGuardError = /가드/.test(msg) ? msg : lastGuardError;
         if (attempt < 3) {
           await sleep(5_000); // 사이 5초 대기
         }
