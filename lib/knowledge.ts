@@ -26,6 +26,24 @@ import path from "node:path";
 
 const KB_DIR = path.join(process.cwd(), "knowledge-base");
 
+// ─── 게재 금지 "표현"의 KB 내 순화 (컴플라이언스, 2026-07-24) ─────────
+// KB 원문(특히 04-faq)에 "공식 앱"·"직영점" 같은 표현이 있으면 모델이 그대로
+// 베껴 써서 출력 가드에 걸린다 → 프롬프트 주입 전에 의미 보존 교체.
+// ⚠️ 의미가 바뀔 수 있는 단어(고객센터·본사 등)는 여기서 건드리지 않는다
+//    (프롬프트 지시 + 출력 가드 + 재시도 피드백으로 처리).
+const KB_WORDING_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/공식\s*앱/g, "앱"],
+  [/공식\s*(?:사이트|홈페이지)/g, "홈페이지"],
+  [/직영\s*대리점/g, "매장"],
+  [/직영점/g, "매장"],
+];
+
+function sanitizeKbWording(text: string): string {
+  let t = text;
+  for (const [re, to] of KB_WORDING_REPLACEMENTS) t = t.replace(re, to);
+  return t;
+}
+
 // ─── Layer 1: fs 읽기 메모이즈 ───────────────────────
 const fsCache: Map<string, string> = (() => {
   const m = new Map<string, string>();
@@ -38,7 +56,7 @@ const fsCache: Map<string, string> = (() => {
     for (const f of files) {
       const id = f.replace(/\.md$/, "");
       const content = fs.readFileSync(path.join(KB_DIR, f), "utf8");
-      m.set(id, content);
+      m.set(id, sanitizeKbWording(content));
     }
     console.log(
       `[knowledge] ✓ KB 로드 (${m.size}개 파일, ${[...m.values()].reduce((a, c) => a + c.length, 0).toLocaleString()}자)`,
