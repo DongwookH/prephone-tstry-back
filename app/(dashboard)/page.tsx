@@ -1,6 +1,7 @@
 import { Topbar } from "@/components/topbar";
 import { PostRow, PostRowHeader, EmptyPostsState } from "@/components/post-row";
 import { getAllPosts, getTodayPosts } from "@/lib/sheets";
+import { getViewerContext } from "@/lib/tenant-context";
 import {
   Bell,
   CheckCircle2,
@@ -35,9 +36,39 @@ function timeKSTLabel() {
 }
 
 export default async function Dashboard() {
+  const ctx = await getViewerContext();
+  const isOwner = !ctx || ctx.isOwner;
+
+  // 멤버인데 전용 시트가 아직 발급되지 않은 경우 — 데이터 조회 없이 빈 상태만 표시
+  if (ctx && !ctx.isOwner && !ctx.sheetId) {
+    return (
+      <>
+        <Topbar
+          crumbs={[{ label: "워크스페이스" }, { label: "대시보드", bold: true }]}
+        />
+        <div className="px-10 py-8 max-w-[1280px] mx-auto">
+          <div className="bg-white rounded-2xl shadow-card p-16 text-center">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-ink-100 mb-4">
+              <Sparkles size={20} className="text-ink-400" />
+            </div>
+            <h2 className="text-[16px] font-extrabold text-ink-900 mb-1.5">
+              전용 시트 발급 대기 중
+            </h2>
+            <p className="text-[13px] text-ink-500">
+              관리자에게 문의해 주세요.
+            </p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // 오너는 메인 시트 그대로(sheetId 미전달), 멤버는 본인 시트로 스코프
+  const sheetId = isOwner ? undefined : ctx?.sheetId;
+
   const [todayPosts, allPosts] = await Promise.all([
-    getTodayPosts(),
-    getAllPosts(),
+    getTodayPosts(sheetId),
+    getAllPosts(sheetId),
   ]);
 
   const todayGenerated = todayPosts.length;
@@ -68,7 +99,8 @@ export default async function Dashboard() {
         crumbs={[{ label: "워크스페이스" }, { label: "대시보드", bold: true }]}
         right={
           <div className="flex items-center gap-2">
-            <ManualGenerateButton />
+            {/* 수동 생성은 메인(오너) 시트 cron을 트리거하므로 오너만 노출 */}
+            {isOwner && <ManualGenerateButton />}
             <button className="w-9 h-9 rounded-xl hover:bg-ink-100 transition flex items-center justify-center relative">
               <Bell size={18} strokeWidth={2} className="text-ink-700" />
               {todayReady > 0 && (

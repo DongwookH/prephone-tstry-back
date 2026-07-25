@@ -1,7 +1,9 @@
+import { redirect } from "next/navigation";
 import { Topbar } from "@/components/topbar";
 import { getAllPosts, toKstDate, getGaProperties } from "@/lib/sheets";
 import { MultiBlogAnalytics } from "@/components/multi-blog-analytics";
 import { auth } from "@/auth";
+import { getViewerContext } from "@/lib/tenant-context";
 import {
   getOverview,
   getDailyTrend,
@@ -102,6 +104,10 @@ export default async function AnalyticsPage({
 }: {
   searchParams: Promise<{ days?: string }>;
 }) {
+  // 오너 전용 페이지 — 멤버가 직접 URL로 접근하면 대시보드로 돌려보낸다.
+  const ctx = await getViewerContext();
+  if (ctx && !ctx.isOwner) redirect("/");
+
   // 기간 토글 — ?days=1 (오늘) | 7 | 30. 기본 7일.
   const sp = await searchParams;
   const parsed = parseInt(sp.days || "7", 10);

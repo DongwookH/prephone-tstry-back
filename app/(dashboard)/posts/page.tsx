@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Topbar } from "@/components/topbar";
 import { PostRow, PostRowHeader, EmptyPostsState } from "@/components/post-row";
 import { getAllPosts, type PostRow as PostRowType } from "@/lib/sheets";
+import { getViewerContext } from "@/lib/tenant-context";
 import { Plus, Search, SlidersHorizontal, ChevronDown } from "lucide-react";
 
 export const revalidate = 60;
@@ -28,7 +29,14 @@ export default async function PostsPage({ searchParams }: PageProps) {
       : "all";
   const q = (sp.q || "").trim().toLowerCase();
 
-  const all = await getAllPosts();
+  // 오너는 메인 시트 그대로(sheetId 미전달), 멤버는 본인 시트로 스코프.
+  // 멤버인데 전용 시트 미발급(sheetId="")이면 조회 자체를 생략 — 오너 데이터 노출 방지.
+  const ctx = await getViewerContext();
+  const isOwner = !ctx || ctx.isOwner;
+  const sheetPending = !!ctx && !ctx.isOwner && !ctx.sheetId;
+  const sheetId = isOwner ? undefined : ctx?.sheetId;
+
+  const all = sheetPending ? [] : await getAllPosts(sheetId);
 
   // ── 통계 (필터 무관) ──
   const total = all.length;
@@ -277,14 +285,18 @@ export default async function PostsPage({ searchParams }: PageProps) {
           ) : (
             <EmptyPostsState
               message={
-                q || status !== "all"
-                  ? "검색 결과가 없습니다"
-                  : "아직 생성된 글이 없습니다"
+                sheetPending
+                  ? "전용 시트 발급 대기 중"
+                  : q || status !== "all"
+                    ? "검색 결과가 없습니다"
+                    : "아직 생성된 글이 없습니다"
               }
               hint={
-                q || status !== "all"
-                  ? "다른 키워드로 검색하거나 필터를 초기화해보세요."
-                  : "매일 KST 09:00에 자동으로 10편이 생성됩니다."
+                sheetPending
+                  ? "관리자에게 문의해 주세요."
+                  : q || status !== "all"
+                    ? "다른 키워드로 검색하거나 필터를 초기화해보세요."
+                    : "매일 KST 09:00에 자동으로 10편이 생성됩니다."
               }
             />
           )}

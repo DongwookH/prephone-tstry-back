@@ -9,6 +9,7 @@ import {
 } from "@/lib/sheets";
 import { getThreadsToken } from "@/lib/threads";
 import { listTenants, isAdminEmail } from "@/lib/tenants";
+import { getViewerContext } from "@/lib/tenant-context";
 import { GeminiKeyManager, type GeminiKeyItem } from "@/components/gemini-key-manager";
 import { UsageChart } from "@/components/usage-chart";
 import { ThreadsCard, type ThreadsCardData } from "@/components/threads-card";
@@ -26,6 +27,7 @@ import {
   KeyRound,
   Database,
   AtSign,
+  Sheet as SheetIcon,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +38,14 @@ function maskKeyPartial(key: string): string {
 }
 
 export default async function SettingsPage() {
+  const ctx = await getViewerContext();
+
+  // ── 멤버 전용 화면: Gemini 키 관리 + 본인 시트 안내만. 오너 섹션은 렌더하지 않음. ──
+  if (ctx && !ctx.isOwner) {
+    return <MemberSettingsView sheetId={ctx.sheetId} />;
+  }
+
+  // ── 오너: 기존 화면 완전히 그대로 ──
   const session = await auth();
   const [keyStatus, sheetKeys, usage, threadsToken, gaProperties, tenants, isAdmin] =
     await Promise.all([
@@ -432,6 +442,179 @@ export default async function SettingsPage() {
             </p>
           </Card>
         </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * 멤버 전용 설정 화면.
+ *  - Gemini API 키 관리 섹션 (본인 시트 scope) + 본인 시트 안내 카드만 노출
+ *  - GA4·Threads·사용자 관리·연동 상태·자동 생성 등 오너 섹션은 렌더하지 않음
+ *  - 전용 시트가 아직 발급되지 않은 경우(sheetId="") 데이터 조회 없이 대기 안내만 표시
+ */
+async function MemberSettingsView({ sheetId }: { sheetId: string }) {
+  if (!sheetId) {
+    return (
+      <>
+        <Topbar
+          crumbs={[{ label: "워크스페이스" }, { label: "설정", bold: true }]}
+        />
+        <div className="px-8 py-8 max-w-[1400px] mx-auto">
+          <div className="bg-white rounded-2xl shadow-card p-16 text-center">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-ink-100 mb-4">
+              <KeyRound size={20} className="text-ink-400" />
+            </div>
+            <h2 className="text-[16px] font-extrabold text-ink-900 mb-1.5">
+              전용 시트 발급 대기 중
+            </h2>
+            <p className="text-[13px] text-ink-500">관리자에게 문의해 주세요.</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  const [keyStatus, sheetKeys, usage] = await Promise.all([
+    geminiKeyStatus(sheetId),
+    getGeminiKeysFromSheet(sheetId),
+    getGeminiUsage(14, sheetId),
+  ]);
+
+  const sheetKeyItems: GeminiKeyItem[] = sheetKeys.map((k) => ({
+    id: k.id,
+    masked: maskKeyPartial(k.value),
+    label: k.label,
+    createdAt: k.created_at,
+    source: "sheet" as const,
+    usage: parseInt(k.usage_count || "0", 10),
+  }));
+
+  // 사용량 차트 데이터 — 모델 합산 (오너 화면과 동일 로직)
+  const usageMap = new Map<
+    string,
+    { date: string; inputTokens: number; outputTokens: number; calls: number }
+  >();
+  for (const u of usage) {
+    const cur = usageMap.get(u.date) ?? {
+      date: u.date,
+      inputTokens: 0,
+      outputTokens: 0,
+      calls: 0,
+    };
+    cur.inputTokens += parseInt(u.input_tokens || "0", 10);
+    cur.outputTokens += parseInt(u.output_tokens || "0", 10);
+    cur.calls += parseInt(u.calls || "0", 10);
+    usageMap.set(u.date, cur);
+  }
+  const usageData = Array.from(usageMap.values()).sort((a, b) =>
+    a.date.localeCompare(b.date),
+  );
+
+  const totalCalls = usageData.reduce((a, d) => a + d.calls, 0);
+  const totalIn = usageData.reduce((a, d) => a + d.inputTokens, 0);
+  const totalOut = usageData.reduce((a, d) => a + d.outputTokens, 0);
+  const totalTokens = totalIn + totalOut;
+
+  const todayKST = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const today = usageData.find((d) => d.date === todayKST) ?? {
+    inputTokens: 0,
+    outputTokens: 0,
+    calls: 0,
+  };
+  const todayTotal = today.inputTokens + today.outputTokens;
+
+  const DAILY_CALL_LIMIT = keyStatus.dailyLimit;
+  const callsPct =
+    DAILY_CALL_LIMIT > 0
+      ? Math.min((today.calls / DAILY_CALL_LIMIT) * 100, 100)
+      : 0;
+
+  const sheetUrl = `https://docs.google.com/spreadsheets/d/${sheetId}`;
+
+  return (
+    <>
+      <Topbar
+        crumbs={[{ label: "워크스페이스" }, { label: "설정", bold: true }]}
+      />
+      <div className="px-8 py-8 max-w-[900px] mx-auto space-y-6 animate-fade-up">
+        {/* ─── Gemini API 키 관리 ─── */}
+        <Card
+          id="gemini"
+          title="Gemini API"
+          desc={`글 자동 생성 모델 — 현재 ${keyStatus.model} · 키 ${keyStatus.count}개 활성`}
+        >
+          <GeminiKeyManager keys={sheetKeyItems} envCount={0} />
+          <div className="bg-amber-50/60 rounded-xl p-3 text-[11px] text-amber-800 leading-relaxed">
+            <strong>💡 키 변경 즉시 반영:</strong> 내 시트에 키를 추가/삭제하면
+            다음 API 호출부터 자동 적용됩니다 (재배포 불필요, 60초 캐시).
+          </div>
+
+          <div className="grid grid-cols-4 gap-3 pt-1">
+            <MiniKPI
+              label="오늘 호출"
+              value={today.calls.toLocaleString()}
+              sub={`/ ${DAILY_CALL_LIMIT.toLocaleString()} (키 ${keyStatus.count}개 × ${keyStatus.rpdPerKey})`}
+              pct={callsPct}
+            />
+            <MiniKPI
+              label="오늘 토큰"
+              value={todayTotal.toLocaleString()}
+              sub={`입력 ${today.inputTokens.toLocaleString()}`}
+            />
+            <MiniKPI
+              label="누적 호출"
+              value={totalCalls.toLocaleString()}
+              sub={`${usageData.length}일`}
+            />
+            <MiniKPI
+              label="누적 토큰"
+              value={
+                totalTokens >= 1_000_000
+                  ? `${(totalTokens / 1_000_000).toFixed(1)}M`
+                  : totalTokens >= 1000
+                    ? `${(totalTokens / 1000).toFixed(1)}K`
+                    : totalTokens.toString()
+              }
+              sub={`출력 ${(totalOut / Math.max(totalIn + totalOut, 1) * 100).toFixed(0)}%`}
+            />
+          </div>
+          <UsageChart data={usageData} />
+        </Card>
+
+        {/* ─── 내 시트 안내 ─── */}
+        <Card
+          id="my-sheet"
+          title="내 시트"
+          desc="내 글·설정이 저장되는 전용 Google Sheet입니다."
+        >
+          <div className="flex items-center gap-4 p-3 bg-ink-50 rounded-xl">
+            <div className="w-11 h-11 rounded-xl bg-white border border-ink-200 flex items-center justify-center flex-shrink-0">
+              <SheetIcon size={18} className="text-mint-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-extrabold text-ink-900">
+                내 전용 시트
+              </div>
+              <a
+                href={sheetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[12px] text-brand-600 font-semibold hover:underline truncate flex items-center gap-1"
+              >
+                {sheetUrl} <ExternalLink size={11} className="flex-shrink-0" />
+              </a>
+            </div>
+          </div>
+          <p className="text-[11px] text-ink-500 leading-relaxed">
+            guide 탭에서 세부 가이드를 작성하세요.
+          </p>
+        </Card>
       </div>
     </>
   );

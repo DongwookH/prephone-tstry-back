@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
+import { getViewerContext } from "@/lib/tenant-context";
 import {
   addGeminiKey,
   disableGeminiKey,
@@ -31,13 +32,34 @@ async function requireAuth(): Promise<{ ok: boolean; error?: string }> {
   return { ok: true };
 }
 
+/**
+ * 이 액션 호출자가 스코프해야 할 sheetId. 클라이언트 입력은 신뢰하지 않고
+ * 매 호출마다 getViewerContext()로 세션 기준 재확인한다.
+ *  - 오너: undefined → 기존 동작(메인 시트) 그대로
+ *  - 멤버: 본인 시트로 스코프. 시트 미발급이면 에러 반환
+ */
+async function resolveScopedSheetId(): Promise<
+  { ok: true; sheetId: string | undefined } | { ok: false; error: string }
+> {
+  const ctx = await getViewerContext();
+  if (!ctx) return { ok: false, error: "로그인이 필요합니다" };
+  if (ctx.isOwner) return { ok: true, sheetId: undefined };
+  if (!ctx.sheetId) {
+    return {
+      ok: false,
+      error: "전용 시트가 아직 발급되지 않았습니다 — 관리자에게 문의해 주세요",
+    };
+  }
+  return { ok: true, sheetId: ctx.sheetId };
+}
+
 /** 새 Gemini 키 추가. */
 export async function addGeminiKeyAction(input: {
   value: string;
   label: string;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-  const a = await requireAuth();
-  if (!a.ok) return { ok: false, error: a.error! };
+  const scoped = await resolveScopedSheetId();
+  if (!scoped.ok) return { ok: false, error: scoped.error };
 
   const value = input.value.trim();
   const label = input.label.trim();
@@ -48,7 +70,7 @@ export async function addGeminiKeyAction(input: {
     return { ok: false, error: "키가 너무 짧습니다 (39자 정도 예상)" };
 
   try {
-    const { id } = await addGeminiKey(value, label);
+    const { id } = await addGeminiKey(value, label, scoped.sheetId);
     invalidateGeminiKeyCache();
     revalidatePath("/settings");
     return { ok: true, id };
@@ -61,11 +83,11 @@ export async function addGeminiKeyAction(input: {
 export async function disableGeminiKeyAction(
   id: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const a = await requireAuth();
-  if (!a.ok) return { ok: false, error: a.error! };
+  const scoped = await resolveScopedSheetId();
+  if (!scoped.ok) return { ok: false, error: scoped.error };
 
   try {
-    const found = await disableGeminiKey(id);
+    const found = await disableGeminiKey(id, scoped.sheetId);
     if (!found) return { ok: false, error: "해당 키를 찾을 수 없습니다" };
     invalidateGeminiKeyCache();
     revalidatePath("/settings");

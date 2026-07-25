@@ -442,10 +442,19 @@ export function getDailyRpdPerKey(model: string = DEFAULT_MODEL): number {
 
 /**
  * 현재 키 상태 — async (시트 + env 합본).
+ *
+ * @param sheetId 지정 시 해당 시트의 settings 키를 직접 조회 (멀티테넌트 오버라이드).
+ *   생략 시 기존 동작과 동일 — 전역 resolveKeys()/getSheetKeys() 캐시·폴백 로직 그대로 사용.
  */
-export async function geminiKeyStatus() {
-  const keys = await resolveKeys();
-  const sheetKeys = await getSheetKeys();
+export async function geminiKeyStatus(sheetId?: string) {
+  const sheetKeys = sheetId
+    ? (await getGeminiKeysFromSheet(sheetId)).map((r) => r.value).filter(Boolean)
+    : await getSheetKeys();
+  const keys = sheetId
+    ? sheetKeys.length > 0
+      ? sheetKeys
+      : ENV_KEYS
+    : await resolveKeys();
   const rpdPerKey = getDailyRpdPerKey(DEFAULT_MODEL);
   return {
     count: keys.length,

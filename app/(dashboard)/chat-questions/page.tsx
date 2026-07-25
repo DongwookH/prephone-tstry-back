@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { Topbar } from "@/components/topbar";
 import { getChatLogsSummary } from "@/lib/sheets";
 import {
@@ -5,6 +6,7 @@ import {
   type ChatLogsPayload,
 } from "@/components/chat-questions-live";
 import { MessageCircleQuestion } from "lucide-react";
+import { getViewerContext } from "@/lib/tenant-context";
 
 // 실시간 조회 — 캐시 없이 매 요청 시트 읽기 (이후 갱신은 클라이언트 15초 폴링)
 export const dynamic = "force-dynamic";
@@ -12,6 +14,10 @@ export const dynamic = "force-dynamic";
 const INITIAL_LIMIT = 200;
 
 export default async function ChatQuestionsPage() {
+  // 오너 전용 페이지 — 멤버가 직접 URL로 접근하면 대시보드로 돌려보낸다.
+  const ctx = await getViewerContext();
+  if (ctx && !ctx.isOwner) redirect("/");
+
   let initial: ChatLogsPayload = {
     rows: [],
     total: 0,

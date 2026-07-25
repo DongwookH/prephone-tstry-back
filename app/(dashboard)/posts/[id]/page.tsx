@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Topbar } from "@/components/topbar";
 import { getPostByIdFromSheet } from "@/lib/sheets";
+import { getViewerContext } from "@/lib/tenant-context";
 import { extractCardData } from "@/lib/extract-card-data";
 import { CheckCircle2 } from "lucide-react";
 import { PostContentViewer } from "@/components/post-content-viewer";
@@ -19,7 +20,15 @@ export default async function PostDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const post = await getPostByIdFromSheet(id);
+
+  // 오너는 메인 시트 그대로(sheetId 미전달), 멤버는 본인 시트로 스코프.
+  // 멤버인데 전용 시트 미발급(sheetId="")이면 조회 없이 404 — 오너 데이터 노출 방지.
+  const ctx = await getViewerContext();
+  const isOwner = !ctx || ctx.isOwner;
+  if (ctx && !ctx.isOwner && !ctx.sheetId) notFound();
+  const sheetId = isOwner ? undefined : ctx?.sheetId;
+
+  const post = await getPostByIdFromSheet(id, sheetId);
   if (!post) notFound();
 
   const seo = parseInt(post.seo_score || "0", 10);

@@ -246,13 +246,14 @@ export async function blacklistKeyword(
 /**
  * keywords 시트에서 status=active(또는 비어있음) + keyword 비어있지 않은 행만.
  */
-export async function getActiveKeywords(opts?: {
-  source?: "manual" | "auto";
-}): Promise<KeywordRow[]> {
-  const all = await readSheetAsObjects<KeywordRow>(
-    keywordsSheetId(),
-    "keywords",
-  );
+export async function getActiveKeywords(
+  opts?: {
+    source?: "manual" | "auto";
+  },
+  sheetId?: string,
+): Promise<KeywordRow[]> {
+  const id = sheetId ?? keywordsSheetId();
+  const all = await readSheetAsObjects<KeywordRow>(id, "keywords");
   return all.filter((r) => {
     if (!r.keyword?.trim()) return false;
     if (r.status && r.status !== "active") return false;
@@ -377,8 +378,9 @@ export type PostRow = {
 };
 
 /** posts 시트 전체 (예시/빈 행 자동 필터). */
-export async function getAllPosts(): Promise<PostRow[]> {
-  const all = await readSheetAsObjects<PostRow>(mainSheetId(), "posts");
+export async function getAllPosts(sheetId?: string): Promise<PostRow[]> {
+  const id = sheetId ?? mainSheetId();
+  const all = await readSheetAsObjects<PostRow>(id, "posts");
   return all.filter((p) => p.id?.trim() && p.title?.trim());
 }
 
@@ -386,8 +388,11 @@ export async function getAllPosts(): Promise<PostRow[]> {
  * 최근 글 N개의 제목을 반환 (제목 클리셰 회피용 — Gemini 프롬프트에 주입).
  * 최신순 정렬 (id desc 가정).
  */
-export async function getRecentPostTitles(limit = 25): Promise<string[]> {
-  const all = await getAllPosts();
+export async function getRecentPostTitles(
+  limit = 25,
+  sheetId?: string,
+): Promise<string[]> {
+  const all = await getAllPosts(sheetId);
   // id는 p-YYYYMMDD-NNN 형태 — 단순 sort로 최신순
   const sorted = all.slice().sort((a, b) => (b.id || "").localeCompare(a.id || ""));
   return sorted
@@ -398,8 +403,9 @@ export async function getRecentPostTitles(limit = 25): Promise<string[]> {
 
 export async function getPostByIdFromSheet(
   id: string,
+  sheetId?: string,
 ): Promise<PostRow | null> {
-  const all = await getAllPosts();
+  const all = await getAllPosts(sheetId);
   return all.find((p) => p.id === id) ?? null;
 }
 
@@ -411,9 +417,10 @@ export async function updatePostStatus(
   postId: string,
   newStatus: PostStatus,
   tistoryUrl?: string,
+  sheetId?: string,
 ): Promise<{ ok: boolean; row?: number }> {
   const sheets = getClient();
-  const id = mainSheetId();
+  const id = sheetId ?? mainSheetId();
 
   // 1) id 컬럼만 읽어서 행 번호 찾기 (1행 헤더, 2행 첫 데이터)
   const idCol = await sheets.spreadsheets.values.get({
@@ -497,6 +504,7 @@ export async function appendPosts(
     updated_at?: string;
     tags?: string | string[]; // 쉼표 구분 문자열 또는 배열
   }>,
+  sheetId?: string,
 ): Promise<void> {
   if (posts.length === 0) return;
   const now = new Date().toISOString();
@@ -523,7 +531,7 @@ export async function appendPosts(
     p.updated_at ?? now,
     Array.isArray(p.tags) ? p.tags.join(", ") : (p.tags ?? ""),
   ]);
-  await appendRows(mainSheetId(), "posts", rows);
+  await appendRows(sheetId ?? mainSheetId(), "posts", rows);
 }
 
 /**
@@ -534,10 +542,11 @@ export async function appendPosts(
  */
 export async function bumpKeywordsUsage(
   keywords: string[],
+  sheetId?: string,
 ): Promise<{ updated: number }> {
   if (keywords.length === 0) return { updated: 0 };
   const sheets = getClient();
-  const id = keywordsSheetId();
+  const id = sheetId ?? keywordsSheetId();
 
   // 시트 raw row를 직접 읽어서 헤더/코멘트 위치를 정확히 파악
   const raw = await readRange(id, "keywords!A1:Z");
@@ -614,14 +623,14 @@ export async function bumpKeywordsUsage(
 }
 
 /** 사이드바용 카운트 — 가벼운 호출. */
-export async function getSidebarCounts(): Promise<{
+export async function getSidebarCounts(sheetId?: string): Promise<{
   postsCount: number;
   keywordsCount: number;
 }> {
   try {
     const [posts, keywords] = await Promise.all([
-      getAllPosts(),
-      getActiveKeywords(),
+      getAllPosts(sheetId),
+      getActiveKeywords(undefined, sheetId),
     ]);
     return { postsCount: posts.length, keywordsCount: keywords.length };
   } catch {
@@ -649,8 +658,8 @@ export function toKstDate(d: Date | string): string {
  * (cron이 UTC 22~23시 = KST 07~08시에 실행될 때 UTC 날짜는 어제로 표시됨)
  * → Date 객체로 파싱 후 KST timezone으로 변환해서 비교.
  */
-export async function getTodayPosts(): Promise<PostRow[]> {
-  const all = await getAllPosts();
+export async function getTodayPosts(sheetId?: string): Promise<PostRow[]> {
+  const all = await getAllPosts(sheetId);
   const todayKST = toKstDate(new Date());
   return all.filter((p) => {
     if (!p.created_at) return false;
@@ -723,9 +732,10 @@ export async function ensureSettingsSheet(): Promise<void> {
 }
 
 /** settings 시트의 모든 행. */
-export async function readSettings(): Promise<SettingRow[]> {
+export async function readSettings(sheetId?: string): Promise<SettingRow[]> {
   try {
-    return await readSheetAsObjects<SettingRow>(mainSheetId(), SETTINGS_SHEET);
+    const id = sheetId ?? mainSheetId();
+    return await readSheetAsObjects<SettingRow>(id, SETTINGS_SHEET);
   } catch {
     // 시트가 아직 없으면 빈 배열
     return [];
@@ -733,8 +743,10 @@ export async function readSettings(): Promise<SettingRow[]> {
 }
 
 /** type=gemini_key 인 활성 키만. enabled=="1". */
-export async function getGeminiKeysFromSheet(): Promise<SettingRow[]> {
-  const all = await readSettings();
+export async function getGeminiKeysFromSheet(
+  sheetId?: string,
+): Promise<SettingRow[]> {
+  const all = await readSettings(sheetId);
   return all.filter(
     (r) => r.type === "gemini_key" && r.enabled === "1" && r.value,
   );
@@ -744,11 +756,18 @@ export async function getGeminiKeysFromSheet(): Promise<SettingRow[]> {
 export async function addGeminiKey(
   value: string,
   label: string,
+  sheetId?: string,
 ): Promise<{ id: string }> {
-  await ensureSettingsSheet();
+  if (sheetId) {
+    // 테넌트 시트 — 프로비저닝 때 settings 탭이 이미 생성되지만,
+    // 수동 발급 등 예외 대비로 대상 시트에 ensure (메인 시트 ensure는 무의미)
+    await ensureSheetTab(sheetId, SETTINGS_SHEET, [...SETTINGS_HEADERS]);
+  } else {
+    await ensureSettingsSheet();
+  }
   const now = new Date().toISOString();
   const newId = `gk-${Date.now()}`;
-  await appendRow(mainSheetId(), SETTINGS_SHEET, [
+  await appendRow(sheetId ?? mainSheetId(), SETTINGS_SHEET, [
     newId,
     "gemini_key",
     value,
@@ -857,9 +876,12 @@ export async function disableGaProperty(id: string): Promise<boolean> {
 }
 
 /** 비활성화 (실제 삭제 X — enabled=0). */
-export async function disableGeminiKey(id: string): Promise<boolean> {
+export async function disableGeminiKey(
+  id: string,
+  sheetId?: string,
+): Promise<boolean> {
   const sheets = getClient();
-  const spreadsheetId = mainSheetId();
+  const spreadsheetId = sheetId ?? mainSheetId();
   const rows = await readRange(spreadsheetId, `${SETTINGS_SHEET}!A:H`);
   if (rows.length < 2) return false;
   // header row 자동 감지
@@ -984,10 +1006,14 @@ export async function bumpGeminiUsage(input: {
 }
 
 /** 최근 N일 사용량 (오래된 순). */
-export async function getGeminiUsage(days = 14): Promise<UsageRow[]> {
+export async function getGeminiUsage(
+  days = 14,
+  sheetId?: string,
+): Promise<UsageRow[]> {
   let all: UsageRow[];
   try {
-    all = await readSheetAsObjects<UsageRow>(mainSheetId(), USAGE_SHEET);
+    const id = sheetId ?? mainSheetId();
+    all = await readSheetAsObjects<UsageRow>(id, USAGE_SHEET);
   } catch {
     return [];
   }
@@ -1006,12 +1032,13 @@ export async function getGeminiUsage(days = 14): Promise<UsageRow[]> {
  */
 export async function deletePostsByIds(
   ids: string[],
+  sheetId?: string,
 ): Promise<{ deleted: number; matchedIds: string[]; notFound: string[] }> {
   if (ids.length === 0) {
     return { deleted: 0, matchedIds: [], notFound: [] };
   }
   const sheets = getClient();
-  const spreadsheetId = mainSheetId();
+  const spreadsheetId = sheetId ?? mainSheetId();
 
   // 1) id 컬럼 읽어서 매치되는 row 번호 찾기 (1-indexed = sheet row)
   const idCol = await sheets.spreadsheets.values.get({

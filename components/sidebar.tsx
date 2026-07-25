@@ -38,10 +38,13 @@ export function Sidebar({
   variant = "full",
   counts,
   user,
+  isOwner = true,
 }: {
   variant?: "full" | "compact";
   counts?: SidebarCounts;
   user?: SidebarUser;
+  /** false면 멤버 전용 메뉴(대시보드/글 목록만)로 축소 — 분석·Threads·챗봇 질문·키워드 숨김 */
+  isOwner?: boolean;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -64,19 +67,24 @@ export function Sidebar({
       icon: FileText,
       count: counts?.postsCount,
     },
-    {
-      href: "/keywords",
-      label: "키워드",
-      icon: Sparkles,
-      count: counts?.keywordsCount,
-    },
-    { href: "/analytics", label: "분석", icon: LineChart },
-    { href: "/threads", label: "Threads", icon: AtSign },
-    {
-      href: "/chat-questions",
-      label: "챗봇 질문",
-      icon: MessageCircleQuestion,
-    },
+    // 멤버는 분석·Threads·챗봇 질문·키워드 메뉴를 볼 수 없음 (오너 전용 데이터)
+    ...(isOwner
+      ? [
+          {
+            href: "/keywords",
+            label: "키워드",
+            icon: Sparkles,
+            count: counts?.keywordsCount,
+          },
+          { href: "/analytics", label: "분석", icon: LineChart },
+          { href: "/threads", label: "Threads", icon: AtSign },
+          {
+            href: "/chat-questions",
+            label: "챗봇 질문",
+            icon: MessageCircleQuestion,
+          },
+        ]
+      : []),
   ];
 
   if (variant === "compact") {

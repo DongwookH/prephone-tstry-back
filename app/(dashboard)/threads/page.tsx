@@ -1,6 +1,8 @@
+import { redirect } from "next/navigation";
 import { Topbar } from "@/components/topbar";
 import { getThreadsDrafts, type ThreadsDraftRow } from "@/lib/sheets";
 import { getThreadsToken } from "@/lib/threads";
+import { getViewerContext } from "@/lib/tenant-context";
 import {
   ThreadsWeeklyCalendar,
   type CalendarDraft,
@@ -52,6 +54,10 @@ export default async function ThreadsPage({
 }: {
   searchParams: Promise<{ week?: string }>;
 }) {
+  // 오너 전용 페이지 — 멤버가 직접 URL로 접근하면 대시보드로 돌려보낸다.
+  const ctx = await getViewerContext();
+  if (ctx && !ctx.isOwner) redirect("/");
+
   const [drafts, token, sp] = await Promise.all([
     getThreadsDrafts(),
     getThreadsToken().catch(() => null),

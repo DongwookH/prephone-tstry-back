@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation";
 import { Topbar } from "@/components/topbar";
 import { getActiveKeywords, type KeywordRow } from "@/lib/sheets";
+import { getViewerContext } from "@/lib/tenant-context";
 import {
   Download,
   Sparkles,
@@ -28,6 +30,10 @@ const accentMap: Record<string, string> = {
 const PREVIEW_LIMIT = 12;
 
 export default async function KeywordsPage() {
+  // 오너 전용 페이지 — 멤버가 직접 URL로 접근하면 대시보드로 돌려보낸다.
+  const ctx = await getViewerContext();
+  if (ctx && !ctx.isOwner) redirect("/");
+
   const all = await getActiveKeywords();
 
   const grouped: Record<string, KeywordRow[]> = {};
