@@ -8,10 +8,12 @@ import {
   getGaProperties,
 } from "@/lib/sheets";
 import { getThreadsToken } from "@/lib/threads";
+import { listTenants, isAdminEmail } from "@/lib/tenants";
 import { GeminiKeyManager, type GeminiKeyItem } from "@/components/gemini-key-manager";
 import { UsageChart } from "@/components/usage-chart";
 import { ThreadsCard, type ThreadsCardData } from "@/components/threads-card";
 import { GaPropertiesManager } from "@/components/ga-properties-manager";
+import { TenantsManager } from "@/components/tenants-manager";
 import {
   Settings2,
   Shield,
@@ -35,13 +37,15 @@ function maskKeyPartial(key: string): string {
 
 export default async function SettingsPage() {
   const session = await auth();
-  const [keyStatus, sheetKeys, usage, threadsToken, gaProperties] =
+  const [keyStatus, sheetKeys, usage, threadsToken, gaProperties, tenants, isAdmin] =
     await Promise.all([
       geminiKeyStatus(),
       getGeminiKeysFromSheet(),
       getGeminiUsage(14),
       getThreadsToken().catch(() => null),
       getGaProperties().catch(() => []),
+      listTenants().catch(() => []),
+      isAdminEmail(session?.user?.email ?? "").catch(() => false),
     ]);
 
   // Threads 카드 데이터 준비
@@ -156,6 +160,9 @@ export default async function SettingsPage() {
             <NavItem href="#ga-blogs" Icon={LineChart} label="GA4 블로그" />
             <NavItem href="#usage" Icon={LineChart} label="API 사용량" />
             <NavItem href="#threads" Icon={AtSign} label="Threads 연동" />
+            {isAdmin && (
+              <NavItem href="#tenants" Icon={Users} label="사용자 관리" />
+            )}
             <NavItem href="#integrations" Icon={Shield} label="연동 상태" />
             <NavItem href="#schedule" Icon={Clock} label="자동 생성" />
           </nav>
@@ -325,6 +332,17 @@ export default async function SettingsPage() {
               <ThreadsCard data={threadsData} />
             </Suspense>
           </Card>
+
+          {/* ─── 사용자 관리 (멀티테넌트 화이트리스트) ─── */}
+          {isAdmin && (
+            <Card
+              id="tenants"
+              title="사용자 관리"
+              desc="등록된 이메일만 구글 로그인이 허용됩니다. 정지하면 즉시 로그인이 차단됩니다. (반영까지 최대 1분)"
+            >
+              <TenantsManager tenants={tenants} isAdmin={isAdmin} />
+            </Card>
+          )}
 
           {/* ─── 연동 상태 ─── */}
           <Card

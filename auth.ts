@@ -91,8 +91,36 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async signIn({ profile }) {
       const email = profile?.email?.toLowerCase();
       if (!email) return false;
-      if (allowlist.length === 0) return true;
-      return allowlist.includes(email);
+      // 1) env 화이트리스트 — 부트스트랩·시트 장애 폴백 (오너 잠금 방지, 항상 유효)
+      if (allowlist.includes(email)) return true;
+      // 2) tenants 시트 조회 — node 라우트에 위임 (edge 번들 제약: googleapis 직접 import 불가)
+      try {
+        const base =
+          process.env.NEXTAUTH_URL ??
+          process.env.PRODUCTION_URL ??
+          "https://prephone-tstry-back.vercel.app";
+        if (process.env.CRON_SECRET) {
+          const res = await fetch(`${base}/api/cron/allowlist-check`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${process.env.CRON_SECRET}`,
+            },
+            body: JSON.stringify({ email }),
+          });
+          if (res.ok) {
+            const j = (await res.json()) as { allowed?: boolean };
+            if (j.allowed === true) return true;
+          }
+        }
+      } catch (e) {
+        console.error(
+          "[auth] allowlist-check 위임 실패 — env 폴백만 적용:",
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+      // 3) 시트에도 없음(또는 조회 불가) — env 화이트리스트가 비어있을 때만 전체 허용(구 동작 보존, dev 용)
+      return allowlist.length === 0;
     },
     async jwt({ token, account }) {
       // 최초 로그인 — account 정보로 토큰 채우기

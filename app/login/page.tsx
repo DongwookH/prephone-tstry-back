@@ -81,6 +81,14 @@ export default function LoginPage() {
                 </p>
                 <p className="text-[12px] text-ink-500 mt-0.5 leading-relaxed">
                   사전에 등록되지 않은 계정은 로그인이 차단됩니다.
+                  <br />
+                  처음이신가요?{" "}
+                  <a
+                    href="/start"
+                    className="font-semibold text-brand-600 hover:underline"
+                  >
+                    이용 안내 보기
+                  </a>
                 </p>
               </div>
             </div>
@@ -90,7 +98,7 @@ export default function LoginPage() {
         <div className="mt-8 flex items-center justify-center gap-3 text-[12px] text-ink-400">
           <span>© 2026 Tistory Auto</span>
           <span className="w-1 h-1 rounded-full bg-ink-300"></span>
-          <a href="#" className="hover:text-ink-600 transition">
+          <a href="/start" className="hover:text-ink-600 transition">
             도움말
           </a>
         </div>

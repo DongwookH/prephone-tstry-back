@@ -14,6 +14,7 @@ import {
   disableThreadsToken,
   postToThreads,
 } from "@/lib/threads";
+import { addTenant, updateTenantStatus, isAdminEmail } from "@/lib/tenants";
 
 async function requireAuth(): Promise<{ ok: boolean; error?: string }> {
   const session = await auth();
@@ -165,6 +166,57 @@ export async function testPostThreadsAction(
       text: (text?.trim() || defaultText).slice(0, 500),
     });
     return { ok: true, id };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+// ─── 사용자 관리 (멀티테넌트 화이트리스트) ──────────────
+
+/** 로그인 + 관리자(role=owner 또는 env ALLOWED_EMAILS) 확인. */
+async function requireAdmin(): Promise<{ ok: boolean; error?: string }> {
+  const session = await auth();
+  const email = session?.user?.email;
+  if (!email) return { ok: false, error: "로그인이 필요합니다" };
+  const admin = await isAdminEmail(email);
+  if (!admin) return { ok: false, error: "관리자 권한이 필요합니다" };
+  return { ok: true };
+}
+
+/** 테넌트(사용자) 추가 — 관리자만. */
+export async function addTenantAction(input: {
+  email: string;
+  name?: string;
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const a = await requireAdmin();
+  if (!a.ok) return { ok: false, error: a.error! };
+
+  try {
+    const result = await addTenant({ email: input.email, name: input.name });
+    if ("error" in result) return { ok: false, error: result.error };
+    revalidatePath("/settings");
+    return { ok: true, id: result.id };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/** 테넌트 상태 변경 (active ↔ suspended) — 관리자만. */
+export async function setTenantStatusAction(
+  id: string,
+  status: "active" | "suspended",
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const a = await requireAdmin();
+  if (!a.ok) return { ok: false, error: a.error! };
+  if (status !== "active" && status !== "suspended") {
+    return { ok: false, error: "허용되지 않는 상태값입니다" };
+  }
+
+  try {
+    const ok = await updateTenantStatus(id, status);
+    if (!ok) return { ok: false, error: "해당 사용자를 찾을 수 없습니다" };
+    revalidatePath("/settings");
+    return { ok: true };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }

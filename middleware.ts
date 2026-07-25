@@ -11,6 +11,8 @@ export default auth((req) => {
   //    (/connect 는 사용자가 백오피스에서 클릭하므로 로그인 필요 — 별도 처리 X, 라우트 안에서 auth)
   const isPublic =
     pathname.startsWith("/login") ||
+    pathname.startsWith("/start") || // 온보딩 안내 — 로그인 전 공개 문서
+
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/cron") ||
     pathname.startsWith("/api/threads/callback") ||

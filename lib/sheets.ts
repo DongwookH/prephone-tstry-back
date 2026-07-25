@@ -135,6 +135,39 @@ export async function updateCell(
   });
 }
 
+/**
+ * 탭이 없으면 생성하고 헤더 행을 채운다 (공용 헬퍼).
+ * headers 길이만큼 A1부터 가로로 기록. 이미 있으면 아무것도 안 함.
+ */
+export async function ensureSheetTab(
+  spreadsheetId: string,
+  title: string,
+  headers: string[],
+): Promise<void> {
+  const sheets = getClient();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties.title",
+  });
+  const exists = meta.data.sheets?.some(
+    (s) => s.properties?.title === title,
+  );
+  if (exists) return;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{ addSheet: { properties: { title } } }],
+    },
+  });
+  const endCol = String.fromCharCode(64 + headers.length); // 1→A, 8→H (Z 이내)
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${title}!A1:${endCol}1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [headers] },
+  });
+}
+
 // ─── 도메인 모델 ───────────────────────────────────────────
 
 export type KeywordRow = {
