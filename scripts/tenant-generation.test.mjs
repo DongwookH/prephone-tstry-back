@@ -1,0 +1,127 @@
+/**
+ * 멀티테넌트 생성 격리 회귀 테스트.
+ *   node --test scripts/tenant-generation.test.mjs
+ *
+ * 핵심 보증: 테넌트 모드 프롬프트/히어로에 오너(앤텔레콤) 브랜드·링크·KB가
+ * 절대 새어들지 않는다 — 새면 "남의 글에 오너 회사 정보"가 들어가는 사고.
+ * 반대로 오너 모드는 기존 그대로여야 한다 (기존 파이프라인 무회귀).
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { buildPrompt, ensureHeroBox } from "../lib/post-generator.ts";
+import {
+  missingRequiredGuideSections,
+  withUtm,
+} from "../lib/tenant-config.ts";
+
+const TENANT_GUIDE = {
+  brand_name: "홍길동텔레콤",
+  links: [
+    { label: "📱 신청 페이지", url: "https://hong.example.com/apply" },
+    { label: "💬 카톡 문의", url: "https://pf.kakao.com/_hongtest" },
+  ],
+  company: "홍길동텔레콤 — 연중무휴, 카톡 상담 운영. 홈페이지 https://hong.example.com",
+  plans: "베이직 20,000원 / 프리미엄 40,000원 (확정가 2종)",
+  personas: "가격 비교 중인 30대 직장인",
+  banned_words: ["최저가", "업계1위"],
+  extra_rules: "이모지는 쓰지 않는다.",
+  faq: "Q. 당일 개통 되나요?\nA. 영업시간 내 접수 시 당일 처리됩니다.",
+};
+
+const OWNER_MARKERS = [
+  "앤텔레콤",
+  "안심개통",
+  "케어통신",
+  "ntelecomsafe.com",
+  "인증판매점",
+  "더지통신",
+];
+
+function tenantPrompt() {
+  return buildPrompt({
+    keyword: "선불폰개통",
+    category: "일반",
+    subKeywords: [],
+    persona: "일반",
+    utmCampaign: "test-campaign",
+    tenantBrand: TENANT_GUIDE,
+  });
+}
+
+function ownerPrompt() {
+  return buildPrompt({
+    keyword: "선불폰개통",
+    category: "일반",
+    subKeywords: [],
+    persona: "일반",
+    utmCampaign: "test-campaign",
+  });
+}
+
+test("테넌트 프롬프트 — 오너 브랜드·링크·KB가 전혀 없다", () => {
+  const p = tenantPrompt();
+  for (const marker of OWNER_MARKERS) {
+    assert.equal(
+      p.includes(marker),
+      false,
+      `테넌트 프롬프트에 오너 마커 "${marker}" 발견 — 격리 실패`,
+    );
+  }
+});
+
+test("테넌트 프롬프트 — 테넌트 브랜드·링크·금지어·추가규칙이 주입된다", () => {
+  const p = tenantPrompt();
+  assert.equal(p.includes("홍길동텔레콤"), true);
+  assert.equal(p.includes("https://hong.example.com/apply"), true);
+  assert.equal(p.includes("최저가"), true, "banned_words 미주입");
+  assert.equal(p.includes("이모지는 쓰지 않는다"), true, "extra_rules 미주입");
+  assert.equal(p.includes("아래 규칙이 우선"), true, "extra_rules 우선 명시 누락");
+  assert.equal(p.includes("당일 개통 되나요"), true, "faq 미주입");
+  assert.equal(p.includes("베이직 20,000원"), true, "plans 미주입");
+});
+
+test("오너 프롬프트 — 기존 그대로 (무회귀)", () => {
+  const p = ownerPrompt();
+  assert.equal(p.includes("앤텔레콤 안심개통"), true);
+  assert.equal(p.includes("ntelecomsafe.com"), true);
+  assert.equal(p.includes("인증판매점"), true, "NRC 컴플라이언스 블록 누락");
+  assert.equal(p.includes("홍길동텔레콤"), false);
+});
+
+test("히어로 자동 삽입 — 테넌트 모드는 테넌트 브랜드·버튼으로", () => {
+  const noHero = '<div class="ntc-section" id="section-1">본문</div>';
+  const out = ensureHeroBox(noHero, "테스트 제목", "선불폰개통", "test-campaign", TENANT_GUIDE);
+  assert.equal(out.includes("홍길동텔레콤"), true);
+  assert.equal(out.includes("https://hong.example.com/apply"), true);
+  for (const marker of OWNER_MARKERS) {
+    assert.equal(out.includes(marker), false, `테넌트 히어로에 "${marker}" 발견`);
+  }
+  // 오너 모드는 기존 그대로
+  const ownerOut = ensureHeroBox(noHero, "테스트 제목", "선불폰개통", "test-campaign");
+  assert.equal(ownerOut.includes("앤텔레콤 안심개통 케어통신"), true);
+});
+
+test("필수 섹션 검증 — brand_name·links·company·plans", () => {
+  assert.deepEqual(missingRequiredGuideSections(TENANT_GUIDE), []);
+  assert.deepEqual(
+    missingRequiredGuideSections({
+      ...TENANT_GUIDE,
+      brand_name: "",
+      links: [],
+      company: "",
+      plans: "",
+    }),
+    ["brand_name", "links", "company", "plans"],
+  );
+});
+
+test("withUtm — 쿼리 유무에 따라 ?/& 처리", () => {
+  assert.equal(
+    withUtm("https://a.com/x", "c1"),
+    "https://a.com/x?utm_source=tistory&utm_medium=blog&utm_campaign=c1",
+  );
+  assert.equal(
+    withUtm("https://a.com/x?ref=1", "c1"),
+    "https://a.com/x?ref=1&utm_source=tistory&utm_medium=blog&utm_campaign=c1",
+  );
+});

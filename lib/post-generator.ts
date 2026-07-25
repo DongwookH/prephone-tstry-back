@@ -10,6 +10,7 @@ import {
   getFaqExcerpt,
 } from "./knowledge";
 import { sanitizeForTistory } from "./sanitize-html";
+import { withUtm, type TenantGuide } from "./tenant-config";
 import {
   HOOK_PATTERNS,
   PATTERN_COUNT,
@@ -79,7 +80,9 @@ const PERSONAS: Record<string, string> = {
 
 const SITE_URL = "https://ntelecomsafe.com";
 
-function buildPrompt(opts: {
+// export는 테스트용 — 테넌트 모드에서 오너(앤텔레콤) 정보가 프롬프트에
+// 새지 않는지 회귀 검증한다 (scripts/tenant-generation.test.mjs).
+export function buildPrompt(opts: {
   keyword: string;
   category: string;
   subKeywords: string[];
@@ -94,20 +97,97 @@ function buildPrompt(opts: {
   retryAttempt?: number;
   /** 직전 시도의 가드 폐기 사유 — 재시도 프롬프트에 교정 지시로 주입. */
   retryFeedback?: string;
+  /**
+   * 테넌트(멀티유저) 모드 — 지정 시 앤텔레콤 KB·링크·금지어 대신
+   * 이 세부 가이드를 주입한다. 글 구조·톤·품질 규칙(공통 가이드)은 유지.
+   */
+  tenantBrand?: TenantGuide;
 }): string {
   const { keyword, category, subKeywords, persona, utmCampaign } = opts;
   const recentTitles = opts.recentTitles ?? [];
   const forcedPattern = opts.forcedPattern;
   const bannedTitleWords = opts.bannedTitleWords ?? [];
   const retryAttempt = opts.retryAttempt ?? 0;
-  const personaDesc = PERSONAS[persona] || PERSONAS["일반"];
+  const personaDesc = opts.tenantBrand?.personas
+    ? opts.tenantBrand.personas
+    : PERSONAS[persona] || PERSONAS["일반"];
   const subList = subKeywords.length
     ? subKeywords.map((k, i) => `   ${i + 1}. ${k}`).join("\n")
     : "   (없음 — 본문에서 자연스러운 동의어 활용)";
 
-  const globalCtx = getGlobalContext();
-  const catCtx = getCategoryContext(category);
-  const faqCtx = getFaqExcerpt({ category, keyword, subKeywords });
+  const tb = opts.tenantBrand;
+
+  // ── KB 컨텍스트: 테넌트 모드면 세부 가이드가 오너 KB를 "대체"한다 ──
+  //    (company·plans는 필수 검증을 통과한 상태로 들어옴 — 폴백 없음)
+  const globalCtx = tb
+    ? `${tb.company}\n\n## 요금·상품 (확정 정보만 — 아래 외 숫자 단정 금지)\n${tb.plans}`
+    : getGlobalContext();
+  const catCtx = tb
+    ? "(별도 카테고리 상세 없음 — 위 회사 정보·요금과 아래 FAQ만 사실 근거로 사용)"
+    : getCategoryContext(category);
+  const faqCtx = tb
+    ? tb.faq ||
+      "(FAQ 미등록 — 사실을 단정하지 말고 '자세한 내용은 문의 채널로 확인' 식으로 우회)"
+    : getFaqExcerpt({ category, keyword, subKeywords });
+
+  // ── 전환 링크: 테넌트 모드면 guide의 links, 아니면 앤텔레콤 링크 ──
+  const brandLinks = tb
+    ? tb.links.slice(0, 4).map((l) => ({
+        label: l.label,
+        url: withUtm(l.url, utmCampaign),
+      }))
+    : [
+        { label: "📱 개통 신청하기", url: `${SITE_URL}/step2?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}` },
+        { label: "💬 카카오톡 문의", url: `${SITE_URL}/kakao?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}` },
+        { label: "🔍 추가 정보 보기", url: `${SITE_URL}/plans?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}` },
+        { label: "⬅️ 이전 글 보기", url: `${SITE_URL}/usim-choice?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}` },
+      ];
+  const primaryLink = brandLinks[0];
+  const contactLink = brandLinks[1] ?? brandLinks[0];
+  const btnStyle =
+    "flex:1 1 calc(50% - 6px);min-width:150px;box-sizing:border-box;display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);";
+  const heroButtonsHtml = brandLinks
+    .map((l) => `    <a href="${l.url}" style="${btnStyle}">${l.label}</a>`)
+    .join("\n");
+
+  const brandName = tb ? tb.brand_name : "앤텔레콤 안심개통";
+
+  // ── 사이트 소개 블록 ──
+  const siteBlock = tb
+    ? `${brandName} — 아래 링크만 전환 목적지로 사용 (다른 URL 창작 금지)
+${tb.links.map((l) => `- ${l.label}: ${l.url}`).join("\n")}
+UTM 캠페인: ${utmCampaign} (위 버튼 href에는 이미 부착돼 있음)`
+    : `${SITE_URL} — 앤텔레콤 안심개통, 선불폰/유심 비대면 셀프 개통 전문.
+- 개통 신청: ${SITE_URL}/step2
+- 카카오톡 문의: ${SITE_URL}/kakao
+- 요금제 안내: ${SITE_URL}/plans
+- 유심 가이드: ${SITE_URL}/usim-choice
+UTM 캠페인: ${utmCampaign}`;
+
+  // ── 금지어 블록: 오너는 NRC 컴플라이언스, 테넌트는 공통 품질 + 본인 금지어 ──
+  const bannedBlock = tb
+    ? `## 🚫 게재 금지어 (하나라도 쓰면 글 전체가 폐기됩니다)
+- "100% 보장", "100% 가능", "무조건 가능" — 과장·단정 광고 표현 금지
+- 경쟁사·타 업체 직접 비방 금지${
+        tb.banned_words.length
+          ? "\n" + tb.banned_words.map((w) => `- "${w}" — 사용자 지정 금지어`).join("\n")
+          : ""
+      }`
+    : `## 🚫 게재 금지어 (하나라도 쓰면 글 전체가 폐기됩니다 — 컴플라이언스)
+- "외국인등록증" — 외국인 안내가 필요하면 "여권 지참 후 매장 방문" 프레임으로만
+- "더지통신", "앤스마트" — 내부 상호/전산명, 절대 노출 금지
+- "다이소", "스카이라이프" — 유심 구매 안내는 KT 바로유심·LG 모두의 원칩만 언급
+- "24시간" — 개통 시간은 신규 08:00~21:50, 번호이동 10:00~19:50(일·명절 당일 불가)
+- "공식", "본사", "직영" — 우리는 "인증판매점"이다. 자기 지칭·타사 지칭 모두 이 단어들 금지.
+  대체 표현: "편의점 공식 앱" ✗ → "편의점 앱" ✓ / "공식 사이트·홈페이지" ✗ → "홈페이지" ✓ / "통신사 직영점" ✗ → "통신사 매장" ✓
+- "고객센터", "개통센터" — 상담 안내는 "1:1 채팅 상담(카카오 채널)"로. "고객센터에 문의" ✗ → "1:1 채팅 상담으로 문의" ✓`;
+
+  // ── 사용자 추가 규칙 (테넌트 전용, 공통 규칙과 충돌 시 우선) ──
+  const extraRulesBlock =
+    tb && tb.extra_rules
+      ? `\n\n## 🔧 사용자 추가 규칙 — 아래 규칙이 이 문서의 공통 규칙과 충돌하면 **아래 규칙이 우선**입니다
+${tb.extra_rules}`
+      : "";
 
   return `당신은 한국 SEO + 블로그 카피라이팅 전문가입니다. 다음 키워드로 티스토리 발행용 한국어 블로그 글 1편을 작성해주세요.
 
@@ -124,19 +204,11 @@ ${catCtx}
 ${faqCtx}
 
 ⚠️ **위 KB에 없는 가격·정책·FAQ는 절대 만들지 마세요.**
-- 가격: 02-plans 표 그대로 (확정가 외 숫자 단정 금지)
-- 정책 (약정, 위약금, 회선 한도, 미성년자 등): 04-faq / 06-cases 그대로
-- 케이스별 가능 여부: 01-services / 06-cases 그대로
-- 정보가 없으면 "자세한 내용은 홈페이지 또는 1:1 채팅 상담(카톡)에서 확인해 주세요" 식으로 우회
+- 가격·상품: 위 요금 정보 그대로 (확정가 외 숫자 단정 금지)
+- 정책·케이스별 가능 여부: 위 KB·FAQ에 있는 것만
+- 정보가 없으면 "자세한 내용은 문의 채널에서 확인해 주세요" 식으로 우회
 
-## 🚫 게재 금지어 (하나라도 쓰면 글 전체가 폐기됩니다 — 컴플라이언스)
-- "외국인등록증" — 외국인 안내가 필요하면 "여권 지참 후 매장 방문" 프레임으로만
-- "더지통신", "앤스마트" — 내부 상호/전산명, 절대 노출 금지
-- "다이소", "스카이라이프" — 유심 구매 안내는 KT 바로유심·LG 모두의 원칩만 언급
-- "24시간" — 개통 시간은 신규 08:00~21:50, 번호이동 10:00~19:50(일·명절 당일 불가)
-- "공식", "본사", "직영" — 우리는 "인증판매점"이다. 자기 지칭·타사 지칭 모두 이 단어들 금지.
-  대체 표현: "편의점 공식 앱" ✗ → "편의점 앱" ✓ / "공식 사이트·홈페이지" ✗ → "홈페이지" ✓ / "통신사 직영점" ✗ → "통신사 매장" ✓
-- "고객센터", "개통센터" — 상담 안내는 "1:1 채팅 상담(카카오 채널)"로. "고객센터에 문의" ✗ → "1:1 채팅 상담으로 문의" ✓${
+${bannedBlock}${extraRulesBlock}${
     opts.retryFeedback
       ? `
 
@@ -160,12 +232,7 @@ ${category}
 ${persona} — ${personaDesc}
 
 # 우리 사이트 (전환 목적지)
-${SITE_URL} — 앤텔레콤 안심개통, 선불폰/유심 비대면 셀프 개통 전문.
-- 개통 신청: ${SITE_URL}/step2
-- 카카오톡 문의: ${SITE_URL}/kakao
-- 요금제 안내: ${SITE_URL}/plans
-- 유심 가이드: ${SITE_URL}/usim-choice
-UTM 캠페인: ${utmCampaign}
+${siteBlock}
 
 # 작성 규칙
 
@@ -236,7 +303,7 @@ ${personaDesc}
 
 각 블록은 아래 정확한 패턴으로 작성:
 
-## 🎨 컬러 팔레트 (ntelecomsafe.com 사이트와 통일)
+## 🎨 컬러 팔레트 (서비스 표준 — 모든 글 공통)
 - 메인 라임 그린: #9DC91A (강조 배경, 라벨)
 - 진한 라임: #7FA512 (히어로 배경, 호버)
 - 가장 진한 라임: #5F7C0E (히어로 배경 끝, 링크 텍스트)
@@ -269,10 +336,7 @@ ${personaDesc}
   <p style="font-size:clamp(15px,4vw,17px);line-height:1.9;margin:0 0 16px;color:#191F28;font-weight:600;">{도입부 1문단 — 짧게 2~3문장. 주 키워드 첫 문장에 등장.}</p>
   <p style="font-size:clamp(14.5px,3.9vw,16px);line-height:1.9;margin:0 0 32px;color:#4E5968;font-weight:500;">이 글은 <strong style="color:#5F7C0E;font-weight:800;background:#FFFFFF;padding:2px 8px;border-radius:6px;">{핵심 단어}</strong>를 빠르게 끝내는 흐름과 꼭 체크해야 할 <strong style="color:#5F7C0E;font-weight:800;background:#FFFFFF;padding:2px 8px;border-radius:6px;">완료 포인트</strong>를 한 번에 정리했어요.</p>
   <div style="display:flex;flex-wrap:wrap;gap:12px;">
-    <a href="${SITE_URL}/step2?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="flex:1 1 calc(50% - 6px);min-width:150px;box-sizing:border-box;display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);">📱 개통 신청하기</a>
-    <a href="${SITE_URL}/kakao?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="flex:1 1 calc(50% - 6px);min-width:150px;box-sizing:border-box;display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);">💬 카카오톡 문의</a>
-    <a href="${SITE_URL}/plans?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="flex:1 1 calc(50% - 6px);min-width:150px;box-sizing:border-box;display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);">🔍 추가 정보 보기</a>
-    <a href="${SITE_URL}/usim-choice?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="flex:1 1 calc(50% - 6px);min-width:150px;box-sizing:border-box;display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);">⬅️ 이전 글 보기</a>
+${heroButtonsHtml}
   </div>
 </div>
 
@@ -333,7 +397,7 @@ ${personaDesc}
     <p style="font-size:clamp(14px,3.7vw,15px);line-height:1.8;margin:0 0 16px;color:#333D4B;">아래 순서대로만 하면 어렵지 않아요.</p>
     <!-- 단계 박스 (회색 라운드) -->
     <div style="background:#F2F4F6;border-radius:12px;padding:clamp(14px,4vw,18px) clamp(16px,4.5vw,22px);margin:16px 0;font-size:clamp(13px,3.5vw,14px);line-height:2;color:#333D4B;">
-      <div><strong>1. 접수페이지 접속</strong><br/>→ <a href="${SITE_URL}/step2?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="color:#5F7C0E;font-weight:700;">개통 신청 페이지 접속</a></div>
+      <div><strong>1. 접수페이지 접속</strong><br/>→ <a href="${primaryLink.url}" style="color:#5F7C0E;font-weight:700;">신청 페이지 접속</a></div>
       <div style="margin-top:14px;"><strong>2. 본인인증 진행</strong><br/>→ 간편인증서로 본인 확인</div>
       <div style="margin-top:14px;"><strong>3. 유심번호 입력</strong><br/>→ KT 바로유심 / LG 모두의유심원칩 번호 정확히 입력</div>
       <div style="margin-top:14px;"><strong>4. 신분증 정보입력</strong><br/>→ 촬영/기재 단계에서 흔들리면 재요청될 수 있어요</div>
@@ -365,8 +429,8 @@ ${personaDesc}
   <p style="font-size:clamp(14px,3.7vw,15px);line-height:1.8;margin:0 0 16px;color:#191F28;font-weight:700;">{핵심 메시지 한 번 더 — 예: 선불폰은 흐름만 알면 빠르게 끝나요. 특히 승인 후 충전요청까지 가야 진짜 완료라는 점, 꼭 기억해 주세요.}</p>
   <p style="font-size:clamp(13px,3.5vw,14px);line-height:1.8;margin:0 0 12px;color:#4E5968;">지금 바로 진행하려면 아래 링크를 열어두고 시작하세요.</p>
   <p style="margin:0;line-height:2;">
-    ✅ <a href="${SITE_URL}/step2?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="color:#5F7C0E;font-weight:700;">개통 신청 페이지 접속</a><br/>
-    ✅ 궁금한 건 바로 카톡으로 → <a href="${SITE_URL}/kakao?utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}" style="color:#5F7C0E;font-weight:700;">앤텔레콤 안심개통</a>
+    ✅ <a href="${primaryLink.url}" style="color:#5F7C0E;font-weight:700;">신청 페이지 접속</a><br/>
+    ✅ 궁금한 건 바로 문의 → <a href="${contactLink.url}" style="color:#5F7C0E;font-weight:700;">${brandName}</a>
   </p>
 </div>
 \`\`\`
@@ -463,8 +527,8 @@ ${
 🚨 **아래 패턴 예시는 "문체/구조" 참고용일 뿐 — 예시의 단어·소재(직원/신용불량 등)를 그대로 복사하지 마세요.** 반드시 이번 주 키워드("${keyword}")에 맞는 소재로 바꿔 쓰세요.
 
 ⚠️ **브랜드 접미사 절대 금지:**
-- ❌ \`| 앤텔레콤 안심개통\` \`- 앤텔레콤 안심개통\` \`· 앤텔레콤 안심개통\` 같은 brand suffix
-- ❌ 제목 안에 "앤텔레콤" "안심개통" 직접 노출 X (브랜드 호기심 X → 후킹 약함)
+- ❌ \`| ${brandName}\` \`- ${brandName}\` \`· ${brandName}\` 같은 brand suffix
+- ❌ 제목 안에 "${brandName}" 직접 노출 X (브랜드 호기심 X → 후킹 약함)
 - 브랜드는 본문/CTA에서 충분히 노출되므로 제목엔 후킹만 집중
 
 ⚠️ **반복 클리셰 회피 — "5분/30분 시간 단축" 패턴 과사용 금지** ⚠️
@@ -619,6 +683,7 @@ export function ensureHeroBox(
   title: string,
   keyword: string,
   utmCampaign: string,
+  tenantBrand?: TenantGuide,
 ): string {
   const head = html.slice(0, 700);
   // 히어로 박스 = 라임 그라데이션 + 제목 <h2>가 "함께" 있어야 함.
@@ -627,29 +692,39 @@ export function ensureHeroBox(
   if (/linear-gradient[^;"']*F4F9E0/i.test(head) && /<h2[\s>]/i.test(head)) {
     return html;
   }
-  return buildHeroBox(title, keyword, utmCampaign) + "\n" + html;
+  return buildHeroBox(title, keyword, utmCampaign, tenantBrand) + "\n" + html;
 }
 
-/** 히어로 박스 HTML 생성 (프롬프트 ① 템플릿과 동일 구조). */
+/** 히어로 박스 HTML 생성 (프롬프트 ① 템플릿과 동일 구조). 테넌트면 그쪽 브랜드·링크로. */
 function buildHeroBox(
   title: string,
   keyword: string,
   utmCampaign: string,
+  tenantBrand?: TenantGuide,
 ): string {
   const utm = `utm_source=tistory&utm_medium=blog&utm_campaign=${utmCampaign}`;
   const btn =
     "flex:1 1 calc(50% - 6px);min-width:150px;box-sizing:border-box;display:block;background:#FFFFFF;border-radius:12px;padding:18px;text-align:center;font-weight:800;color:#191F28;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);";
   const hl =
     "color:#5F7C0E;font-weight:800;background:#FFFFFF;padding:2px 8px;border-radius:6px;";
-  return `<div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);border-radius:24px;padding:clamp(24px,6vw,48px) clamp(20px,5vw,40px);margin-bottom:24px;border:1px solid #D4E89C;">
-  <h2 style="font-size:clamp(22px,5.5vw,30px);font-weight:900;margin:0 0 24px;color:#191F28;line-height:1.3;letter-spacing:-0.02em;">${title}</h2>
-  <p style="font-size:clamp(15px,4vw,17px);line-height:1.9;margin:0 0 16px;color:#191F28;font-weight:600;">${keyword} 때문에 막막하셨나요? 앤텔레콤 안심개통 케어통신이 복잡한 절차 없이 해결해 드립니다.</p>
-  <p style="font-size:clamp(14.5px,3.9vw,16px);line-height:1.9;margin:0 0 32px;color:#4E5968;font-weight:500;">이 글은 <strong style="${hl}">${keyword}</strong>를 빠르게 끝내는 흐름과 꼭 체크해야 할 <strong style="${hl}">완료 포인트</strong>를 한 번에 정리했어요.</p>
-  <div style="display:flex;flex-wrap:wrap;gap:12px;">
-    <a href="${SITE_URL}/step2?${utm}" style="${btn}">📱 개통 신청하기</a>
+  const brandLine = tenantBrand
+    ? `${keyword} 때문에 막막하셨나요? ${tenantBrand.brand_name}이(가) 복잡한 절차 없이 해결해 드립니다.`
+    : `${keyword} 때문에 막막하셨나요? 앤텔레콤 안심개통 케어통신이 복잡한 절차 없이 해결해 드립니다.`;
+  const buttons = tenantBrand
+    ? tenantBrand.links
+        .slice(0, 4)
+        .map((l) => `    <a href="${withUtm(l.url, utmCampaign)}" style="${btn}">${l.label}</a>`)
+        .join("\n")
+    : `    <a href="${SITE_URL}/step2?${utm}" style="${btn}">📱 개통 신청하기</a>
     <a href="${SITE_URL}/kakao?${utm}" style="${btn}">💬 카카오톡 문의</a>
     <a href="${SITE_URL}/plans?${utm}" style="${btn}">🔍 추가 정보 보기</a>
-    <a href="${SITE_URL}/usim-choice?${utm}" style="${btn}">⬅️ 이전 글 보기</a>
+    <a href="${SITE_URL}/usim-choice?${utm}" style="${btn}">⬅️ 이전 글 보기</a>`;
+  return `<div style="background:linear-gradient(135deg,#F4F9E0 0%,#EAF5BD 100%);border-radius:24px;padding:clamp(24px,6vw,48px) clamp(20px,5vw,40px);margin-bottom:24px;border:1px solid #D4E89C;">
+  <h2 style="font-size:clamp(22px,5.5vw,30px);font-weight:900;margin:0 0 24px;color:#191F28;line-height:1.3;letter-spacing:-0.02em;">${title}</h2>
+  <p style="font-size:clamp(15px,4vw,17px);line-height:1.9;margin:0 0 16px;color:#191F28;font-weight:600;">${brandLine}</p>
+  <p style="font-size:clamp(14.5px,3.9vw,16px);line-height:1.9;margin:0 0 32px;color:#4E5968;font-weight:500;">이 글은 <strong style="${hl}">${keyword}</strong>를 빠르게 끝내는 흐름과 꼭 체크해야 할 <strong style="${hl}">완료 포인트</strong>를 한 번에 정리했어요.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:12px;">
+${buttons}
   </div>
 </div>`;
 }
@@ -673,9 +748,19 @@ function htmlTextLength(html: string): number {
  *  - 끝의 \` | 앤텔레콤 케어통신\` \`| 케어통신\` 같은 변형도 제거
  *  - 제목 마지막 공백/구두점 정리
  */
-function stripBrandSuffix(title: string): string {
+function stripBrandSuffix(title: string, extraBrand?: string): string {
   if (!title) return title;
   let t = title.trim();
+
+  // 테넌트 브랜드명 접미사 제거 (동적 — 정규식 이스케이프)
+  if (extraBrand) {
+    const esc = extraBrand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    for (let i = 0; i < 2; i++) {
+      const before = t;
+      t = t.replace(new RegExp(`\\s*[|·•・/\\-–—]?\\s*${esc}\\s*$`, "i"), "");
+      if (t === before) break;
+    }
+  }
 
   // 끝의 \s*[구분자]\s*앤텔레콤... 패턴 제거 (반복 적용 — 중첩 가능)
   for (let i = 0; i < 3; i++) {
@@ -713,6 +798,8 @@ export async function generatePost(opts: {
   forcedPattern?: HookPatternId;
   /** 직전 시도의 가드 폐기 사유 (generate-daily 재시도 시 전달) — 교정 지시로 주입. */
   retryFeedback?: string;
+  /** 테넌트(멀티유저) 모드 — 세부 가이드로 KB·링크·금지어를 대체. */
+  tenantGuide?: TenantGuide;
 }): Promise<GeneratedPost> {
   const category = opts.category || "일반";
   const subKeywords = opts.subKeywords?.slice(0, 5) || [];
@@ -763,6 +850,7 @@ export async function generatePost(opts: {
       bannedTitleWords: effectiveBanned,
       retryAttempt: attempt,
       retryFeedback: opts.retryFeedback,
+      tenantBrand: opts.tenantGuide,
     });
 
     const r = await generateJSON<GeneratedPost>(prompt, {
@@ -772,7 +860,10 @@ export async function generatePost(opts: {
       },
     });
 
-    const cleanTitle = stripBrandSuffix(r.title?.trim() || "");
+    const cleanTitle = stripBrandSuffix(
+      r.title?.trim() || "",
+      opts.tenantGuide?.brand_name,
+    );
     const bannedHit = containsBannedWords(cleanTitle, effectiveBanned);
     // 돈 안 되는 패턴인데 금액 후크 썼으면 위반
     const moneyViolation = !moneyAllowed && isMoneyHookTitle(cleanTitle);
@@ -853,13 +944,15 @@ export async function generatePost(opts: {
   }
 
   const finalTitle =
-    stripBrandSuffix(result.title?.trim() || "") || `${opts.keyword} 가이드`;
-  // 히어로 박스(상단 표지) 일관성 — Gemini가 빠뜨리면 자동 추가
+    stripBrandSuffix(result.title?.trim() || "", opts.tenantGuide?.brand_name) ||
+    `${opts.keyword} 가이드`;
+  // 히어로 박스(상단 표지) 일관성 — Gemini가 빠뜨리면 자동 추가 (테넌트면 그쪽 브랜드로)
   const htmlWithHero = ensureHeroBox(
     safeHtml,
     finalTitle,
     opts.keyword,
     utmCampaign,
+    opts.tenantGuide,
   );
 
   // 사실 가드 — "번호 유지/살림" 오정보(미납 시 번호는 못 살림, 새 번호 발급)가
@@ -871,13 +964,25 @@ export async function generatePost(opts: {
     );
   }
 
-  // 컴플라이언스 가드 — 금지어(외국인등록증·다이소·공식·고객센터 등) 감지 시
-  // 통째로 실패시킨다 → generate-daily가 항목당 3회 재시도로 재생성.
-  const bannedHits = findComplianceBannedWords(guardTarget);
-  if (bannedHits.length > 0) {
-    throw new Error(
-      `컴플라이언스 가드: 금지어 감지 [${bannedHits.join(", ")}] — ${complianceFixHints(bannedHits)}`,
-    );
+  if (opts.tenantGuide) {
+    // 테넌트 금지어 가드 — 사용자가 지정한 banned_words만 검사
+    // (앤텔레콤 NRC 컴플라이언스는 오너 전용 — 타 테넌트에 강제하지 않는다)
+    const plain = guardTarget.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    const hits = opts.tenantGuide.banned_words.filter((w) => plain.includes(w));
+    if (hits.length > 0) {
+      throw new Error(
+        `테넌트 금지어 가드: [${hits.join(", ")}] 감지 — 세부 가이드 banned_words 위반, 재생성 필요`,
+      );
+    }
+  } else {
+    // 컴플라이언스 가드 — 금지어(외국인등록증·다이소·공식·고객센터 등) 감지 시
+    // 통째로 실패시킨다 → generate-daily가 항목당 3회 재시도로 재생성.
+    const bannedHits = findComplianceBannedWords(guardTarget);
+    if (bannedHits.length > 0) {
+      throw new Error(
+        `컴플라이언스 가드: 금지어 감지 [${bannedHits.join(", ")}] — ${complianceFixHints(bannedHits)}`,
+      );
+    }
   }
 
   // (disclaimer 고지 문구는 글에 넣지 않는다 — 2026-07-23 사업주 결정)

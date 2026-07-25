@@ -40,6 +40,14 @@ const GUIDE_HEADERS = ["section", "설명", "content", "updated_at"];
  */
 const GUIDE_SCAFFOLD: Array<[section: string, desc: string]> = [
   [
+    "brand_name",
+    "(필수) 글에 표기할 상호/브랜드명 한 줄. 예: 홍길동텔레콤",
+  ],
+  [
+    "links",
+    "(필수) 글의 버튼에 넣을 링크. 한 줄에 하나씩 '이름: URL' 형식. 예: 신청 페이지: https://... / 카톡 문의: https://... — 첫 줄이 대표 링크가 됩니다.",
+  ],
+  [
     "company",
     "(필수) 상호명, 연락 채널(카톡·전화), 홈페이지, 영업시간 등 본인 회사 정보. 비어 있으면 글이 생성되지 않습니다.",
   ],
