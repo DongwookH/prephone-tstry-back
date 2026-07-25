@@ -190,3 +190,20 @@ export async function updateTenantStatus(
   invalidateTenantsCache();
   return true;
 }
+
+/** 전용 스프레드시트 ID 기록 (F열) — 프로비저닝 완료 후 호출. */
+export async function updateTenantSpreadsheetId(
+  tenantId: string,
+  spreadsheetId: string,
+): Promise<boolean> {
+  const rows = await readRange(mainSheetId(), `${TENANTS_SHEET}!A:A`);
+  const idx = rows.findIndex((r) => (r?.[0] ?? "").trim() === tenantId);
+  if (idx < 1) return false;
+  await updateCell(
+    mainSheetId(),
+    `${TENANTS_SHEET}!F${idx + 1}`,
+    spreadsheetId,
+  );
+  invalidateTenantsCache();
+  return true;
+}

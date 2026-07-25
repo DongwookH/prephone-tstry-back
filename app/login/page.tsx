@@ -1,7 +1,13 @@
 import { ShieldCheck } from "lucide-react";
-import { signIn } from "@/auth";
+import { redirect } from "next/navigation";
+import { auth, signIn } from "@/auth";
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  // 이미 로그인돼 있으면 로그인 화면을 다시 보여주지 않는다
+  // ("로그인이 풀린 것처럼 보임" 방지 — 2026-07-25 사용자 리포트)
+  const session = await auth();
+  if (session?.user) redirect("/");
+
   async function loginWithGoogle() {
     "use server";
     await signIn("google", { redirectTo: "/" });

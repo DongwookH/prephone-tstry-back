@@ -2,11 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Loader2, Check } from "lucide-react";
+import { Plus, Loader2, Check, ExternalLink, FileSpreadsheet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   addTenantAction,
   setTenantStatusAction,
+  provisionTenantSheetAction,
 } from "@/app/(dashboard)/settings/actions";
 import type { TenantRow } from "@/lib/tenants";
 
@@ -35,7 +36,26 @@ export function TenantsManager({
       if (res.ok) {
         setEmail("");
         setName("");
-        setMsg({ kind: "ok", text: "추가되었습니다" });
+        setMsg(
+          res.warning
+            ? { kind: "err", text: res.warning }
+            : { kind: "ok", text: "추가되었습니다 — 전용 시트가 이메일로 공유됩니다" },
+        );
+        router.refresh();
+      } else {
+        setMsg({ kind: "err", text: res.error });
+      }
+    });
+  };
+
+  const handleProvision = (t: TenantRow) => {
+    setMsg(null);
+    setBusyId(t.id);
+    start(async () => {
+      const res = await provisionTenantSheetAction(t.id);
+      setBusyId(null);
+      if (res.ok) {
+        setMsg({ kind: "ok", text: "시트가 발급되어 사용자 이메일로 공유되었습니다" });
         router.refresh();
       } else {
         setMsg({ kind: "err", text: res.error });
@@ -73,6 +93,7 @@ export function TenantsManager({
               <th className="text-left px-3 py-2">이름</th>
               <th className="text-left px-3 py-2">역할</th>
               <th className="text-left px-3 py-2">상태</th>
+              <th className="text-left px-3 py-2">시트</th>
               <th className="text-left px-3 py-2">등록일</th>
               <th className="text-right px-3 py-2">관리</th>
             </tr>
@@ -81,7 +102,7 @@ export function TenantsManager({
             {tenants.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-3 py-6 text-center text-ink-500"
                 >
                   등록된 사용자가 없습니다 — 아래에서 추가하세요
@@ -128,6 +149,32 @@ export function TenantsManager({
                           ? "정지"
                           : "대기"}
                     </span>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {t.spreadsheet_id ? (
+                      <a
+                        href={`https://docs.google.com/spreadsheets/d/${t.spreadsheet_id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-700 hover:underline"
+                      >
+                        <FileSpreadsheet size={12} />
+                        열기
+                        <ExternalLink size={10} />
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleProvision(t)}
+                        disabled={pending}
+                        className="h-7 px-2.5 rounded-lg text-[11px] font-bold bg-ink-100 hover:bg-ink-200 text-ink-700 disabled:opacity-40 inline-flex items-center gap-1"
+                      >
+                        {isBusy && (
+                          <Loader2 size={11} className="animate-spin" />
+                        )}
+                        발급
+                      </button>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-ink-500">
                     {t.created_at?.slice(0, 10) || "—"}

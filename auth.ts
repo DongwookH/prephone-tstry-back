@@ -8,6 +8,9 @@ const allowlist = (process.env.ALLOWED_EMAILS ?? "")
   .filter(Boolean);
 
 const GA_SCOPE = "https://www.googleapis.com/auth/analytics.readonly";
+// 테넌트 전용 시트를 "오너 소유"로 생성하기 위한 스코프 (이 앱이 만든 파일만 접근).
+// 서비스 계정은 Drive 저장 용량이 0이라 파일 소유가 불가 → 오너 OAuth로 생성한다.
+const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
 // JWT 타입 확장 — accessToken / refreshToken / expiresAt 보관
 declare module "next-auth/jwt" {
@@ -76,8 +79,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     Google({
       authorization: {
         params: {
-          // GA Data API 읽기 + offline access (refresh token 발급용)
-          scope: `openid email profile ${GA_SCOPE}`,
+          // GA Data API 읽기 + Drive(앱 생성 파일) + offline access (refresh token 발급용)
+          scope: `openid email profile ${GA_SCOPE} ${DRIVE_FILE_SCOPE}`,
           access_type: "offline",
           prompt: "consent",
         },

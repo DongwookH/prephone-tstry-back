@@ -14,7 +14,14 @@ import {
   disableThreadsToken,
   postToThreads,
 } from "@/lib/threads";
-import { addTenant, updateTenantStatus, isAdminEmail } from "@/lib/tenants";
+import {
+  addTenant,
+  updateTenantStatus,
+  updateTenantSpreadsheetId,
+  isAdminEmail,
+  listTenants,
+} from "@/lib/tenants";
+import { provisionTenantSheet } from "@/lib/tenant-provision";
 
 async function requireAuth(): Promise<{ ok: boolean; error?: string }> {
   const session = await auth();
@@ -183,19 +190,59 @@ async function requireAdmin(): Promise<{ ok: boolean; error?: string }> {
   return { ok: true };
 }
 
-/** 테넌트(사용자) 추가 — 관리자만. */
+/** 테넌트(사용자) 추가 — 관리자만. 전용 시트 프로비저닝까지 시도. */
 export async function addTenantAction(input: {
   email: string;
   name?: string;
-}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+}): Promise<
+  | { ok: true; id: string; warning?: string }
+  | { ok: false; error: string }
+> {
   const a = await requireAdmin();
   if (!a.ok) return { ok: false, error: a.error! };
 
   try {
     const result = await addTenant({ email: input.email, name: input.name });
     if ("error" in result) return { ok: false, error: result.error };
+
+    // 전용 시트 발급 — 실패해도 사용자 등록 자체는 유지 (재시도 버튼으로 복구)
+    let warning: string | undefined;
+    const prov = await provisionTenantSheet({
+      email: input.email.trim().toLowerCase(),
+      name: input.name || "",
+    });
+    if (prov.ok) {
+      await updateTenantSpreadsheetId(result.id, prov.spreadsheetId);
+    } else {
+      warning = `등록은 완료됐지만 전용 시트 발급에 실패했습니다 — ${prov.error}`;
+    }
+
     revalidatePath("/settings");
-    return { ok: true, id: result.id };
+    return { ok: true, id: result.id, warning };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/** 전용 시트 재발급 시도 — spreadsheet_id가 비어 있는 테넌트용. */
+export async function provisionTenantSheetAction(
+  id: string,
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const a = await requireAdmin();
+  if (!a.ok) return { ok: false, error: a.error! };
+
+  try {
+    const all = await listTenants();
+    const t = all.find((x) => x.id === id);
+    if (!t) return { ok: false, error: "해당 사용자를 찾을 수 없습니다" };
+    if (t.spreadsheet_id) {
+      return { ok: false, error: "이미 시트가 발급된 사용자입니다" };
+    }
+    const prov = await provisionTenantSheet({ email: t.email, name: t.name });
+    if (!prov.ok) return { ok: false, error: prov.error };
+    await updateTenantSpreadsheetId(id, prov.spreadsheetId);
+    revalidatePath("/settings");
+    return { ok: true, url: prov.url };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }
