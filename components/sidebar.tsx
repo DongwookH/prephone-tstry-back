@@ -11,6 +11,7 @@ import {
   Settings,
   HelpCircle,
   AtSign,
+  MessageCircleQuestion,
   Menu,
   X,
 } from "lucide-react";
@@ -71,6 +72,11 @@ export function Sidebar({
     },
     { href: "/analytics", label: "분석", icon: LineChart },
     { href: "/threads", label: "Threads", icon: AtSign },
+    {
+      href: "/chat-questions",
+      label: "챗봇 질문",
+      icon: MessageCircleQuestion,
+    },
   ];
 
   if (variant === "compact") {

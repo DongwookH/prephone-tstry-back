@@ -1899,3 +1899,84 @@ export async function updatePostTistoryUrl(postId: string, url: string): Promise
     }
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// chat_logs 시트 — 챗봇 질문 로그 (백오피스는 읽기 전용)
+// ═══════════════════════════════════════════════════════════════
+// 열 구조 (헤더 행 없이 쌓일 수도 있음 — Worker → Apps Script가 append):
+//   A timestamp (ISO, Asia/Seoul)
+//   B question   (마스킹된 질문, ≤500자)
+//   C status     (ok | error)
+//   D model
+//   E ua_hint    (mobile | desktop | unknown)
+//   F answer     (마스킹된 챗봇 답변, ≤1000자, 실패 시 빈 값 — 과거 행엔 없을 수 있음)
+// ⚠️ 이 탭에는 절대 쓰지 않는다 (수집은 Worker → Apps Script 담당).
+// ─────────────────────────────────────────────────────────────────
+
+const CHAT_LOGS_SHEET = "chat_logs";
+
+export type ChatLogRow = {
+  ts: string;
+  question: string;
+  status: "ok" | "error" | "";
+  model: string;
+  ua: "mobile" | "desktop" | "unknown";
+  answer: string;
+};
+
+/** 헤더/코멘트 행 판별 — timestamp 자리가 파싱 가능한 날짜가 아니면 데이터가 아니다. */
+function isChatLogDataRow(row: string[]): boolean {
+  const ts = (row?.[0] ?? "").toString().trim();
+  if (!ts) return false;
+  return !isNaN(new Date(ts).getTime());
+}
+
+/**
+ * chat_logs 탭 전체를 최신순으로 반환.
+ * 탭이 아직 없거나(수집 전) 비어 있으면 빈 배열 — 에러를 던지지 않는다.
+ */
+export async function getChatLogs(): Promise<ChatLogRow[]> {
+  let rows: string[][] = [];
+  try {
+    rows = await readRange(mainSheetId(), `${CHAT_LOGS_SHEET}!A:F`);
+  } catch {
+    // 탭 미생성(400) 등 — 빈 상태로 취급
+    return [];
+  }
+
+  const parsed = rows.filter(isChatLogDataRow).map((r) => {
+    const status = (r[2] ?? "").toString().trim().toLowerCase();
+    const ua = (r[4] ?? "").toString().trim().toLowerCase();
+    return {
+      ts: (r[0] ?? "").toString().trim(),
+      question: (r[1] ?? "").toString(),
+      status: status === "ok" || status === "error" ? status : "",
+      model: (r[3] ?? "").toString().trim(),
+      ua: ua === "mobile" || ua === "desktop" ? ua : "unknown",
+      // F열 — 과거 행이나 실패 시 비어있을 수 있음
+      answer: (r[5] ?? "").toString(),
+    } as ChatLogRow;
+  });
+
+  // 최신순 — 시트는 append(오래된 순)이므로 시각 기준 내림차순 정렬
+  return parsed.sort(
+    (a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime(),
+  );
+}
+
+/** 챗봇 질문 요약 — 목록(limit 적용)과 별개로 전체 기준 집계. */
+export async function getChatLogsSummary(limit = 100): Promise<{
+  rows: ChatLogRow[];
+  total: number;
+  todayCount: number;
+  errorCount: number;
+}> {
+  const all = await getChatLogs();
+  const todayKST = toKstDate(new Date());
+  return {
+    rows: all.slice(0, limit),
+    total: all.length,
+    todayCount: all.filter((r) => toKstDate(r.ts) === todayKST).length,
+    errorCount: all.filter((r) => r.status === "error").length,
+  };
+}
