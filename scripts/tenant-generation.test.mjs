@@ -135,8 +135,8 @@ test("정지·미납류 키워드 — 새 번호 프레임 강제 블록 주입"
     persona: "일반",
     utmCampaign: "test",
   });
-  assert.equal(risky.includes("번호 관련 사실 프레임 강제"), true);
-  assert.equal(risky.includes("새 번호가 발급됩니다"), true);
+  assert.equal(risky.includes("번호 관련 서술 규칙"), true);
+  assert.equal(risky.includes("새 번호가 발급"), true);
 
   const normal = buildPrompt({
     keyword: "선불유심가격",
@@ -145,7 +145,20 @@ test("정지·미납류 키워드 — 새 번호 프레임 강제 블록 주입"
     persona: "일반",
     utmCampaign: "test",
   });
-  assert.equal(normal.includes("번호 관련 사실 프레임 강제"), false);
+  assert.equal(normal.includes("번호 관련 서술 규칙"), false);
+});
+
+test("프레임 블록이 지시하는 예시 문장 — 실제 가드 통과 정합성", async () => {
+  const { hasNumberKeepingClaim } = await import("../lib/content-guards.ts");
+  // 블록이 "이렇게만 쓰라"고 지시하는 문장들은 반드시 가드를 통과해야 한다
+  assert.equal(hasNumberKeepingClaim("번호는 새로 발급받아요"), false);
+  assert.equal(hasNumberKeepingClaim("새 번호로 5분 만에 개통할 수 있어요"), false);
+  assert.equal(
+    hasNumberKeepingClaim("연락처·사진·카톡 데이터는 단말기에 그대로 남아 있어요"),
+    false,
+  );
+  // 1차 버전 블록의 예시가 걸렸던 패턴 — 가드가 차단하는 게 맞다 (회귀 문서화)
+  assert.equal(hasNumberKeepingClaim("기존 번호는 살릴 수 없지만 새로 개통"), true);
 });
 
 test("withUtm — 쿼리 유무에 따라 ?/& 처리", () => {

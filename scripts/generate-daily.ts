@@ -336,7 +336,19 @@ async function main(): Promise<void> {
 
   // 누락 계산 — 이미 저장된 키워드(공백 무시)는 건너뜀
   const existingSet = new Set(existingKeywords.map(normKeyword));
-  const missing = plan.filter((item) => !existingSet.has(normKeyword(item.keyword)));
+  let missing = plan.filter((item) => !existingSet.has(normKeyword(item.keyword)));
+
+  // ⚠️ 하루 총량 상한 — plan은 호출마다 재계산되므로, 재실행 시 키워드 구성이
+  //    바뀌면 "이미 8개 저장돼 있는데 새 plan 기준으론 전부 누락"으로 보여
+  //    과잉 생성된다 (2026-07-26 실측: 8개 + 재실행 9개 = 17개).
+  //    → 오늘 저장된 글 수를 빼고 남는 슬롯만큼만 생성한다.
+  const remainingSlots = Math.max(0, plan.length - existingKeywords.length);
+  if (missing.length > remainingSlots) {
+    console.log(
+      `  ⚠️ 하루 상한 적용: 누락 ${missing.length}건 → ${remainingSlots}건만 생성 (오늘 이미 ${existingKeywords.length}개 저장됨)`,
+    );
+    missing = missing.slice(0, remainingSlots);
+  }
 
   console.log(
     `▶ 누락 ${missing.length}건 / 전체 ${plan.length}건 (이미 ${plan.length - missing.length}건 저장됨)`,
