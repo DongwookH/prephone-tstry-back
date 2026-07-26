@@ -115,6 +115,39 @@ test("필수 섹션 검증 — brand_name·links·company·plans", () => {
   );
 });
 
+test("컴플라이언스 금지어 포함 키워드 — 계획 단계에서 차단", async () => {
+  const { isComplianceBlacklistedKeyword, isContentBlacklistedKeyword } =
+    await import("../lib/sheets.ts");
+  // 2026-07-26 실사고: 제목이 키워드로 시작해야 해서 금지어 키워드는 100% 폐기됨
+  assert.equal(isComplianceBlacklistedKeyword("스카이라이프유심"), true);
+  assert.equal(isComplianceBlacklistedKeyword("다이소 선불폰"), true);
+  assert.equal(isComplianceBlacklistedKeyword("고객센터 문의"), true);
+  assert.equal(isComplianceBlacklistedKeyword("SKT선불폰"), false);
+  assert.equal(isComplianceBlacklistedKeyword("선불유심가격"), false);
+  assert.equal(isContentBlacklistedKeyword("스카이라이프유심"), true);
+});
+
+test("정지·미납류 키워드 — 새 번호 프레임 강제 블록 주입", () => {
+  const risky = buildPrompt({
+    keyword: "SKT발신정지",
+    category: "일반",
+    subKeywords: [],
+    persona: "일반",
+    utmCampaign: "test",
+  });
+  assert.equal(risky.includes("번호 관련 사실 프레임 강제"), true);
+  assert.equal(risky.includes("새 번호가 발급됩니다"), true);
+
+  const normal = buildPrompt({
+    keyword: "선불유심가격",
+    category: "일반",
+    subKeywords: [],
+    persona: "일반",
+    utmCampaign: "test",
+  });
+  assert.equal(normal.includes("번호 관련 사실 프레임 강제"), false);
+});
+
 test("withUtm — 쿼리 유무에 따라 ?/& 처리", () => {
   assert.equal(
     withUtm("https://a.com/x", "c1"),

@@ -1436,6 +1436,25 @@ const CONTENT_MANUAL_BLACKLIST = [
   "신협",
 ] as const;
 
+// 컴플라이언스 금지어를 "포함한 키워드" — 제목이 키워드로 시작해야 하므로
+// 이런 키워드는 구조적으로 통과 불가 (금지어 가드에 100% 폐기됨).
+// 2026-07-26: '스카이라이프유심' 키워드가 3/3 폐기로 하루 생성 10→8 원인.
+// ⚠️ substring 매칭이라 '본사'는 '일본사이트' 같은 오탐 여지 있음 — 현재
+//    키워드 풀(선불폰 도메인)에선 실익이 커서 포함. 오탐 발견 시 조정.
+const CONTENT_COMPLIANCE_BLACKLIST = [
+  "스카이라이프",
+  "다이소",
+  "더지통신",
+  "앤스마트",
+  "외국인등록증",
+  "24시간",
+  "공식",
+  "본사",
+  "직영",
+  "고객센터",
+  "개통센터",
+] as const;
+
 function matchesAny(keyword: string, list: readonly string[]): boolean {
   const k = (keyword || "").toLowerCase().replace(/\s+/g, "");
   return list.some((bad) =>
@@ -1452,13 +1471,18 @@ export function isForeignerRelatedKeyword(keyword: string): boolean {
 export function isManuallyBlacklistedKeyword(keyword: string): boolean {
   return matchesAny(keyword, CONTENT_MANUAL_BLACKLIST);
 }
+/** 컴플라이언스 금지어를 포함한 키워드 — 제목 규칙상 생성 불가능. */
+export function isComplianceBlacklistedKeyword(keyword: string): boolean {
+  return matchesAny(keyword, CONTENT_COMPLIANCE_BLACKLIST);
+}
 
 /** 티스토리·쓰레드 양쪽에 적용되는 콘텐츠 블랙리스트 */
 export function isContentBlacklistedKeyword(keyword: string): boolean {
   return (
     isMinorRelatedKeyword(keyword) ||
     isForeignerRelatedKeyword(keyword) ||
-    isManuallyBlacklistedKeyword(keyword)
+    isManuallyBlacklistedKeyword(keyword) ||
+    isComplianceBlacklistedKeyword(keyword)
   );
 }
 
