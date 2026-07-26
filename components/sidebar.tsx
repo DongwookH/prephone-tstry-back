@@ -12,6 +12,7 @@ import {
   HelpCircle,
   AtSign,
   MessageCircleQuestion,
+  Search,
   Menu,
   X,
 } from "lucide-react";
@@ -82,6 +83,11 @@ export function Sidebar({
             href: "/chat-questions",
             label: "챗봇 질문",
             icon: MessageCircleQuestion,
+          },
+          {
+            href: "/search-performance",
+            label: "검색 성과",
+            icon: Search,
           },
         ]
       : []),
