@@ -41,6 +41,7 @@ export const metadata: Metadata = {
 const TOC_ITEMS = [
   { href: "#what-it-does", label: "이 서비스가 하는 일" },
   { href: "#checklist", label: "시작 전 준비물" },
+  { href: "#security", label: "구글 2단계 인증 (필수)" },
   { href: "#step1", label: "STEP 1 · 이용 승인 받기" },
   { href: "#step2", label: "STEP 2 · Gemini API 키 발급" },
   { href: "#step3", label: "STEP 3 · 로그인 & 키 등록" },
@@ -212,6 +213,10 @@ const FAQS = [
   {
     q: "구글 계정을 여러 개 쓰는데 아무 계정으로나 로그인해도 되나요?",
     a: "안 됩니다. 관리자에게 전달해 승인받은 바로 그 구글 이메일로만 로그인할 수 있습니다. 다른 계정으로 로그인을 시도하면 접근이 차단됩니다.",
+  },
+  {
+    q: "구글 2단계 인증을 꼭 켜야 하나요?",
+    a: "네, 필수입니다. 백오피스·데이터 시트·API 키가 전부 구글 계정 하나에 연결되기 때문에, 계정이 뚫리면 전부 함께 노출됩니다. 위 SECURITY 섹션의 5단계를 따라 켠 뒤(5분 소요) 관리자에게 승인을 요청해 주세요. 이미 켜져 있다면 추가로 할 일은 없습니다.",
   },
 ];
 
@@ -525,7 +530,7 @@ export default async function StartPage() {
               eyebrow="CHECKLIST"
               icon={ListChecks}
               title="시작 전 준비물"
-              desc="아래 세 가지만 준비되면 바로 시작할 수 있습니다."
+              desc="아래 네 가지가 준비되면 바로 시작할 수 있습니다."
             />
             <ul className="space-y-3">
               <li className="flex items-start gap-3">
@@ -554,6 +559,17 @@ export default async function StartPage() {
                   </strong>{" "}
                   — 글 생성에 사용되는 열쇠입니다. 아직 없어도 괜찮습니다.
                   아래 STEP 2에서 발급 방법을 처음부터 안내합니다.
+                </span>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-md border-2 border-ink-300" />
+                <span className="text-[14px] text-ink-700 leading-relaxed">
+                  <strong className="font-bold text-ink-900">
+                    구글 2단계 인증 켜기{" "}
+                    <span className="text-rose-600">(필수)</span>
+                  </strong>{" "}
+                  — 계정 보안 장치입니다. 켜져 있지 않으면 이용 승인이
+                  어렵습니다. 바로 아래에서 설정 방법을 안내합니다.
                 </span>
               </li>
             </ul>
@@ -588,6 +604,73 @@ export default async function StartPage() {
 
           <hr className="my-10 border-ink-100" />
 
+          {/* 구글 2단계 인증 (필수) */}
+          <section>
+            <DocH2
+              id="security"
+              eyebrow="SECURITY"
+              icon={ShieldCheck}
+              title="구글 2단계 인증 켜기 (필수)"
+              desc="이 백오피스는 구글 계정이 곧 열쇠입니다. 이용 승인 전에 반드시 켜주세요."
+            />
+            <p className="text-[14.5px] text-ink-700 leading-[1.8]">
+              백오피스 로그인, 내 데이터 시트, Gemini API 키가 전부 구글 계정
+              하나에 연결됩니다. 계정을 도둑맞으면 이 모든 것이 함께 노출되기
+              때문에, 비밀번호가 유출돼도 휴대폰 확인 없이는 로그인할 수 없게
+              막아주는 <strong className="font-bold">2단계 인증</strong>을 필수로
+              요구합니다. 한 번만 켜두면 되고, 5분이면 끝납니다.
+            </p>
+            <div className="mt-5">
+              <OrderedMini
+                items={[
+                  {
+                    title: "구글 계정 보안 페이지 접속",
+                    desc: (
+                      <>
+                        새 탭에서{" "}
+                        <a
+                          href="https://myaccount.google.com/security"
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:text-brand-600 underline underline-offset-2"
+                        >
+                          myaccount.google.com/security
+                          <ExternalLink size={13} strokeWidth={2.2} />
+                        </a>{" "}
+                        에 접속합니다. 백오피스에 쓸 구글 계정으로 로그인돼
+                        있는지 오른쪽 위 프로필을 확인해 주세요.
+                      </>
+                    ),
+                  },
+                  {
+                    title: '"2단계 인증" 메뉴 선택',
+                    desc: '"Google에 로그인하는 방법" 섹션에서 "2단계 인증"을 누릅니다. 이미 "사용"으로 표시돼 있다면 이 섹션은 건너뛰어도 됩니다.',
+                  },
+                  {
+                    title: '"시작하기" 후 본인 확인',
+                    desc: "시작하기를 누르면 비밀번호를 다시 입력하라고 나옵니다. 본인 확인 절차이니 그대로 진행합니다.",
+                  },
+                  {
+                    title: "휴대폰 등록",
+                    desc: "안내에 따라 휴대폰을 등록합니다. 스마트폰에 구글 앱이 로그인돼 있으면 \"휴대전화로 메시지 받기\" 방식이 자동으로 잡히고, 아니면 전화번호를 입력해 문자 인증 코드를 받는 방식을 선택하면 됩니다.",
+                  },
+                  {
+                    title: '"사용 설정" 눌러 완료',
+                    desc: "마지막 화면에서 사용 설정을 누르면 끝입니다. 이후 새 기기에서 로그인할 때만 휴대폰 확인이 한 번씩 추가되고, 평소 쓰던 기기에서는 거의 체감되지 않습니다.",
+                  },
+                ]}
+              />
+            </div>
+            <Callout type="warning">
+              2단계 인증이 꺼진 계정은 비밀번호 하나만 뚫리면 백오피스의 글과
+              시트, API 키까지 전부 넘어갑니다. 그래서 이용 승인 전 필수
+              조건입니다. 관리자에게 승인을 요청할 때 &quot;2단계 인증 켰다&quot;고 함께
+              알려주세요.
+            </Callout>
+          </section>
+
+          <hr className="my-10 border-ink-100" />
+
           {/* STEP 1 */}
           <section>
             <DocH2
@@ -598,9 +681,11 @@ export default async function StartPage() {
             />
             <p className="text-[14.5px] text-ink-700 leading-[1.8]">
               이 백오피스는 아무나 로그인할 수 없고, 미리 승인된 구글 계정만
-              들어올 수 있습니다. 방법은 간단합니다. 본인이 로그인에 사용할
-              구글 이메일 주소를 관리자에게 전달하고, 그 이메일이 등록되면
-              그때부터 로그인할 수 있습니다.
+              들어올 수 있습니다. 방법은 간단합니다. 위 SECURITY 섹션대로{" "}
+              <strong className="font-bold">2단계 인증을 먼저 켠 뒤</strong>,
+              본인이 로그인에 사용할 구글 이메일 주소를 관리자에게 전달하세요
+              (이때 &quot;2단계 인증 켰다&quot;고 함께 알려주면 승인이 빨라집니다). 그
+              이메일이 등록되면 그때부터 로그인할 수 있습니다.
             </p>
             <p className="mt-4 text-[14.5px] text-ink-700 leading-[1.8]">
               혹시 등록되지 않은 계정으로 먼저 로그인을 시도하면 어떻게 될지
