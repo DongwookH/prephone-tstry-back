@@ -69,13 +69,17 @@ const DELINQUENCY_CONTEXT =
 const CONTEXT_WINDOW = 60;
 
 /**
- * "번호를 유지/살린다"는 주장·암시(부정문 포함)가 있으면 true.
- * HTML이 섞여 있어도 동작 (태그 제거 후 검사).
+ * "번호를 유지/살린다"는 주장·암시(부정문 포함)의 위반 구간 목록.
+ * 재시도 프롬프트에 "정확히 어느 문장이 걸렸는지" 보여주기 위해 스니펫을
+ * 반환한다 — 일반 사유만 주면 Gemini가 같은 자리에서 반복 위반함
+ * (2026-07-27: SKT발신정지·세컨폰개통 3/3 폐기 원인).
+ * HTML이 섞여 있어도 동작 (태그 제거 후 검사). 최대 3개.
  */
-export function hasNumberKeepingClaim(text: string): boolean {
+export function findNumberKeepingClaims(text: string): string[] {
   const t = (text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  const hits: string[] = [];
   let idx = t.indexOf("번호");
-  while (idx !== -1) {
+  while (idx !== -1 && hits.length < 3) {
     const before = t.slice(Math.max(0, idx - 5), idx);
     const after = t.slice(idx + 2, idx + 2 + 8);
     const isNewNumber = NEW_BEFORE.test(before) || NEW_AFTER.test(after);
@@ -88,13 +92,18 @@ export function hasNumberKeepingClaim(text: string): boolean {
         );
         // 투폰 맥락이면서 미납·부활 문맥이 아니면 정당한 표현
         if (!(SECOND_LINE_CONTEXT.test(ctx) && !DELINQUENCY_CONTEXT.test(ctx))) {
-          return true;
+          hits.push(ctx.trim());
         }
       }
     }
     idx = t.indexOf("번호", idx + 2);
   }
-  return false;
+  return hits;
+}
+
+/** "번호를 유지/살린다"는 주장·암시(부정문 포함)가 있으면 true. */
+export function hasNumberKeepingClaim(text: string): boolean {
+  return findNumberKeepingClaims(text).length > 0;
 }
 
 // ─── 컴플라이언스 금지어 (프로젝트 공통 규칙 CLAUDE.md, 2026-07-23 사업주 확정) ───

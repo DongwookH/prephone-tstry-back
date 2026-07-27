@@ -161,6 +161,31 @@ test("프레임 블록이 지시하는 예시 문장 — 실제 가드 통과 �
   assert.equal(hasNumberKeepingClaim("기존 번호는 살릴 수 없지만 새로 개통"), true);
 });
 
+test("가드 위반 스니펫 — 위반 구간 텍스트를 반환 (정밀 재시도 피드백용)", async () => {
+  const { findNumberKeepingClaims } = await import("../lib/content-guards.ts");
+  const hits = findNumberKeepingClaims(
+    "<p>정지된 폰도 걱정 마세요. 기존 번호 그대로 다시 쓸 수 있으니까요.</p>",
+  );
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].includes("번호 그대로"), true);
+  assert.deepEqual(
+    findNumberKeepingClaims("번호는 새로 발급받아요. 단말기는 그대로 쓰세요."),
+    [],
+  );
+});
+
+test("세컨폰류 키워드 — 전용 번호 서술 규칙 블록 발동", () => {
+  const p = buildPrompt({
+    keyword: "세컨폰개통",
+    category: "일반",
+    subKeywords: [],
+    persona: "일반",
+    utmCampaign: "test",
+  });
+  assert.equal(p.includes("번호 관련 서술 규칙"), true);
+  assert.equal(p.includes("두 번째 번호를 새로 받는다"), true);
+});
+
 test("withUtm — 쿼리 유무에 따라 ?/& 처리", () => {
   assert.equal(
     withUtm("https://a.com/x", "c1"),

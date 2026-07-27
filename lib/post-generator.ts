@@ -1,6 +1,6 @@
 import { generateJSON } from "./gemini";
 import {
-  hasNumberKeepingClaim,
+  findNumberKeepingClaims,
   findComplianceBannedWords,
   complianceFixHints,
 } from "./content-guards";
@@ -195,17 +195,25 @@ ${tb.extra_rules}`
   // ⚠️ 이 블록의 예시 문장은 반드시 hasNumberKeepingClaim 가드를 통과하는
   //    형태여야 한다. 1차 버전은 정답 예시("번호는 살릴 수 없지만")가 가드
   //    차단 패턴('번호'+'살릴' 결합)과 충돌해 3/3 폐기됐다 (2026-07-26).
-  const numberRiskBlock = /정지|미납|연체|직권해지/.test(keyword)
-    ? `
+  const isSecondPhoneKeyword = /세컨|투폰|투넘버|두\s*번째|듀얼/.test(keyword);
+  const numberRiskBlock =
+    /정지|미납|연체|직권해지/.test(keyword) || isSecondPhoneKeyword
+      ? `
 
 ## 🚨 번호 관련 서술 규칙 (이 키워드는 오정보 위험 최고 — 위반 시 글 전체 폐기)
 - 사실: 미납·정지·직권해지 회선은 기존 번호를 되찾을 방법이 없고, **새 번호가 발급**됩니다 (단말기는 그대로 사용).
 - 자동 검열기가 "번호" 주변(±14자)에 '그대로/유지/살리다/지키다'류 단어가 보이면 **부정문·질문이어도 무조건 폐기**합니다.
   → "번호를 살릴 수 없다", "번호 유지는 안 된다" 같은 올바른 부정문도 쓰지 마세요. 그 단어들 자체를 번호와 붙이지 마세요.
 - 번호는 오직 이런 형태로만 언급: **"번호는 새로 발급받아요"**, **"새 번호로 5분 만에 개통"**.
-- 독자의 '이전 번호' 미련은 이렇게 우회: "연락처·사진·카톡 데이터는 단말기에 그대로 남아 있어요" (이 문장에 '번호' 단어 넣지 말 것).
+- 독자의 '이전 번호' 미련은 이렇게 우회: "연락처·사진·카톡 데이터는 단말기에 그대로 남아 있어요" (이 문장에 '번호' 단어 넣지 말 것).${
+          isSecondPhoneKeyword
+            ? `
+- 세컨폰(두 번째 회선) 글 특별 규칙: 기존 회선 이야기를 하더라도 "쓰던 번호는 그대로" 같은 표현은 쓰지 마세요.
+  **"두 번째 번호를 새로 받는다"** 관점으로만 서술하세요. 특히 미납·신용 이야기와 같은 문단에서 기존 번호 언급 금지.`
+            : ""
+        }
 - 제목·본문·Q&A·썸네일 카피 전부 이 규칙 적용.`
-    : "";
+      : "";
 
   return `당신은 한국 SEO + 블로그 카피라이팅 전문가입니다. 다음 키워드로 티스토리 발행용 한국어 블로그 글 1편을 작성해주세요.
 
@@ -975,10 +983,16 @@ export async function generatePost(opts: {
 
   // 사실 가드 — "번호 유지/살림" 오정보(미납 시 번호는 못 살림, 새 번호 발급)가
   // 감지되면 통째로 실패시킨다 → generate-daily가 항목당 3회 재시도로 재생성.
+  // 위반 구간을 에러에 그대로 실어 재시도 프롬프트가 "정확히 이 문장을 고쳐라"가
+  // 되게 한다 (일반 사유만으로는 같은 자리 반복 위반 — 2026-07-27 실측).
   const guardTarget = `${finalTitle}\n${result.meta_description ?? ""}\n${htmlWithHero}`;
-  if (hasNumberKeepingClaim(guardTarget)) {
+  const numberClaims = findNumberKeepingClaims(guardTarget);
+  if (numberClaims.length > 0) {
+    const snippets = numberClaims
+      .map((s) => `"…${s.slice(0, 80)}…"`)
+      .join(" / ");
     throw new Error(
-      "사실 가드: '번호 그대로/유지' 표현 감지 — 미납 시 번호 유지 불가(새 번호), 재생성 필요",
+      `사실 가드: '번호 그대로/유지' 표현 감지 — 미납 시 번호 유지 불가(새 번호). 위반 구간: ${snippets} ← 이 문장들을 '번호는 새로 발급' 프레임으로 다시 쓰거나 삭제할 것`,
     );
   }
 
