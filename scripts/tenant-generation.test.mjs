@@ -1,6 +1,8 @@
 /**
  * 멀티테넌트 생성 격리 회귀 테스트.
- *   node --test scripts/tenant-generation.test.mjs
+ *   npx tsx --test scripts/tenant-generation.test.mjs
+ *   (lib/*.ts가 확장자 없는 상대 import를 쓰므로 tsx 러너가 필요하다.
+ *    node --test로는 모듈 해석에 실패한다 — GHA도 tsx로 돌린다)
  *
  * 핵심 보증: 테넌트 모드 프롬프트/히어로에 오너(앤텔레콤) 브랜드·링크·KB가
  * 절대 새어들지 않는다 — 새면 "남의 글에 오너 회사 정보"가 들어가는 사고.
@@ -11,8 +13,28 @@ import assert from "node:assert/strict";
 import { buildPrompt, ensureHeroBox } from "../lib/post-generator.ts";
 import {
   missingRequiredGuideSections,
+  assembleGuide,
   withUtm,
 } from "../lib/tenant-config.ts";
+
+/** 폼이 저장하는 원문 형태(빈 값 기본) — 테스트에서 부분만 덮어쓰기 위한 헬퍼. */
+function raw(over = {}) {
+  return {
+    brand_name: "",
+    link_kakao: "",
+    link_site: "",
+    phone: "",
+    hours: "",
+    plans: "",
+    company: "",
+    links: "",
+    personas: "",
+    banned_words: "",
+    extra_rules: "",
+    faq: "",
+    ...over,
+  };
+}
 
 const TENANT_GUIDE = {
   brand_name: "홍길동텔레콤",
@@ -184,6 +206,124 @@ test("세컨폰류 키워드 — 전용 번호 서술 규칙 블록 발동", () 
   });
   assert.equal(p.includes("번호 관련 서술 규칙"), true);
   assert.equal(p.includes("두 번째 번호를 새로 받는다"), true);
+});
+
+// ─── 백오피스 가이드 폼 (2026-07-27) — 세분 행 → 조립 ───────────────
+
+test("링크 조립 — 개통 사이트가 대표(첫 번째), 카톡이 두 번째, 자유형식이 뒤", () => {
+  const g = assembleGuide(
+    raw({
+      link_site: "https://hong.example.com/apply",
+      link_kakao: "https://pf.kakao.com/_hong",
+      links: "블로그: https://blog.example.com",
+    }),
+  );
+  assert.deepEqual(g.links, [
+    { label: "개통 신청", url: "https://hong.example.com/apply" },
+    { label: "카카오톡 상담", url: "https://pf.kakao.com/_hong" },
+    { label: "블로그", url: "https://blog.example.com" },
+  ]);
+  // post-generator가 [0]을 대표 버튼, [1]을 문의 버튼으로 쓴다
+  assert.equal(g.links[0].url.includes("apply"), true);
+});
+
+test("링크 조립 — 자동 라벨에 이모지를 넣지 않는다 (이모지 금지 테넌트 보호)", () => {
+  const g = assembleGuide(raw({ link_kakao: "https://pf.kakao.com/_x" }));
+  assert.equal(/\p{Extended_Pictographic}/u.test(g.links[0].label), false);
+});
+
+test("링크 조립 — http(s)가 아닌 값은 링크로 잡지 않는다", () => {
+  const g = assembleGuide(
+    raw({ link_site: "hong.example.com", link_kakao: "  " }),
+  );
+  assert.deepEqual(g.links, []);
+});
+
+test("회사 정보 조립 — 판매점명·전화·영업시간 + 원문 병합", () => {
+  const g = assembleGuide(
+    raw({
+      brand_name: "홍길동텔레콤",
+      phone: "010-1111-2222",
+      hours: "평일 09:00~19:00",
+      company: "당일 개통 전문입니다.",
+    }),
+  );
+  assert.equal(
+    g.company,
+    "홍길동텔레콤 — 전화 010-1111-2222, 영업시간 평일 09:00~19:00\n당일 개통 전문입니다.",
+  );
+});
+
+test("회사 정보 — 판매점명만으론 회사 정보로 치지 않는다 (필수 미충족)", () => {
+  const g = assembleGuide(raw({ brand_name: "홍길동텔레콤" }));
+  assert.equal(g.company, "");
+  assert.equal(missingRequiredGuideSections(g).includes("company"), true);
+  // 전화번호 하나만 채워도 통과
+  const g2 = assembleGuide(
+    raw({ brand_name: "홍길동텔레콤", phone: "010-1111-2222" }),
+  );
+  assert.equal(missingRequiredGuideSections(g2).includes("company"), false);
+});
+
+test("필수 검증 — 카톡만 있어도 links 통과 / 셋 다 없으면 누락 보고", () => {
+  const only = assembleGuide(
+    raw({
+      brand_name: "홍길동텔레콤",
+      link_kakao: "https://pf.kakao.com/_x",
+      phone: "010-1111-2222",
+      plans: "베이직 20,000원",
+    }),
+  );
+  assert.deepEqual(missingRequiredGuideSections(only), []);
+
+  const none = assembleGuide(raw({ brand_name: "홍길동텔레콤" }));
+  assert.deepEqual(missingRequiredGuideSections(none).sort(), [
+    "company",
+    "links",
+    "plans",
+  ]);
+});
+
+test("하위호환 — 기존 links·company 자유형식만 있는 시트도 그대로 통과", () => {
+  const legacy = assembleGuide(
+    raw({
+      brand_name: "구형텔레콤",
+      links: "신청: https://old.example.com\n카톡: https://pf.kakao.com/_old",
+      company: "구형텔레콤 — 연중무휴 상담",
+      plans: "기본 15,000원",
+    }),
+  );
+  assert.deepEqual(missingRequiredGuideSections(legacy), []);
+  assert.equal(legacy.links.length, 2);
+  assert.equal(legacy.links[0].label, "신청");
+  assert.equal(legacy.company, "구형텔레콤 — 연중무휴 상담");
+});
+
+test("조립본이 프롬프트·히어로에 그대로 흘러간다 (폼 → 글 왕복)", () => {
+  const g = assembleGuide(
+    raw({
+      brand_name: "홍길동텔레콤",
+      link_site: "https://hong.example.com/apply",
+      phone: "010-1111-2222",
+      plans: "베이직 20,000원",
+      banned_words: "최저가, 업계1위",
+    }),
+  );
+  const p = buildPrompt({
+    keyword: "선불폰개통",
+    category: "일반",
+    subKeywords: [],
+    persona: "일반",
+    utmCampaign: "test",
+    tenantBrand: g,
+  });
+  assert.equal(p.includes("홍길동텔레콤"), true);
+  assert.equal(p.includes("https://hong.example.com/apply"), true);
+  assert.equal(p.includes("010-1111-2222"), true);
+  assert.equal(p.includes("최저가"), true);
+  for (const marker of OWNER_MARKERS) {
+    assert.equal(p.includes(marker), false, `오너 마커 "${marker}" 누출`);
+  }
 });
 
 test("withUtm — 쿼리 유무에 따라 ?/& 처리", () => {

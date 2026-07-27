@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import { mainSheetId, keywordsSheetId, readRange } from "./sheets";
 import { getGaAccessTokenForCron } from "./ga-token";
+import { GUIDE_SECTION_DEFS, GUIDE_HEADERS } from "./tenant-config";
 import type { TenantRow } from "./tenants";
 
 /**
@@ -30,48 +31,12 @@ const SETTINGS_HEADERS = [
   "usage_count",
 ];
 
-const GUIDE_HEADERS = ["section", "설명", "content", "updated_at"];
-
 /**
- * 세부 가이드 섹션 스캐폴드.
- * company·plans는 "필수" — 비어 있으면 그 테넌트 글 생성을 건너뛴다
- * (공통 가이드의 회사·요금 정보는 오너 것이라 폴백하면 남의 정보가 글에 들어감).
- * 나머지는 비워두면 공통 가이드를 따른다.
+ * 세부 가이드 섹션 스캐폴드 — 정의는 tenant-config.ts가 단일 원천.
+ * (백오피스 폼·조립 로직·시트 스캐폴드가 같은 목록을 봐야 드리프트가 없다)
  */
-const GUIDE_SCAFFOLD: Array<[section: string, desc: string]> = [
-  [
-    "brand_name",
-    "(필수) 글에 표기할 상호/브랜드명 한 줄. 예: 홍길동텔레콤",
-  ],
-  [
-    "links",
-    "(필수) 글의 버튼에 넣을 링크. 한 줄에 하나씩 '이름: URL' 형식. 예: 신청 페이지: https://... / 카톡 문의: https://... — 첫 줄이 대표 링크가 됩니다.",
-  ],
-  [
-    "company",
-    "(필수) 상호명, 연락 채널(카톡·전화), 홈페이지, 영업시간 등 본인 회사 정보. 비어 있으면 글이 생성되지 않습니다.",
-  ],
-  [
-    "plans",
-    "(필수) 단정해서 표기할 수 있는 확정 요금·상품만 적어주세요. 비어 있으면 글이 생성되지 않습니다.",
-  ],
-  [
-    "personas",
-    "글을 읽을 타깃 독자 유형. 한 줄에 하나씩. 비워두면 공통 기본 페르소나를 사용합니다.",
-  ],
-  [
-    "banned_words",
-    "글에 쓰면 안 되는 단어·표현 (콤마로 구분). 공통 품질 금지어에 추가로 적용됩니다.",
-  ],
-  [
-    "extra_rules",
-    "그 밖의 글 작성 규칙 (톤, 강조할 메시지, 피할 주제 등). 공통 가이드와 충돌하면 이 내용이 우선합니다.",
-  ],
-  [
-    "faq",
-    "자주 받는 질문과 답 (Q/A 형식 자유). 글의 사실 근거로 사용됩니다.",
-  ],
-];
+const GUIDE_SCAFFOLD: Array<[section: string, desc: string]> =
+  GUIDE_SECTION_DEFS.map((d) => [d.key, d.desc]);
 
 /** 원본 시트의 헤더 행을 읽는다 (1행이 💡 코멘트면 2행). 실패 시 null. */
 async function readHeaderRow(
@@ -214,7 +179,7 @@ export async function provisionTenantSheet(
           {
             range: "guide!A1",
             values: [
-              GUIDE_HEADERS,
+              [...GUIDE_HEADERS],
               ...GUIDE_SCAFFOLD.map(([section, desc]) => [
                 section,
                 desc,
@@ -232,7 +197,7 @@ export async function provisionTenantSheet(
       fileId: newId,
       sendNotificationEmail: true,
       emailMessage:
-        "블로그 자동화 백오피스의 전용 데이터 시트입니다. guide 탭에서 세부 가이드를 작성해 주세요.",
+        "블로그 자동화 백오피스의 전용 데이터 시트입니다. 세부 가이드는 백오피스의 「내 가이드」 화면에서 작성하시면 이 시트에 자동 저장됩니다.",
       requestBody: {
         type: "user",
         role: "writer",

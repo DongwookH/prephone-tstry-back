@@ -30,11 +30,14 @@ const accentMap: Record<string, string> = {
 const PREVIEW_LIMIT = 12;
 
 export default async function KeywordsPage() {
-  // 오너 전용 페이지 — 멤버가 직접 URL로 접근하면 대시보드로 돌려보낸다.
+  // 오너는 메인 시트, 멤버는 본인 시트. 시트 미발급 멤버는 대시보드로 돌려보낸다
+  // (조회할 대상이 없는데 여기 두면 오너 시트를 읽게 되므로).
   const ctx = await getViewerContext();
-  if (ctx && !ctx.isOwner) redirect("/");
+  const isOwner = !ctx || ctx.isOwner;
+  if (!isOwner && !ctx.sheetId) redirect("/");
+  const sheetId = isOwner ? undefined : ctx.sheetId;
 
-  const all = await getActiveKeywords();
+  const all = await getActiveKeywords(undefined, sheetId);
 
   const grouped: Record<string, KeywordRow[]> = {};
   for (const k of all) {
@@ -81,7 +84,7 @@ export default async function KeywordsPage() {
         right={
           <div className="flex items-center gap-2">
             <a
-              href={`https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEETS_ID}/edit`}
+              href={`https://docs.google.com/spreadsheets/d/${sheetId ?? process.env.GOOGLE_SHEETS_ID}/edit`}
               target="_blank"
               rel="noopener noreferrer"
               className="h-9 px-3 rounded-xl text-[13px] font-semibold text-ink-700 hover:bg-ink-100 transition flex items-center gap-1.5"
@@ -112,8 +115,9 @@ export default async function KeywordsPage() {
             키워드 백로그
           </h1>
           <p className="mt-1 text-[14px] text-ink-600">
-            매일 9시, priority 높고 used_count 낮은 키워드 5개 + AI 발굴 5개로
-            글이 자동 생성됩니다.
+            {isOwner
+              ? "매일 9시, priority 높고 used_count 낮은 키워드 5개 + AI 발굴 5개로 글이 자동 생성됩니다."
+              : "여기 등록한 키워드로 매일 아침 글이 만들어집니다. 하나도 없으면 생성이 건너뛰어집니다."}
           </p>
         </section>
 

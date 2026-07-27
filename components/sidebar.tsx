@@ -13,6 +13,7 @@ import {
   AtSign,
   MessageCircleQuestion,
   Search,
+  BookOpen,
   Menu,
   X,
 } from "lucide-react";
@@ -40,12 +41,15 @@ export function Sidebar({
   counts,
   user,
   isOwner = true,
+  guideIncomplete = false,
 }: {
   variant?: "full" | "compact";
   counts?: SidebarCounts;
   user?: SidebarUser;
-  /** false면 멤버 전용 메뉴(대시보드/글 목록만)로 축소 — 분석·Threads·챗봇 질문·키워드 숨김 */
+  /** false면 멤버 전용 메뉴로 축소 — 분석·Threads·챗봇 질문·검색 성과 숨김 */
   isOwner?: boolean;
+  /** 멤버 전용. 필수 가이드가 덜 채워졌으면 「내 가이드」에 빨간 점 */
+  guideIncomplete?: boolean;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -60,23 +64,36 @@ export function Sidebar({
     icon: typeof LayoutGrid;
     badge?: string;
     count?: number;
+    dot?: boolean;
   }> = [
     { href: "/", label: "대시보드", icon: LayoutGrid, badge: "NEW" },
+    // 「내 가이드」는 멤버 전용 — 오너 가이드는 코드에 고정돼 시트에 없다.
+    // 첫 온보딩의 병목이라 대시보드 바로 아래에 두고 미완성이면 점을 찍는다.
+    ...(isOwner
+      ? []
+      : [
+          {
+            href: "/guide",
+            label: "내 가이드",
+            icon: BookOpen,
+            dot: guideIncomplete,
+          },
+        ]),
     {
       href: "/posts",
       label: "글 목록",
       icon: FileText,
       count: counts?.postsCount,
     },
-    // 멤버는 분석·Threads·챗봇 질문·키워드 메뉴를 볼 수 없음 (오너 전용 데이터)
+    {
+      href: "/keywords",
+      label: "키워드",
+      icon: Sparkles,
+      count: counts?.keywordsCount,
+    },
+    // 멤버는 분석·Threads·챗봇 질문·검색 성과를 볼 수 없음 (오너 전용 데이터)
     ...(isOwner
       ? [
-          {
-            href: "/keywords",
-            label: "키워드",
-            icon: Sparkles,
-            count: counts?.keywordsCount,
-          },
           { href: "/analytics", label: "분석", icon: LineChart },
           { href: "/threads", label: "Threads", icon: AtSign },
           {
@@ -203,6 +220,12 @@ export function Sidebar({
                 <span className="text-[10px] font-bold bg-brand-500 text-white rounded-full px-1.5 py-0.5">
                   {it.badge}
                 </span>
+              )}
+              {it.dot && (
+                <span
+                  aria-label="작성 필요"
+                  className="w-2 h-2 rounded-full bg-rose-500"
+                />
               )}
               {it.count !== undefined && (
                 <span className="text-[12px] text-ink-500 font-medium">

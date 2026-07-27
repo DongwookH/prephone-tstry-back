@@ -1,7 +1,13 @@
+import Link from "next/link";
 import { Topbar } from "@/components/topbar";
 import { PostRow, PostRowHeader, EmptyPostsState } from "@/components/post-row";
-import { getAllPosts, getTodayPosts } from "@/lib/sheets";
+import { getAllPosts, getTodayPosts, getSidebarCounts } from "@/lib/sheets";
 import { getViewerContext } from "@/lib/tenant-context";
+import {
+  loadTenantGuide,
+  loadTenantGeminiKeys,
+  missingRequiredGuideSections,
+} from "@/lib/tenant-config";
 import {
   Bell,
   CheckCircle2,
@@ -9,6 +15,8 @@ import {
   Calendar,
   Sparkles,
   TrendingUp,
+  AlertTriangle,
+  ArrowRight,
 } from "lucide-react";
 import { ManualGenerateButton } from "@/components/manual-generate-button";
 
@@ -66,9 +74,13 @@ export default async function Dashboard() {
   // 오너는 메인 시트 그대로(sheetId 미전달), 멤버는 본인 시트로 스코프
   const sheetId = isOwner ? undefined : ctx?.sheetId;
 
-  const [todayPosts, allPosts] = await Promise.all([
+  const [todayPosts, allPosts, setup] = await Promise.all([
     getTodayPosts(sheetId),
     getAllPosts(sheetId),
+    // 멤버 온보딩 상태 — 글 생성 크론이 요구하는 3조건과 같은 기준
+    isOwner || !sheetId
+      ? Promise.resolve(null)
+      : loadMemberSetup(sheetId),
   ]);
 
   const todayGenerated = todayPosts.length;
@@ -112,6 +124,10 @@ export default async function Dashboard() {
       />
 
       <div className="px-10 py-8 max-w-[1280px] mx-auto">
+        {setup && setup.blockers.length > 0 && (
+          <SetupBanner blockers={setup.blockers} />
+        )}
+
         <section>
           <div className="flex items-end justify-between gap-6 flex-wrap">
             <div>
@@ -277,6 +293,88 @@ export default async function Dashboard() {
         </section>
       </div>
     </>
+  );
+}
+
+/**
+ * 멤버 온보딩 상태 — generate-tenants.ts의 스킵 조건과 같은 3가지를 본다.
+ * (가이드 필수 섹션 / Gemini 키 / active 키워드) 하나라도 비면 그 테넌트는
+ * 매일 밤 크론에서 건너뛰어지므로, 대시보드에서 먼저 알려준다.
+ */
+async function loadMemberSetup(
+  sheetId: string,
+): Promise<{ blockers: Array<{ label: string; href: string; cta: string }> }> {
+  const [guide, keys, counts] = await Promise.all([
+    loadTenantGuide(sheetId).catch(() => null),
+    loadTenantGeminiKeys(sheetId).catch(() => [] as string[]),
+    getSidebarCounts(sheetId).catch(() => ({
+      postsCount: 0,
+      keywordsCount: 0,
+    })),
+  ]);
+
+  const blockers: Array<{ label: string; href: string; cta: string }> = [];
+  if (!guide || missingRequiredGuideSections(guide).length > 0) {
+    blockers.push({
+      label: "가이드에 필수 항목이 비어 있습니다",
+      href: "/guide",
+      cta: "가이드 작성",
+    });
+  }
+  if (keys.length === 0) {
+    blockers.push({
+      label: "Gemini API 키가 등록되지 않았습니다",
+      href: "/settings",
+      cta: "키 등록",
+    });
+  }
+  if (counts.keywordsCount === 0) {
+    blockers.push({
+      label: "글감 키워드가 하나도 없습니다",
+      href: "/keywords",
+      cta: "키워드 추가",
+    });
+  }
+  return { blockers };
+}
+
+function SetupBanner({
+  blockers,
+}: {
+  blockers: Array<{ label: string; href: string; cta: string }>;
+}) {
+  return (
+    <div className="mb-8 bg-white rounded-2xl shadow-card border border-amber-200 overflow-hidden">
+      <div className="flex items-center gap-2.5 px-6 py-4 bg-amber-50/70">
+        <AlertTriangle size={16} className="text-amber-700 flex-shrink-0" />
+        <div>
+          <div className="text-[14px] font-extrabold text-ink-900">
+            아직 글이 자동 생성되지 않습니다
+          </div>
+          <div className="text-[12px] text-ink-600 mt-0.5">
+            아래 {blockers.length}가지를 채우면 다음 날 아침부터 시작됩니다.
+          </div>
+        </div>
+      </div>
+      <ul className="divide-y divide-ink-100">
+        {blockers.map((b) => (
+          <li
+            key={b.href}
+            className="flex items-center justify-between gap-4 px-6 py-3.5"
+          >
+            <span className="text-[13px] font-semibold text-ink-700">
+              {b.label}
+            </span>
+            <Link
+              href={b.href}
+              className="flex-shrink-0 inline-flex items-center gap-1 h-9 px-3.5 rounded-xl bg-ink-900 text-white text-[12px] font-bold hover:bg-ink-800 transition"
+            >
+              {b.cta} <ArrowRight size={13} />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

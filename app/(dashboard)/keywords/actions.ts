@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth } from "@/auth";
 import { appendRows, keywordsSheetId, getActiveKeywords } from "@/lib/sheets";
+import { getViewerContext } from "@/lib/tenant-context";
 import { fetchKeywordVolumes, isNaverAdConfigured } from "@/lib/naver-keyword";
 import { classifyKeyword, type Category, type Role } from "@/lib/categorize";
 
@@ -35,10 +35,21 @@ export async function addKeywordsAction(input: {
   skipped: { keyword: string; reason: string }[];
   error?: string;
 }> {
-  const session = await auth();
-  if (!session?.user) {
+  // 시트 스코프 — 클라이언트 입력을 믿지 않고 매 호출 세션에서 다시 구한다.
+  // 오너는 undefined(메인 키워드 시트, 기존 동작 그대로), 멤버는 본인 시트.
+  const ctx = await getViewerContext();
+  if (!ctx) {
     return { ok: false, added: [], skipped: [], error: "로그인이 필요합니다" };
   }
+  if (!ctx.isOwner && !ctx.sheetId) {
+    return {
+      ok: false,
+      added: [],
+      skipped: [],
+      error: "전용 시트가 아직 발급되지 않았습니다 — 관리자에게 문의해 주세요",
+    };
+  }
+  const scopedSheetId = ctx.isOwner ? undefined : ctx.sheetId;
 
   // 1) 정규화 + 빈값 제거
   const cleaned = Array.from(
@@ -61,7 +72,7 @@ export async function addKeywordsAction(input: {
   }
 
   // 2) 중복 체크
-  const existing = await getActiveKeywords();
+  const existing = await getActiveKeywords(undefined, scopedSheetId);
   const existingSet = new Set(
     existing.map((k) => k.keyword.replace(/\s+/g, "").toLowerCase()),
   );
@@ -84,6 +95,9 @@ export async function addKeywordsAction(input: {
   // 3) 네이버 검색량 일괄 조회
   let volumes: Map<string, { total: number; pc: number; mobile: number; competition: string }> =
     new Map();
+  // ⚠️ 네이버 검색광고 API는 오너 자격증명이다. 멤버가 키워드를 추가할 때도
+  //    같은 계정을 쓰므로 오너 쿼터를 소모한다 (추가 시점 1회, 소량).
+  //    부담이 되면 여기서 ctx.isOwner 조건을 걸어 멤버는 건너뛰면 된다.
   if (isNaverAdConfigured()) {
     try {
       const rows = await fetchKeywordVolumes(toAdd);
@@ -151,7 +165,7 @@ export async function addKeywordsAction(input: {
 
   // 5) 시트에 append
   try {
-    await appendRows(keywordsSheetId(), "keywords", rows);
+    await appendRows(scopedSheetId ?? keywordsSheetId(), "keywords", rows);
   } catch (err) {
     return {
       ok: false,

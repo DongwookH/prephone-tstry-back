@@ -136,6 +136,22 @@ export async function updateCell(
 }
 
 /**
+ * 여러 범위를 한 번의 API 호출로 업데이트.
+ * (가이드 폼처럼 셀 10여 개를 동시에 저장할 때 updateCell 반복은 쿼터를 먹는다)
+ */
+export async function batchUpdateValues(
+  spreadsheetId: string,
+  data: Array<{ range: string; values: (string | number | boolean)[][] }>,
+): Promise<void> {
+  if (data.length === 0) return;
+  const sheets = getClient();
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: { valueInputOption: "RAW", data },
+  });
+}
+
+/**
  * 탭이 없으면 생성하고 헤더 행을 채운다 (공용 헬퍼).
  * headers 길이만큼 A1부터 가로로 기록. 이미 있으면 아무것도 안 함.
  */
