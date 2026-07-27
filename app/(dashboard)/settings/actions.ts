@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { getViewerContext } from "@/lib/tenant-context";
 import {
   addGeminiKey,
+  addNvidiaKey,
   disableGeminiKey,
   addGaProperty,
   disableGaProperty,
@@ -72,6 +73,35 @@ export async function addGeminiKeyAction(input: {
   try {
     const { id } = await addGeminiKey(value, label, scoped.sheetId);
     invalidateGeminiKeyCache();
+    revalidatePath("/settings");
+    return { ok: true, id };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/**
+ * NVIDIA NIM API 키 추가 (썸네일·카드뉴스 배경 이미지 생성용).
+ * ⚠️ 현재 테넌트 이미지 생성 파이프라인은 아직 연결되지 않았다 —
+ *    키는 저장만 되고, 기능이 켜지는 시점에 그대로 쓰인다.
+ */
+export async function addNvidiaKeyAction(input: {
+  value: string;
+  label: string;
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const scoped = await resolveScopedSheetId();
+  if (!scoped.ok) return { ok: false, error: scoped.error };
+
+  const value = input.value.trim();
+  const label = input.label.trim();
+  if (!value) return { ok: false, error: "키 값을 입력하세요" };
+  if (!value.startsWith("nvapi-"))
+    return { ok: false, error: "NVIDIA 키는 nvapi- 로 시작합니다" };
+  if (value.length < 20)
+    return { ok: false, error: "키가 너무 짧습니다 — 전체를 복사했는지 확인해 주세요" };
+
+  try {
+    const { id } = await addNvidiaKey(value, label, scoped.sheetId);
     revalidatePath("/settings");
     return { ok: true, id };
   } catch (err) {

@@ -46,7 +46,7 @@ const TOC_ITEMS = [
   { href: "#step2", label: "STEP 2 · Gemini API 키 발급" },
   { href: "#step3", label: "STEP 3 · 로그인 & 키 등록" },
   { href: "#step4", label: "STEP 4 · 내 데이터 시트 확인" },
-  { href: "#step5", label: "STEP 5 · 세부 가이드 작성" },
+  { href: "#step5", label: "STEP 5 · 내 가이드 작성" },
   { href: "#step6", label: "STEP 6 · 매일 하는 일" },
   { href: "#menu", label: "백오피스 메뉴 소개" },
   { href: "#faq", label: "자주 묻는 질문" },
@@ -116,55 +116,61 @@ const SHEET_TABS = [
   },
   {
     name: "guide",
-    desc: "나만의 세부 가이드를 작성하는 탭입니다. 회사 정보, 요금, 금지어 등을 적어두면 AI가 글을 쓸 때 그대로 참고합니다. STEP 5에서 자세히 설명합니다.",
+    desc: "나만의 세부 가이드가 저장되는 탭입니다. 백오피스 「내 가이드」 화면에서 입력하면 이 탭에 자동 저장되므로 직접 손댈 일은 없습니다. STEP 5에서 자세히 설명합니다.",
   },
 ];
 
 const GUIDE_SECTIONS = [
   {
-    name: "brand_name",
+    name: "판매점명",
     required: true,
     desc: "글에 표기할 상호/브랜드명을 한 줄로 적습니다. 예: \"홍길동텔레콤\". 글 속 소개 문장과 마무리 버튼 옆에 이 이름이 들어갑니다.",
     note: "비어 있으면 글이 생성되지 않습니다.",
   },
   {
-    name: "links",
+    name: "개통 사이트 링크",
     required: true,
-    desc: "글의 버튼에 넣을 링크를 한 줄에 하나씩 \"이름: URL\" 형식으로 적습니다. 예: \"신청 페이지: https://...\", \"카톡 문의: https://...\". 첫 줄이 대표 링크가 됩니다.",
-    note: "비어 있으면 글이 생성되지 않습니다.",
+    desc: "손님이 신청하러 들어올 주소입니다. 글 맨 위 첫 번째 버튼이 됩니다. 사이트가 없으면 비워두고 카카오톡 채널만 넣어도 됩니다.",
+    note: "카카오톡 채널과 둘 중 하나는 필수입니다.",
   },
   {
-    name: "company",
+    name: "카카오톡 채널 링크",
     required: true,
-    desc: "상호명, 연락 채널(카카오 채널 등), 홈페이지 주소, 영업시간처럼 내 사업을 소개하는 기본 정보입니다.",
-    note: "비어 있으면 글이 생성되지 않습니다.",
+    desc: "카카오톡 채널 관리자센터에서 채널 홈 URL을 복사해 붙여넣습니다. 글 맨 위 두 번째 버튼이 됩니다.",
+    note: "개통 사이트와 둘 중 하나는 필수입니다.",
   },
   {
-    name: "plans",
+    name: "전화번호 · 영업시간",
+    required: true,
+    desc: "상담 전화번호와 영업시간을 적습니다. 적어둔 항목만 글의 회사 소개 문장으로 자동 조립됩니다.",
+    note: "전화·영업시간·회사 소개 중 하나는 필수입니다.",
+  },
+  {
+    name: "요금표",
     required: true,
     desc: "글에서 확정된 사실로 단정해서 표기해도 되는 요금, 상품 구성만 적습니다. 아직 확정되지 않았거나 요금제별로 달라지는 내용은 적지 않는 편이 안전합니다.",
     note: "비어 있으면 글이 생성되지 않습니다.",
   },
   {
-    name: "personas",
+    name: "타깃 독자",
     required: false,
-    desc: "이 글을 읽을 타깃 독자의 유형을 적습니다. 예를 들어 \"처음 알아보는 20대 사회초년생\", \"가격 비교 중인 자영업자\"처럼 적어두면 그 눈높이에 맞춰 글이 써집니다.",
+    desc: "이 글을 읽을 독자의 유형을 적습니다. 예를 들어 \"처음 알아보는 20대 사회초년생\", \"가격 비교 중인 자영업자\"처럼 적어두면 그 눈높이에 맞춰 글이 써집니다.",
     note: "비워두면 공통 기본값이 적용됩니다.",
   },
   {
-    name: "banned_words",
+    name: "쓰면 안 되는 말",
     required: false,
     desc: "글에 절대 쓰면 안 되는 단어를 콤마(,)로 구분해 나열합니다. 여기에 적은 단어는 공통 금지어 목록에 추가로 더해집니다.",
     note: "공통 금지어에 추가로 적용됩니다.",
   },
   {
-    name: "extra_rules",
+    name: "추가 규칙",
     required: false,
     desc: "그 밖에 지켜야 할 나만의 자유 규칙을 문장으로 적습니다. 예: \"항상 존댓말로 쓴다\", \"이모지는 쓰지 않는다\" 등.",
     note: "공통 가이드와 내용이 겹치면 이 항목이 우선 적용됩니다.",
   },
   {
-    name: "faq",
+    name: "자주 받는 질문",
     required: false,
     desc: "고객에게 자주 받는 질문과 그에 대한 답변을 적어둡니다. AI가 글을 쓸 때 사실 근거로 활용합니다.",
     note: "적어둔 만큼 글의 정확도가 올라갑니다.",
@@ -174,11 +180,12 @@ const GUIDE_SECTIONS = [
 const WORKSPACE_ROWS = [
   { icon: LayoutDashboard, name: "대시보드", desc: "오늘 생성된 글과 발행 현황을 한눈에 확인합니다." },
   { icon: FileText, name: "글 관리", desc: "생성된 글을 검수하고 내용을 복사해 발행합니다." },
-  { icon: Search, name: "키워드", desc: "키워드를 발굴하고 생성 대기열을 관리합니다." },
+  { icon: NotebookPen, name: "내 가이드", desc: "판매점명·링크·요금 등 내 정보를 입력합니다. 여기를 채워야 글이 생성됩니다." },
+  { icon: Search, name: "키워드", desc: "어떤 주제로 글을 쓸지 글감 키워드를 등록합니다." },
   { icon: BarChart3, name: "분석", desc: "GA4 연동 시 글별 유입·클릭 성과를 확인합니다." },
   { icon: Rss, name: "Threads", desc: "블로그 글을 스레드 콘텐츠로 자동 발행합니다." },
   { icon: MessageSquare, name: "챗봇 질문", desc: "사이트에 방문한 사용자의 챗봇 질문 로그를 확인합니다." },
-  { icon: Settings, name: "설정", desc: "Gemini API 키, 세부 가이드 등 개인 설정을 관리합니다." },
+  { icon: Settings, name: "설정", desc: "Gemini API 키를 등록하고 사용량을 확인합니다." },
 ];
 
 const FAQS = [
@@ -208,7 +215,7 @@ const FAQS = [
   },
   {
     q: "로그인은 되는데 글이 하나도 생성되지 않아요. 뭘 확인해야 하나요?",
-    a: "가장 흔한 원인 두 가지를 순서대로 확인해 보세요. 첫째, 설정 메뉴에 Gemini API 키가 정상적으로 등록되어 있는지 확인합니다. 둘째, guide 탭의 brand_name·links·company·plans 네 필수 섹션이 비어 있지 않은지 확인합니다. 필수 항목이 비어 있으면 글이 생성되지 않습니다.",
+    a: "가장 흔한 원인 세 가지를 순서대로 확인해 보세요. 첫째, 설정 메뉴에 Gemini API 키가 정상적으로 등록되어 있는지 확인합니다. 둘째, 왼쪽 메뉴 「내 가이드」에 들어가 진행률이 4/4인지 확인합니다. 셋째, 「키워드」 화면에 글감이 하나라도 등록돼 있는지 확인합니다. 셋 중 하나라도 비어 있으면 그날 글 생성은 건너뜁니다. 대시보드 위쪽에도 무엇이 비었는지 안내가 표시됩니다.",
   },
   {
     q: "구글 계정을 여러 개 쓰는데 아무 계정으로나 로그인해도 되나요?",
@@ -629,12 +636,12 @@ export default async function StartPage() {
                       <>
                         새 탭에서{" "}
                         <a
-                          href="https://myaccount.google.com/security"
+                          href="https://myaccount.google.com/signinoptions/twosv"
                           target="_blank"
                           rel="noreferrer noopener"
                           className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:text-brand-600 underline underline-offset-2"
                         >
-                          myaccount.google.com/security
+                          myaccount.google.com/signinoptions/twosv
                           <ExternalLink size={13} strokeWidth={2.2} />
                         </a>{" "}
                         에 접속합니다. 백오피스에 쓸 구글 계정으로 로그인돼
@@ -643,8 +650,8 @@ export default async function StartPage() {
                     ),
                   },
                   {
-                    title: '"2단계 인증" 메뉴 선택',
-                    desc: '"Google에 로그인하는 방법" 섹션에서 "2단계 인증"을 누릅니다. 이미 "사용"으로 표시돼 있다면 이 섹션은 건너뛰어도 됩니다.',
+                    title: "2단계 인증 화면 확인",
+                    desc: '위 링크를 누르면 "2단계 인증" 화면이 바로 열립니다. 이미 "사용 중"으로 표시돼 있다면 이 섹션은 건너뛰어도 됩니다.',
                   },
                   {
                     title: '"시작하기" 후 본인 확인',
@@ -741,8 +748,46 @@ export default async function StartPage() {
             <OrderedMini
               items={[
                 {
-                  title: "로그인 페이지 접속 후 구글 로그인",
-                  desc: "승인받은 구글 계정으로 로그인합니다.",
+                  title: "로그인 페이지에서 「구글로 로그인」 누르기",
+                  desc: "관리자에게 승인받은 그 구글 계정으로 로그인합니다. 다른 계정으로 로그인하면 들어올 수 없습니다.",
+                },
+                {
+                  title: '"Google에서 확인하지 않은 앱입니다" 화면이 나오면',
+                  desc: (
+                    <>
+                      <strong className="font-bold text-ink-900">
+                        정상입니다. 놀라지 마세요.
+                      </strong>{" "}
+                      개인이 만들어 소수만 쓰는 서비스라 구글의 별도 심사를 받지
+                      않아서 뜨는 안내입니다.{" "}
+                      <strong className="font-bold text-ink-900">
+                        「고급」
+                      </strong>{" "}
+                      을 누른 뒤 아래에 나오는{" "}
+                      <strong className="font-bold text-ink-900">
+                        「(안전하지 않음)으로 이동」
+                      </strong>
+                      을 누르면 계속 진행됩니다. 이 화면이 안 나오면 그냥
+                      다음으로 넘어가세요.
+                    </>
+                  ),
+                },
+                {
+                  title: "권한 요청 화면에서 「계속」",
+                  desc: (
+                    <>
+                      이름·이메일 외에 두 가지를 더 요청합니다.{" "}
+                      <strong className="font-bold text-ink-900">
+                        Google Drive 파일 만들기
+                      </strong>
+                      는 내 전용 시트를 만들기 위해,{" "}
+                      <strong className="font-bold text-ink-900">
+                        애널리틱스 읽기
+                      </strong>
+                      는 글 조회수를 가져오기 위해 필요합니다. 이 서비스가 만든
+                      파일 외에 내 드라이브의 다른 파일은 열어보지 않습니다.
+                    </>
+                  ),
                 },
                 {
                   title: (
@@ -766,6 +811,23 @@ export default async function StartPage() {
                 },
               ]}
             />
+            <Callout type="info">
+              <strong>이미지 생성 키(NVIDIA)는 선택 사항입니다.</strong> 설정
+              화면 아래쪽 「이미지 생성 API」 칸에서 등록할 수 있습니다.{" "}
+              <a
+                href="https://build.nvidia.com/settings/api-keys"
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:text-brand-600 underline underline-offset-2"
+              >
+                build.nvidia.com
+                <ExternalLink size={13} strokeWidth={2.2} />
+              </a>{" "}
+              에서 무료로 발급되며 <code className="px-1 py-0.5 rounded bg-ink-100 text-[12.5px] font-mono text-ink-800">nvapi-</code>로 시작합니다.
+              글에 썸네일·카드뉴스를 자동으로 붙이는 기능은 아직 준비 중이라,
+              지금은 미리 등록해 두는 용도입니다. 등록하지 않아도 글 생성에는
+              전혀 지장이 없습니다.
+            </Callout>
           </section>
 
           <hr className="my-10 border-ink-100" />
@@ -831,18 +893,14 @@ export default async function StartPage() {
               id="step5"
               eyebrow="STEP 5"
               icon={NotebookPen}
-              title="세부 가이드 작성"
+              title="내 가이드 작성"
               desc="가장 중요한 단계입니다. 여기를 채운 만큼 내 브랜드에 맞는 글이 만들어집니다."
             />
             <p className="text-[14.5px] text-ink-700 leading-[1.8]">
               AI는 글을 쓸 때 두 겹의 가이드를 함께 참고합니다. 하나는 모든
               사용자에게 공통으로 적용되는{" "}
               <strong className="font-bold text-ink-900">공통 가이드</strong>
-              이고, 다른 하나는 STEP 4에서 확인한 시트의{" "}
-              <code className="px-1 py-0.5 rounded bg-ink-100 text-[12.5px] font-mono text-ink-800">
-                guide
-              </code>{" "}
-              탭에 내가 직접 작성하는{" "}
+              이고, 다른 하나는{" "}
               <strong className="font-bold text-ink-900">
                 나만의 세부 가이드
               </strong>
@@ -851,8 +909,23 @@ export default async function StartPage() {
               부분만 공통 가이드를 따르는 구조입니다. 그래서 세부 가이드를
               꼼꼼히 채울수록 내 브랜드, 내 상품에 딱 맞는 글이 만들어집니다.
             </p>
-            <p className="mt-4 text-[14.5px] text-ink-700 leading-[1.8]">
-              guide 탭은 아래 6개 섹션으로 구성되어 있습니다.
+            <Callout type="info">
+              <strong>구글 시트를 열지 않아도 됩니다.</strong> 세부 가이드는
+              백오피스 왼쪽 메뉴의{" "}
+              <strong className="font-bold text-ink-900">「내 가이드」</strong>
+              화면에서 칸을 채우면 됩니다. 판매점명·카카오톡 채널 링크·개통
+              사이트 링크처럼 항목별로 입력칸이 나뉘어 있어 그대로 적기만 하면
+              시트에 자동 저장됩니다.{" "}
+              <strong className="font-bold text-ink-900">
+                아직 다 못 채웠어도 저장
+              </strong>
+              해 두고 나중에 이어서 작성할 수 있고, 화면 위쪽 진행률에 무엇이
+              남았는지 표시됩니다. 필수 항목이 덜 채워져 있으면 메뉴의 「내
+              가이드」 옆에 빨간 점이 붙습니다.
+            </Callout>
+            <p className="mt-6 text-[14.5px] text-ink-700 leading-[1.8]">
+              「내 가이드」 화면에서 채우는 항목은 아래와 같습니다. 필수 항목이
+              하나라도 비어 있으면 글이 생성되지 않습니다.
             </p>
             <div className="mt-6 rounded-2xl border border-ink-200 overflow-hidden">
               <table className="w-full text-[13.5px]">

@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { geminiKeyStatus } from "@/lib/gemini";
 import {
   getGeminiKeysFromSheet,
+  getNvidiaKeysFromSheet,
   getGeminiUsage,
   getGaProperties,
 } from "@/lib/sheets";
@@ -11,6 +12,7 @@ import { getThreadsToken } from "@/lib/threads";
 import { listTenants, isAdminEmail } from "@/lib/tenants";
 import { getViewerContext } from "@/lib/tenant-context";
 import { GeminiKeyManager, type GeminiKeyItem } from "@/components/gemini-key-manager";
+import { NvidiaKeyManager } from "@/components/nvidia-key-manager";
 import { UsageChart } from "@/components/usage-chart";
 import { ThreadsCard, type ThreadsCardData } from "@/components/threads-card";
 import { GaPropertiesManager } from "@/components/ga-properties-manager";
@@ -475,10 +477,11 @@ async function MemberSettingsView({ sheetId }: { sheetId: string }) {
     );
   }
 
-  const [keyStatus, sheetKeys, usage] = await Promise.all([
+  const [keyStatus, sheetKeys, usage, nvidiaKeys] = await Promise.all([
     geminiKeyStatus(sheetId),
     getGeminiKeysFromSheet(sheetId),
     getGeminiUsage(14, sheetId),
+    getNvidiaKeysFromSheet(sheetId).catch(() => []),
   ]);
 
   const sheetKeyItems: GeminiKeyItem[] = sheetKeys.map((k) => ({
@@ -585,6 +588,28 @@ async function MemberSettingsView({ sheetId }: { sheetId: string }) {
             />
           </div>
           <UsageChart data={usageData} />
+        </Card>
+
+        {/* ─── 이미지 생성 키 (NVIDIA) ─── */}
+        <Card
+          id="nvidia"
+          title="이미지 생성 API"
+          desc="썸네일·카드뉴스 배경 이미지를 만들 때 쓰는 NVIDIA 키입니다. 없어도 글은 정상 생성됩니다."
+        >
+          <NvidiaKeyManager
+            keys={nvidiaKeys.map((k) => ({
+              id: k.id,
+              masked: maskKeyPartial(k.value),
+              label: k.label,
+              createdAt: k.created_at,
+            }))}
+          />
+          <div className="bg-ink-50 rounded-xl p-3 text-[11px] text-ink-600 leading-relaxed">
+            <strong className="text-ink-800">준비 중 기능입니다.</strong> 지금은
+            키를 저장해 두는 단계이고, 글에 이미지가 자동으로 붙는 기능은 아직
+            연결되지 않았습니다. 미리 등록해 두시면 기능이 켜질 때 그대로
+            사용됩니다.
+          </div>
         </Card>
 
         {/* ─── 내 시트 안내 ─── */}

@@ -769,7 +769,13 @@ export async function getGeminiKeysFromSheet(
 }
 
 /** 추가 — 새 row 생성. */
-export async function addGeminiKey(
+/**
+ * settings 탭에 API 키 행 추가. type으로 종류를 구분한다
+ * (gemini_key = 글 생성, nvidia_key = 이미지 생성).
+ */
+async function addApiKey(
+  type: string,
+  idPrefix: string,
   value: string,
   label: string,
   sheetId?: string,
@@ -782,10 +788,10 @@ export async function addGeminiKey(
     await ensureSettingsSheet();
   }
   const now = new Date().toISOString();
-  const newId = `gk-${Date.now()}`;
+  const newId = `${idPrefix}-${Date.now()}`;
   await appendRow(sheetId ?? mainSheetId(), SETTINGS_SHEET, [
     newId,
-    "gemini_key",
+    type,
     value,
     label || "",
     "1",
@@ -794,6 +800,33 @@ export async function addGeminiKey(
     "0",
   ]);
   return { id: newId };
+}
+
+export async function addGeminiKey(
+  value: string,
+  label: string,
+  sheetId?: string,
+): Promise<{ id: string }> {
+  return addApiKey("gemini_key", "gk", value, label, sheetId);
+}
+
+/** NVIDIA NIM API 키 (썸네일·카드뉴스 배경 이미지 생성용). */
+export async function addNvidiaKey(
+  value: string,
+  label: string,
+  sheetId?: string,
+): Promise<{ id: string }> {
+  return addApiKey("nvidia_key", "nk", value, label, sheetId);
+}
+
+/** 활성 NVIDIA 키 목록. */
+export async function getNvidiaKeysFromSheet(
+  sheetId?: string,
+): Promise<SettingRow[]> {
+  const all = await readSettings(sheetId);
+  return all.filter(
+    (r) => r.type === "nvidia_key" && r.enabled === "1" && r.value,
+  );
 }
 
 // ─── GA properties (블로그별 GA4) ───────────────────────────
@@ -891,7 +924,10 @@ export async function disableGaProperty(id: string): Promise<boolean> {
   return false;
 }
 
-/** 비활성화 (실제 삭제 X — enabled=0). */
+/**
+ * 비활성화 (실제 삭제 X — enabled=0).
+ * id로만 찾으므로 gemini_key·nvidia_key 등 종류를 가리지 않는다.
+ */
 export async function disableGeminiKey(
   id: string,
   sheetId?: string,
