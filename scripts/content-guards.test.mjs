@@ -66,6 +66,11 @@ test("번호와 무관한 문장·일반 문구는 통과", () => {
   assert.equal(hasNumberKeepingClaim("유심번호 입력 후 요금제 선택"), false);
   assert.equal(hasNumberKeepingClaim("전화번호 안내를 확인하세요"), false);
   assert.equal(hasNumberKeepingClaim(""), false);
+  // 2026-07-27 오탐 수정 — '폰은 그대로'가 앞에 있어도 번호 뒤가 새로/새롭게면 정답
+  assert.equal(hasNumberKeepingClaim("폰은 그대로 두고 번호만 새롭게! 5분이면 끝"), false);
+  assert.equal(hasNumberKeepingClaim("폰은 그대로, 번호만 새로 발급받아 즉시 사용"), false);
+  // 단, 부정문 차단 정책은 유지 (엄격 모드 — 사업주 확정)
+  assert.equal(hasNumberKeepingClaim("기존 번호 그대로 유지하는 것은 불가능합니다"), true);
 });
 
 // ─── 1인칭 고객 경험담 가드 (2026-07-20 운영자 지시: 경험담은 손님 사례 시점) ───
