@@ -69,8 +69,19 @@ test("번호와 무관한 문장·일반 문구는 통과", () => {
   // 2026-07-27 오탐 수정 — '폰은 그대로'가 앞에 있어도 번호 뒤가 새로/새롭게면 정답
   assert.equal(hasNumberKeepingClaim("폰은 그대로 두고 번호만 새롭게! 5분이면 끝"), false);
   assert.equal(hasNumberKeepingClaim("폰은 그대로, 번호만 새로 발급받아 즉시 사용"), false);
-  // 단, 부정문 차단 정책은 유지 (엄격 모드 — 사업주 확정)
+  // '그대로'류 표현은 부정문이어도 계속 차단 (미끼 위험)
   assert.equal(hasNumberKeepingClaim("기존 번호 그대로 유지하는 것은 불가능합니다"), true);
+  // 2026-07-27 정책 정밀 완화 — 올바른 "유지되지 않/유지 안 됨" 단정 부정문만 허용
+  //   (발신정지류 주제는 이 말 없이 글이 안 됨. 살리다·그대로·의문형·'유지가 안'은 계속 차단)
+  assert.equal(
+    hasNumberKeepingClaim("기존 번호는 유지되지 않지만, 휴대폰 기기는 계속 쓸 수 있어요"),
+    false,
+  );
+  assert.equal(
+    hasNumberKeepingClaim("기존 번호는 유지 안 돼요, 새 번호로 바로 개통해요"),
+    false,
+  );
+  assert.equal(hasNumberKeepingClaim("번호는 못 살려요, 새로 받으세요"), true); // 살리류는 여전히 차단
 });
 
 // ─── 1인칭 고객 경험담 가드 (2026-07-20 운영자 지시: 경험담은 손님 사례 시점) ───

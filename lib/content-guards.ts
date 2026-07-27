@@ -62,6 +62,13 @@ const NEW_AFTER = /^(?:은|는|도|를|가|만)?\s*새(?:로|롭)/;
 /** 검사 창 반경 (번호 앞뒤 글자 수) — 짧은 절 안의 결합만 잡는다. */
 const WINDOW = 14;
 
+/**
+ * 올바른 단정 부정문 — "번호는 유지되지 않(습니다)" / "번호는 유지 안 돼요/됩니다".
+ * 조사는 는/은만 (‘유지가 안’ 같은 변형은 불허), 반드시 '유지' 직결.
+ */
+const CORRECT_NEGATION =
+  /^번호[는은]?\s*(?:유지되지\s*않|유지\s*안\s*(?:돼|됩))/;
+
 // 투폰/두 번째 회선 예외 (2026-07-21 블로그 오탐 수정):
 // "지금 쓰는 번호는 그대로 두고 두 번째 번호를 새로" — 정상 사용 중인 기존
 // 회선의 번호 유지는 사실이라 정당. 단, 미납·정지·부활 문맥이 같이 있으면
@@ -88,7 +95,11 @@ export function findNumberKeepingClaims(text: string): string[] {
     const before = t.slice(Math.max(0, idx - 5), idx);
     const after = t.slice(idx + 2, idx + 2 + 8);
     const isNewNumber = NEW_BEFORE.test(before) || NEW_AFTER.test(after);
-    if (!isNewNumber) {
+    // 올바른 단정 부정문("번호는 유지되지 않습니다/유지 안 돼요")만 허용 —
+    // 발신정지류 주제는 이 말 없이 글이 안 됨 (2026-07-27 정책 정밀 완화).
+    // '그대로/살리다'류·의문형·"유지가 안"(조사 낀 변형)은 미끼 위험으로 계속 차단.
+    const isCorrectNegation = CORRECT_NEGATION.test(t.slice(idx, idx + 16));
+    if (!isNewNumber && !isCorrectNegation) {
       const windowText = t.slice(Math.max(0, idx - WINDOW), idx + 2 + WINDOW);
       if (KEEP_WORDS.test(windowText)) {
         const ctx = t.slice(
