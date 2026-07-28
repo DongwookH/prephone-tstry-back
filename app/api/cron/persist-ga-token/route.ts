@@ -41,7 +41,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "email 필요" }, { status: 400 });
   }
   const { isAdminEmail } = await import("@/lib/tenants");
-  const isOwner = await isAdminEmail(email).catch(() => false);
+  let isOwner: boolean;
+  try {
+    isOwner = await isAdminEmail(email);
+  } catch (e) {
+    // 판정 실패를 "오너 아님"으로 흘리면, 오너가 복구하려고 재로그인해도
+    // 조용히 저장이 안 된 채 넘어간다 — 500으로 올려 auth.ts가 로그를 남기게 한다.
+    console.error(
+      "[persist-ga-token] 오너 판정 실패:",
+      e instanceof Error ? e.message : String(e),
+    );
+    return NextResponse.json({ error: "오너 판정 실패" }, { status: 500 });
+  }
   if (!isOwner) {
     // 멤버 로그인은 정상 흐름이므로 200으로 조용히 건너뛴다 (로그인 실패 아님)
     return NextResponse.json({ ok: true, skipped: "not-owner" });
