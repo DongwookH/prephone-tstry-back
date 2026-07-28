@@ -91,10 +91,12 @@ def compose(data):
 
     # ── 텍스트 요소 미리 측정 (패널 높이 자동 계산) ──
     title_raw = re.sub(r"^\s*\d+\)\s*", "", data.get("title", ""))  # "2) " 접두 제거
+    # 2026-07-28 가독성 보강 — 1080px 카드가 모바일 피드에서 축소 표시될 때
+    # 본문이 뭉개지던 문제. 본문 굵기·크기를 올리고 대비를 높였다.
     title_f = font(58, 800)
-    sub_f = font(32, 500)
-    bullet_f = font(36, 500)
-    num_f = font(30, 800)
+    sub_f = font(34, 600)
+    bullet_f = font(41, 600)
+    num_f = font(32, 800)
 
     title_lines = wrap(d0, title_raw, title_f, inner)
     sub = data.get("subtitle") or ""
@@ -102,15 +104,17 @@ def compose(data):
 
     bullets = data.get("bullets", []) or []
     style = data.get("bullet_style", "checklist")
-    marker_w = 58  # 체크/번호 마커 폭
+    marker_w = 64  # 체크/번호 마커 폭 (본문 커진 만큼 확대)
     bullet_wrapped = [wrap(d0, b, bullet_f, inner - marker_w) for b in bullets]
 
-    line_h_title = 74
-    line_h_sub = 46
-    line_h_bul = 50
-    gap_after_title = 14
-    gap_after_sub = 30
-    gap_between_bul = 22
+    line_h_title = 76
+    line_h_sub = 50
+    # 한글은 라틴 대비 글자 높이가 커서 1.4배 미만이면 줄이 붙어 보인다 → 1.46배
+    line_h_bul = 60
+    gap_after_title = 16
+    gap_after_sub = 34
+    # 항목 사이를 벌려 "덩어리"가 구분되게 (이전 22px은 줄간격과 구분이 안 됐다)
+    gap_between_bul = 34
 
     panel_top_pad = 56
     panel_bot_pad = 64
@@ -142,7 +146,7 @@ def compose(data):
     if sub_lines:
         y += gap_after_title
         for ln in sub_lines:
-            d.text((pad, y), ln, font=sub_f, fill=(110, 120, 130))
+            d.text((pad, y), ln, font=sub_f, fill=(88, 98, 112))
             y += line_h_sub
     y += gap_after_sub
     # 불릿
@@ -155,11 +159,19 @@ def compose(data):
             d.ellipse([cx - cr, cy - cr, cx + cr, cy + cr], fill=accent)
             d.text((cx, cy), str(i + 1), font=num_f, fill=(255, 255, 255), anchor="mm")
         else:
-            # 체크 마커
-            d.text((pad, my), "✓", font=font(38, 800), fill=accent)
+            # 체크 마커 — 글꼴이 "✓" 글리프에 굵기를 못 먹여 머리카락처럼 얇게
+            # 나오던 문제(2026-07-28). 번호 스타일과 동일하게 원형 배지로 그린다.
+            cr = 17
+            cx, cy = pad + cr, my + 21
+            d.ellipse([cx - cr, cy - cr, cx + cr, cy + cr], fill=accent)
+            # 흰 체크를 선으로 직접 — 글리프 의존 없이 항상 또렷하다
+            d.line(
+                [(cx - 8, cy + 1), (cx - 2, cy + 7), (cx + 8, cy - 6)],
+                fill=(255, 255, 255), width=4, joint="curve",
+            )
         tx = pad + marker_w
         for j, ln in enumerate(bl):
-            d.text((tx, my + j * line_h_bul), ln, font=bullet_f, fill=(45, 52, 64))
+            d.text((tx, my + j * line_h_bul), ln, font=bullet_f, fill=(30, 37, 48))
         y += len(bl) * line_h_bul
         if i < len(bullet_wrapped) - 1:
             y += gap_between_bul
@@ -167,7 +179,7 @@ def compose(data):
     # 핸들 (하단 좌측)
     if handle:
         hf = font(26, 500)
-        d.text((pad, total_h - 40), handle, font=hf, fill=(170, 178, 186), anchor="lb")
+        d.text((pad, total_h - 40), handle, font=hf, fill=(138, 148, 160), anchor="lb")
 
     # 페이지 번호 — 카드 우측 하단
     page = data.get("page")
