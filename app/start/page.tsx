@@ -43,7 +43,7 @@ const TOC_ITEMS = [
   { href: "#checklist", label: "시작 전 준비물" },
   { href: "#security", label: "구글 2단계 인증 (필수)" },
   { href: "#step1", label: "STEP 1 · 이용 승인 받기" },
-  { href: "#step2", label: "STEP 2 · Gemini API 키 발급" },
+  { href: "#step2", label: "STEP 2 · API 키 발급 (Gemini · 이미지)" },
   { href: "#step3", label: "STEP 3 · 로그인 & 키 등록" },
   { href: "#step4", label: "STEP 4 · 내 데이터 시트 확인" },
   { href: "#step5", label: "STEP 5 · 내 가이드 작성" },
@@ -98,6 +98,62 @@ const GEMINI_STEPS = [
   {
     title: "백오피스 설정 메뉴로 이동",
     desc: "복사한 키를 그대로 들고 백오피스로 돌아옵니다. 다음 STEP 3에서 이 키를 붙여넣는 방법을 이어서 안내합니다.",
+  },
+];
+
+const NVIDIA_STEPS = [
+  {
+    title: "NVIDIA 빌드 사이트 열기",
+    desc: (
+      <>
+        새 탭에서{" "}
+        <a
+          href="https://build.nvidia.com/settings/api-keys"
+          target="_blank"
+          rel="noreferrer noopener"
+          className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:text-brand-600 underline underline-offset-2"
+        >
+          build.nvidia.com/settings/api-keys
+          <ExternalLink size={13} strokeWidth={2.2} />
+        </a>{" "}
+        에 접속합니다. 화면이 영어로만 나오는데, 아래 순서대로 버튼만 누르면 됩니다.
+      </>
+    ),
+  },
+  {
+    title: "계정 만들기 (처음이면)",
+    desc: '오른쪽 위 "Login" 또는 "Sign Up"을 누르고 이메일로 가입합니다. 구글 계정으로도 가입할 수 있어 그 방법이 가장 빠릅니다. 가입 후 이메일로 온 인증 링크를 한 번 눌러야 다음 단계로 넘어갑니다.',
+  },
+  {
+    title: '"Generate API Key" 버튼 클릭',
+    desc: (
+      <>
+        API Keys 화면에서 초록색{" "}
+        <code className="px-1 py-0.5 rounded bg-ink-100 text-[12.5px] font-mono text-ink-800">
+          Generate API Key
+        </code>{" "}
+        버튼을 누릅니다. 이름을 물어보면 아무거나(예: blog) 적어도 됩니다.
+      </>
+    ),
+  },
+  {
+    title: "키 복사 — 이 화면을 벗어나면 다시 못 봅니다",
+    desc: (
+      <>
+        <code className="px-1 py-0.5 rounded bg-ink-100 text-[12.5px] font-mono text-ink-800">
+          nvapi-
+        </code>
+        로 시작하는 긴 문자열이 나타납니다. 옆의 복사 버튼을 눌러 전체를 복사하세요.{" "}
+        <strong className="font-bold text-ink-900">
+          창을 닫으면 다시 확인할 수 없어
+        </strong>{" "}
+        새로 발급받아야 하니, 이 단계에서 꼭 복사해 두세요.
+      </>
+    ),
+  },
+  {
+    title: "백오피스에 등록",
+    desc: '백오피스 설정 화면 아래쪽 「이미지 생성 API」 칸에서 「키 추가」를 누르고 붙여넣은 뒤 저장합니다.',
   },
 ];
 
@@ -706,8 +762,8 @@ export default async function StartPage() {
               id="step2"
               eyebrow="STEP 2"
               icon={KeyRound}
-              title="Gemini API 키 발급"
-              desc="가장 중요하고 낯설 수 있는 단계라 화면 단위로 자세히 안내합니다."
+              title="API 키 발급"
+              desc="가장 낯설 수 있는 단계라 화면 단위로 안내합니다. 글 생성용 Gemini 키는 필수, 이미지 생성용 NVIDIA 키는 선택입니다."
             />
             <p className="text-[14.5px] text-ink-700 leading-[1.8]">
               Gemini는 구글이 만든 AI 모델로, 이 백오피스가 블로그 글을 쓸 때
@@ -805,23 +861,24 @@ export default async function StartPage() {
                 },
               ]}
             />
-            <Callout type="info">
-              <strong>이미지 생성 키(NVIDIA)는 선택 사항입니다.</strong> 설정
-              화면 아래쪽 「이미지 생성 API」 칸에서 등록할 수 있습니다.{" "}
-              <a
-                href="https://build.nvidia.com/settings/api-keys"
-                target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:text-brand-600 underline underline-offset-2"
-              >
-                build.nvidia.com
-                <ExternalLink size={13} strokeWidth={2.2} />
-              </a>{" "}
-              에서 무료로 발급되며 <code className="px-1 py-0.5 rounded bg-ink-100 text-[12.5px] font-mono text-ink-800">nvapi-</code>로 시작합니다.
-              글에 썸네일·카드뉴스를 자동으로 붙이는 기능은 아직 준비 중이라,
-              지금은 미리 등록해 두는 용도입니다. 등록하지 않아도 글 생성에는
-              전혀 지장이 없습니다.
-            </Callout>
+            <div className="mt-10">
+              <h3 className="text-[17px] font-extrabold text-ink-900">
+                선택 · 이미지 생성 키 (NVIDIA)
+              </h3>
+              <p className="mt-2 text-[14.5px] text-ink-700 leading-[1.8]">
+                글에 들어갈 썸네일과 카드뉴스 이미지를 만들 때 쓰는 키입니다.
+                Gemini 키와 마찬가지로 무료이고 신용카드도 필요 없습니다.{" "}
+                <strong className="font-bold text-ink-900">
+                  등록하지 않아도 글은 정상적으로 생성됩니다
+                </strong>
+                — 이미지가 붙지 않을 뿐입니다. 지금은 미리 등록해 두는 단계이고,
+                이미지 자동 생성 기능은 준비 중입니다. 나중에 하셔도 되니
+                부담 없이 건너뛰셔도 됩니다.
+              </p>
+              <div className="mt-6">
+                <OrderedMini items={NVIDIA_STEPS} />
+              </div>
+            </div>
           </section>
 
           <hr className="my-10 border-ink-100" />
