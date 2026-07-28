@@ -120,12 +120,10 @@ export function buildPrompt(opts: {
 
   // ── KB 컨텍스트: 테넌트 모드면 세부 가이드가 오너 KB를 "대체"한다 ──
   //    brand_name·links·company는 폴백 금지 (테넌트 고유 정보 — 섞이면 사고).
-  //    plans만 예외: 같은 요금제를 파는 판매점이라 비워두면 공통 요금표를 쓴다
-  //    (2026-07-28 사업주 결정).
+  //    요금표는 테넌트에게 받지 않는다 — 같은 상품을 파는 판매점이라 항상
+  //    공통 요금표를 쓴다 (2026-07-28 사업주 결정).
   const globalCtx = tb
-    ? `${tb.company}\n\n## 요금·상품 (확정 정보만 — 아래 외 숫자 단정 금지)\n${
-        tb.plans || getPlansContext()
-      }`
+    ? `${tb.company}\n\n## 요금·상품 (확정 정보만 — 아래 외 숫자 단정 금지)\n${getPlansContext()}`
     : getGlobalContext();
   const catCtx = tb
     ? "(별도 카테고리 상세 없음 — 위 회사 정보·요금과 아래 FAQ만 사실 근거로 사용)"

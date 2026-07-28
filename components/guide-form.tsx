@@ -12,7 +12,6 @@ import {
   MessageCircle,
   Phone,
   Clock,
-  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { saveGuideAction } from "@/app/(dashboard)/guide/actions";
@@ -45,7 +44,7 @@ function missingGroups(f: Fields): string[] {
   const hasCompany =
     !!f.phone.trim() || !!f.hours.trim() || !!f.company.trim();
   if (!hasCompany) out.push("company");
-  // 요금표는 필수 아님 — 비우면 공통 요금표를 사용한다 (2026-07-28 결정)
+  // 요금표는 입력 항목이 없다 — 항상 공통 요금표를 쓴다 (2026-07-28 결정)
   return out;
 }
 
@@ -145,6 +144,7 @@ export function GuideForm({ initial }: { initial: Fields }) {
         <h3 className="text-[16px] font-extrabold text-ink-900">기본 정보</h3>
         <p className="text-[12px] text-ink-500 mb-5 mt-1">
           글에 들어갈 내 가게 정보입니다. 여기 적은 내용만 글에 표기됩니다.
+          요금표는 공통 요금표를 그대로 사용하므로 따로 적지 않아도 됩니다.
         </p>
         <div className="space-y-4">
           <Field
@@ -193,20 +193,6 @@ export function GuideForm({ initial }: { initial: Fields }) {
           <Callout show={missing.includes("company")}>
             전화번호·영업시간·회사 소개 중 <strong>최소 하나</strong>는 필요합니다.
           </Callout>
-          <Field
-            Icon={Receipt}
-            label="요금표 (선택)"
-            multiline
-            rows={4}
-            value={f.plans}
-            onChange={set("plans")}
-            placeholder={"비워두면 공통 요금표를 그대로 사용합니다.\n내 요금이 다를 때만 적어주세요."}
-            hint={
-              f.plans.trim()
-                ? "여기 적은 요금만 글에 나옵니다. 공통 요금표는 사용하지 않습니다."
-                : "비어 있음 → 공통 요금표(확정가)를 그대로 사용합니다. 같은 요금제를 파신다면 그대로 두세요."
-            }
-          />
         </div>
       </section>
 

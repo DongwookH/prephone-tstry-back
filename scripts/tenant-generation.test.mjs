@@ -25,7 +25,6 @@ function raw(over = {}) {
     link_site: "",
     phone: "",
     hours: "",
-    plans: "",
     company: "",
     links: "",
     personas: "",
@@ -43,7 +42,6 @@ const TENANT_GUIDE = {
     { label: "💬 카톡 문의", url: "https://pf.kakao.com/_hongtest" },
   ],
   company: "홍길동텔레콤 — 연중무휴, 카톡 상담 운영. 홈페이지 https://hong.example.com",
-  plans: "베이직 20,000원 / 프리미엄 40,000원 (확정가 2종)",
   personas: "가격 비교 중인 30대 직장인",
   banned_words: ["최저가", "업계1위"],
   extra_rules: "이모지는 쓰지 않는다.",
@@ -99,7 +97,8 @@ test("테넌트 프롬프트 — 테넌트 브랜드·링크·금지어·추가�
   assert.equal(p.includes("이모지는 쓰지 않는다"), true, "extra_rules 미주입");
   assert.equal(p.includes("아래 규칙이 우선"), true, "extra_rules 우선 명시 누락");
   assert.equal(p.includes("당일 개통 되나요"), true, "faq 미주입");
-  assert.equal(p.includes("베이직 20,000원"), true, "plans 미주입");
+  // 요금표는 테넌트에게 받지 않는다 — 항상 공통 확정가가 들어간다
+  assert.equal(p.includes("12,100"), true, "공통 요금표 미주입");
 });
 
 test("오너 프롬프트 — 기존 그대로 (무회귀)", () => {
@@ -123,7 +122,7 @@ test("히어로 자동 삽입 — 테넌트 모드는 테넌트 브랜드·버�
   assert.equal(ownerOut.includes("앤텔레콤 안심개통 케어통신"), true);
 });
 
-test("필수 섹션 검증 — brand_name·links·company (plans는 폴백 허용)", () => {
+test("필수 섹션 검증 — brand_name·links·company (요금표는 항목 자체가 없음)", () => {
   assert.deepEqual(missingRequiredGuideSections(TENANT_GUIDE), []);
   assert.deepEqual(
     missingRequiredGuideSections({
@@ -131,19 +130,13 @@ test("필수 섹션 검증 — brand_name·links·company (plans는 폴백 허�
       brand_name: "",
       links: [],
       company: "",
-      plans: "",
     }),
     ["brand_name", "links", "company"],
   );
-  // 2026-07-28 사업주 결정: 같은 요금제를 파는 판매점이라 plans는 비워도 통과
-  assert.deepEqual(
-    missingRequiredGuideSections({ ...TENANT_GUIDE, plans: "" }),
-    [],
-  );
 });
 
-test("요금표 폴백 — 비우면 공통 요금표가 프롬프트에 들어간다", () => {
-  const withOwn = buildPrompt({
+test("요금표 — 테넌트 입력과 무관하게 항상 공통 확정가를 쓴다", () => {
+  const p = buildPrompt({
     keyword: "선불폰개통",
     category: "일반",
     subKeywords: [],
@@ -151,28 +144,13 @@ test("요금표 폴백 — 비우면 공통 요금표가 프롬프트에 들어�
     utmCampaign: "test",
     tenantBrand: TENANT_GUIDE,
   });
-  assert.equal(withOwn.includes("베이직 20,000원"), true, "본인 요금표 미주입");
-
-  const fallback = buildPrompt({
-    keyword: "선불폰개통",
-    category: "일반",
-    subKeywords: [],
-    persona: "일반",
-    utmCampaign: "test",
-    tenantBrand: { ...TENANT_GUIDE, plans: "" },
-  });
   // 공통 요금표의 확정가가 들어와야 한다
-  assert.equal(fallback.includes("12,100"), true, "공통 요금표 폴백 실패");
-  assert.equal(fallback.includes("베이직 20,000원"), false, "옛 요금표 잔존");
-  // 요금표만 폴백이고 브랜드·링크는 여전히 테넌트 것이어야 한다
-  assert.equal(fallback.includes("홍길동텔레콤"), true);
-  assert.equal(fallback.includes("https://hong.example.com/apply"), true);
+  assert.equal(p.includes("12,100"), true, "공통 요금표 미주입");
+  // 브랜드·링크는 여전히 테넌트 것이고 오너 마커는 새면 안 된다
+  assert.equal(p.includes("홍길동텔레콤"), true);
+  assert.equal(p.includes("https://hong.example.com/apply"), true);
   for (const marker of OWNER_MARKERS) {
-    assert.equal(
-      fallback.includes(marker),
-      false,
-      `요금표 폴백에 오너 마커 "${marker}" 누출`,
-    );
+    assert.equal(p.includes(marker), false, `오너 마커 "${marker}" 누출`);
   }
 });
 
@@ -330,7 +308,6 @@ test("하위호환 — 기존 links·company 자유형식만 있는 시트도 �
       brand_name: "구형텔레콤",
       links: "신청: https://old.example.com\n카톡: https://pf.kakao.com/_old",
       company: "구형텔레콤 — 연중무휴 상담",
-      plans: "기본 15,000원",
     }),
   );
   assert.deepEqual(missingRequiredGuideSections(legacy), []);
@@ -345,7 +322,6 @@ test("조립본이 프롬프트·히어로에 그대로 흘러간다 (폼 → �
       brand_name: "홍길동텔레콤",
       link_site: "https://hong.example.com/apply",
       phone: "010-1111-2222",
-      plans: "베이직 20,000원",
       banned_words: "최저가, 업계1위",
     }),
   );

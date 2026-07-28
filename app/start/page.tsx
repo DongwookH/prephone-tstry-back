@@ -146,12 +146,6 @@ const GUIDE_SECTIONS = [
     note: "전화·영업시간·회사 소개 중 하나는 필수입니다.",
   },
   {
-    name: "요금표",
-    required: false,
-    desc: "같은 요금제를 취급한다면 비워두세요. 공통 요금표를 그대로 사용합니다. 내 요금이 다를 때만, 확정된 금액만 적어주세요.",
-    note: "비워두면 공통 요금표가 적용됩니다.",
-  },
-  {
     name: "타깃 독자",
     required: false,
     desc: "이 글을 읽을 독자의 유형을 적습니다. 예를 들어 \"처음 알아보는 20대 사회초년생\", \"가격 비교 중인 자영업자\"처럼 적어두면 그 눈높이에 맞춰 글이 써집니다.",
@@ -180,7 +174,7 @@ const GUIDE_SECTIONS = [
 const WORKSPACE_ROWS = [
   { icon: LayoutDashboard, name: "대시보드", desc: "오늘 생성된 글과 발행 현황을 한눈에 확인합니다." },
   { icon: FileText, name: "글 관리", desc: "생성된 글을 검수하고 내용을 복사해 발행합니다." },
-  { icon: NotebookPen, name: "내 가이드", desc: "판매점명·링크·요금 등 내 정보를 입력합니다. 여기를 채워야 글이 생성됩니다." },
+  { icon: NotebookPen, name: "내 가이드", desc: "판매점명·링크·연락처 등 내 정보를 입력합니다. 여기를 채워야 글이 생성됩니다." },
   { icon: Search, name: "키워드", desc: "어떤 주제로 글을 쓸지 글감 키워드를 등록합니다." },
   { icon: BarChart3, name: "분석", desc: "GA4 연동 시 글별 유입·클릭 성과를 확인합니다." },
   { icon: Rss, name: "Threads", desc: "블로그 글을 스레드 콘텐츠로 자동 발행합니다." },
