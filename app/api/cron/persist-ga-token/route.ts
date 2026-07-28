@@ -24,9 +24,27 @@ export async function POST(req: Request) {
 
   const body = (await req.json().catch(() => ({}))) as {
     refresh_token?: unknown;
+    email?: unknown;
   };
   if (typeof body.refresh_token !== "string" || !body.refresh_token) {
     return NextResponse.json({ error: "refresh_token 필요" }, { status: 400 });
+  }
+
+  // ⚠️ 오너 계정만 저장한다 (2026-07-28 실사고).
+  //    이 토큰은 GA 조회와 "테넌트 시트 발급(오너 소유 Drive 파일 생성)"에
+  //    함께 쓰이는 단일 공용 토큰이다. 게이트가 없던 동안 멤버가 로그인하자
+  //    멤버 토큰이 오너 것을 덮어써 GA 6개 속성이 전부 403이 됐고, 그 상태로
+  //    시트를 발급했다면 멤버 계정 소유 파일이 만들어질 뻔했다.
+  //    auth.ts(edge)는 시트를 못 읽으므로 판정은 여기(node)에서 한다.
+  const email = typeof body.email === "string" ? body.email : "";
+  if (!email) {
+    return NextResponse.json({ error: "email 필요" }, { status: 400 });
+  }
+  const { isAdminEmail } = await import("@/lib/tenants");
+  const isOwner = await isAdminEmail(email).catch(() => false);
+  if (!isOwner) {
+    // 멤버 로그인은 정상 흐름이므로 200으로 조용히 건너뛴다 (로그인 실패 아님)
+    return NextResponse.json({ ok: true, skipped: "not-owner" });
   }
 
   try {

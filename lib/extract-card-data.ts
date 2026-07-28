@@ -152,8 +152,32 @@ function extractHook(inner: string): string | undefined {
   return undefined;
 }
 
+/**
+ * 체크리스트 추출 전처리 — ✅가 "불릿 마커"가 아닌 자리에서 쓰인 경우를 없앤다.
+ *
+ * 2026-07-28 실사고 (카드 1,309개 중 58개가 라벨만 남음):
+ *   ① 값 표시로 재사용: `✅ 신용불량자: ✅ 가능` → ✅로 쪼개면
+ *      "신용불량자:"(라벨만) + "가능"(값만) 두 조각으로 갈라진다.
+ *   ② HTML 주석 안의 프롬프트 지시문: `<!-- ✅ details/summary 사용 금지 -->`
+ *      가 항목으로 뽑혀 카드 자리를 차지하고 진짜 항목을 밀어냈다.
+ *   ③ 빈 마커: `✅</p>` 처럼 텍스트 없이 태그만 뒤따르는 경우.
+ */
+function normalizeChecklistMarkers(inner: string): string {
+  return (
+    inner
+      // ② 주석 통째로 제거 (프롬프트 지시문이 본문에 남아 있는 경우 대비)
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      // ① 콜론 뒤의 ✅는 "예/가능" 표시 — 불릿 마커가 아니므로 떼어낸다
+      .replace(/([:：])\s*✅\s*/g, "$1 ")
+      // ① 변형: 줄 중간에서 한글/숫자 바로 뒤에 붙는 ✅ (예: "가능 ✅ 즉시")
+      //    → 앞에 여는 태그나 줄머리가 없으면 마커로 보지 않는다
+      .replace(/([가-힣0-9)\]])\s*✅\s*(?=[가-힣0-9(])/g, "$1 ")
+  );
+}
+
 /** 체크리스트(✅) 추출 — ✅ 다음 텍스트를 한 항목씩. maxItems/maxLen 조절 가능. */
-function extractChecklist(inner: string, maxItems = 4, maxLen = 50): string[] {
+function extractChecklist(rawInner: string, maxItems = 4, maxLen = 50): string[] {
+  const inner = normalizeChecklistMarkers(rawInner);
   // ✅ 다음 텍스트를 <br>·블록 닫힘 태그, 또는 다음 ✅까지 추출
   const items: string[] = [];
   const seen = new Set<string>();
@@ -168,6 +192,9 @@ function extractChecklist(inner: string, maxItems = 4, maxLen = 50): string[] {
       .split(/<br\s*\/?>|<\/(?:div|p|li|td|th|tr|ul|ol|h[1-6])>/i)[0]
       .split(/✅/)[0];
     const txt = stripTags(raw);
+    // ③ 라벨만 남은 조각(값 없이 콜론으로 끝남)은 카드에 넣지 않는다.
+    //    전처리로 대부분 사라지지만, 원문이 애초에 값을 안 쓴 경우가 남는다.
+    if (/[:：]\s*$/.test(txt)) continue;
     // 앞 16자(요금제명+가격 등 식별부) 기준 중복 제거 — K망/L망 표 중복 방지
     const key = txt.replace(/\s+/g, "").slice(0, 16);
     if (txt && txt.length >= 2 && txt.length <= maxLen && !seen.has(key)) {
@@ -271,6 +298,48 @@ function extractKeyValueList(inner: string): string[] {
       if (items3.length >= 4) break;
     }
     if (items3.length >= 2) return items3;
+  }
+
+  // === 4차: <li> 목록 (2026-07-28 추가) ===
+  //    위 3단계가 전부 실패해 불릿 0개로 렌더되던 카드 구제.
+  const lis = [...inner.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)];
+  if (lis.length >= 2) {
+    const items4: string[] = [];
+    const seen4 = new Set<string>();
+    for (const lm of lis) {
+      const txt = stripTags(lm[1]);
+      if (!txt || txt.length < 2 || txt.length > 50) continue;
+      if (/[:：]\s*$/.test(txt)) continue;
+      const key = txt.replace(/\s+/g, "").slice(0, 16);
+      if (seen4.has(key)) continue;
+      seen4.add(key);
+      items4.push(txt);
+      if (items4.length >= 4) break;
+    }
+    if (items4.length >= 2) return items4;
+  }
+
+  // === 5차: 표의 첫 열 + 둘째 열 결합 (요금제 비교표 등) ===
+  const trs = [...inner.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)];
+  if (trs.length >= 3) {
+    const items5: string[] = [];
+    const seen5 = new Set<string>();
+    for (const tr of trs) {
+      const cells = [...tr[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+        .map((cm) => stripTags(cm[1]))
+        .filter(Boolean);
+      if (cells.length < 2) continue;
+      const txt = `${cells[0]}: ${cells[1]}`;
+      if (txt.length < 4 || txt.length > 50) continue;
+      const key = cells[0].replace(/\s+/g, "").slice(0, 16);
+      if (seen5.has(key)) continue;
+      seen5.add(key);
+      items5.push(txt);
+      if (items5.length >= 4) break;
+    }
+    // 헤더 행이 첫 항목으로 잡히면 버린다 (예: "구분: 내용")
+    if (items5.length >= 3) return items5.slice(1);
+    if (items5.length >= 2) return items5;
   }
 
   return [];

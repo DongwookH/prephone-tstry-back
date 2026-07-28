@@ -125,7 +125,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // 3) 시트에도 없음(또는 조회 불가) — env 화이트리스트가 비어있을 때만 전체 허용(구 동작 보존, dev 용)
       return allowlist.length === 0;
     },
-    async jwt({ token, account }) {
+    async jwt({ token, account, user }) {
       // 최초 로그인 — account 정보로 토큰 채우기
       if (account) {
         if (account.refresh_token) {
@@ -146,7 +146,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                   "Content-Type": "application/json",
                   Authorization: `Bearer ${process.env.CRON_SECRET}`,
                 },
-                body: JSON.stringify({ refresh_token: account.refresh_token }),
+                // email을 함께 보내 node 라우트가 "오너인지"를 판정한다.
+                //   (edge 번들이라 여기서 시트를 읽어 판정할 수 없다)
+                body: JSON.stringify({
+                  refresh_token: account.refresh_token,
+                  email: user?.email ?? token.email ?? "",
+                }),
               });
               if (!res.ok) {
                 // 401=CRON_SECRET 불일치, 500=시트 쓰기 실패 — 무음이면 "재로그인 반복" 루프에 빠짐
