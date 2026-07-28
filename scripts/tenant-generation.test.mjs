@@ -159,6 +159,8 @@ test("정지·미납류 키워드 — 새 번호 프레임 강제 블록 주입"
   });
   assert.equal(risky.includes("번호 관련 서술 규칙"), true);
   assert.equal(risky.includes("새 번호가 발급"), true);
+  // 발신정지류는 독자가 번호 결말을 궁금해하므로 Q&A 유도 규칙을 유지한다
+  assert.equal(risky.includes("번호는 어떻게 되나요?"), true);
 
   const normal = buildPrompt({
     keyword: "선불유심가격",
@@ -205,7 +207,7 @@ test("세컨폰류 키워드 — 전용 번호 서술 규칙 블록 발동", () 
     utmCampaign: "test",
   });
   assert.equal(p.includes("번호 관련 서술 규칙"), true);
-  assert.equal(p.includes("두 번째 번호를 새로 받는다"), true);
+  assert.equal(p.includes("새 번호를 하나 더 받습니다"), true);
 });
 
 // ─── 백오피스 가이드 폼 (2026-07-27) — 세분 행 → 조립 ───────────────
@@ -339,14 +341,18 @@ test("업무폰·법인폰류 키워드 — 세컨폰과 동일한 번호 규칙
     });
     assert.equal(p.includes("번호 관련 서술 규칙"), true, `${kw}: 블록 누락`);
     assert.equal(
-      p.includes("두 번째 번호를 새로 받는다"),
+      p.includes("새 번호를 하나 더 받습니다"),
       true,
       `${kw}: 세컨폰 전용 규칙 누락`,
     );
+    // 세컨폰류는 번호 Q&A를 유도하면 안 된다 — 유도 규칙이 오히려 3/3 폐기를
+    // 불렀다 (2026-07-28). 대신 주제 자체를 금지하는 규칙이 들어가야 한다.
+    assert.equal(p.includes("번호는 어떻게 되나요?"), false, `${kw}: 번호 Q&A 유도 규칙이 남아 있음`);
+    assert.equal(p.includes("번호이동"), true, `${kw}: 번호이동 금지 규칙 누락`);
     assert.equal(
-      p.includes("번호는 어떻게 되나요?"),
+      p.includes("Q&A에 번호 관련 질문을 아예 만들지 마세요"),
       true,
-      `${kw}: Q&A 질문 문구 규칙 누락`,
+      `${kw}: 번호 Q&A 금지 규칙 누락`,
     );
   }
 });
