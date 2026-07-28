@@ -180,24 +180,44 @@ export async function generateBackgroundImage({
 
 // ─── 프롬프트 빌더 ────────────────────────────────
 
-// 배경 컨셉 후보 — 한국 선불폰/알뜰폰/유심 니치, 사람 없이 사물/공간 위주.
+// 배경 컨셉 후보 — 스마트폰·유심을 "실물 그대로" 보이게 하는 제품 사진 위주.
+//
+// ⚠️ 이 모델(flux.2-klein-4b)은 negative_prompt를 지원하지 않는다 (2026-07-28 실측: HTTP 422).
+//    그래서 "no text, no people" 같은 부정문을 프롬프트에 넣으면 오히려 그 단어들이
+//    그려진다(확산 모델의 알려진 특성). 원하지 않는 것은 언급하지 말고,
+//    원하는 상태를 긍정문으로 못박는다:
+//      "글자 없음" → "unbranded plain surfaces" / "screen switched off, pure black"
+//      "사람 없음" → "empty desk", "unoccupied"
+//
+// 실물감 포인트 — 확산 모델이 스마트폰·유심을 자주 뭉갠다. 이를 줄이는 조건:
+//    ① 정면/톱다운처럼 단순한 각도 (사각 비스듬한 각도는 형태가 깨짐)
+//    ② 화면은 꺼진 상태(검정) — 켜면 알아볼 수 없는 가짜 UI·글자가 생김
+//    ③ 유심은 규격을 명시 (nano-SIM, 금색 접점, 모서리 컷)
 const BACKGROUND_CONCEPTS = [
-  "a close-up of a SIM card and ejector tool placed on a wooden desk next to a smartphone",
-  "a telecom retail store storefront with soft daylight, glass windows, blurred interior, Korean city street outside",
-  "a smartphone lying on a desk next to a small SIM card tray, minimal flat lay, soft studio lighting",
-  "a close-up macro shot of a SIM card being inserted into a phone tray, soft focus background",
-  "a desk scene with a smartphone, a cup of coffee, and a SIM card, top-down flat lay, natural light",
-  "a modern smartphone standing upright on a clean minimal desk, soft window light, blurred background",
-  "a tablet lying on a wooden table with a blurred Korean cafe background, natural light",
-  "a smartphone on a bright wooden desk next to a notebook and a pen, minimal, clean daylight, no people",
-  "an assortment of SIM cards and eject tools neatly arranged on a marble surface, top-down flat lay, soft studio lighting",
-  "a telecom store interior close-up, shelves with product displays blurred, empty of people, soft daylight",
+  "a single nano-SIM card with fine gold contact pads and one clipped corner, resting flat on a light oak desk beside a matte black smartphone lying face down, top-down flat lay",
+  "a modern black slab smartphone lying flat on a pale grey desk, screen switched off and pure black, a slim SIM ejector pin resting beside it, straight top-down view",
+  "an open aluminium SIM tray partly pulled out from the side of a matte black smartphone lying flat on a desk, viewed from above at a moderate distance, the tray small in the frame",
+  "a smartphone standing upright in a simple wooden stand on a clean desk, screen switched off and pure black, a plain notebook and a ceramic mug beside it",
+  "a plain white plastic SIM card carrier with a nano-SIM punched out, lying on a smooth concrete surface, top-down flat lay, even soft light",
+  "two smartphones lying side by side flat on a light wooden table, both screens switched off and pure black, one slightly rotated, straight top-down view",
+  "a nano-SIM card and a small ejector pin arranged neatly on a matte white surface with generous empty space around them, top-down flat lay",
+  "a smartphone lying face up on a linen cloth with the screen switched off and pure black, soft morning window light from the left, calm still life",
+  "a tidy desk corner with a matte black smartphone, a plain unbranded SIM card carrier, and a fountain pen, top-down flat lay on light wood",
+  "a smartphone resting on a stack of two plain paper notebooks on a bright desk, screen switched off and pure black, soft diffused daylight",
+  "a light wooden desk seen from directly above with a matte black smartphone lying face down and a small blank white SIM card carrier placed near the edge, generous empty desk space",
+  "an unbranded telecom shop counter surface with a matte black smartphone and a small card tray, blurred shelves far behind, empty of customers",
 ];
 
-const NEGATIVE_SUFFIX =
-  "photorealistic photo, natural lighting, shallow depth of field, high detail, no text, no letters, no words, " +
-  "no watermark, no logo, no signage with readable text, no captions, no numbers on screen, " +
-  "no people, no person, no human, no hands, no fingers, no face, background image only";
+// 사진 품질·실물감 — 카메라 언어로 못박는다 (모델이 가장 잘 반응하는 축).
+const REALISM_SUFFIX =
+  "professional product photography, shot on a 50mm lens at f/4, realistic true-to-life proportions, " +
+  "accurate material rendering with real plastic and aluminium and glass textures, " +
+  "soft diffused natural window light, gentle shadows, neutral white balance, " +
+  "sharp focus on the subject, fine surface detail, subtle reflections, high dynamic range, " +
+  "smooth blank unprinted card surfaces, plain matte finishes, "
+  "calm minimal composition with generous smooth empty space " +
+  "in the upper area for later caption placement, muted natural colour palette, " +
+  "clean uncluttered still life, empty and unoccupied scene";
 
 /** 키워드 문자열 해시 → 배열 인덱스 (threads-research.ts의 pickCopyStyle과 동일 방식). */
 function hashPick(seedStr, arr) {
@@ -214,7 +234,7 @@ export function buildPrompt({ topic = "", keyword = "", mood = "" }) {
   const seedStr = `${topic}|${keyword}|${mood}`;
   const concept = hashPick(seedStr || "default", BACKGROUND_CONCEPTS);
   const moodPart = mood ? `, ${mood} mood` : "";
-  return `${concept}${moodPart}. ${NEGATIVE_SUFFIX}`;
+  return `${concept}${moodPart}. ${REALISM_SUFFIX}`;
 }
 
 // ─── CLI 진입점 ────────────────────────────────
