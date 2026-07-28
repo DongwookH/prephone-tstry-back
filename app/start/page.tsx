@@ -91,7 +91,7 @@ const GEMINI_STEPS = [
     title: "발급된 키 복사",
     desc: (
       <>
-        키가 만들어지면 <code className="px-1 py-0.5 rounded bg-ink-100 text-[12.5px] font-mono text-ink-800">AIza...</code>로 시작하는 긴 문자열이 화면에 나타납니다. 옆에 있는 복사 아이콘을 눌러 전체를 복사합니다. 이 화면을 벗어나기 전에 꼭 복사해 두세요.
+        키가 만들어지면 <code className="px-1 py-0.5 rounded bg-ink-100 text-[12.5px] font-mono text-ink-800">AIza...</code> 또는 <code className="px-1 py-0.5 rounded bg-ink-100 text-[12.5px] font-mono text-ink-800">AQ....</code>로 시작하는 긴 문자열이 화면에 나타납니다. 두 형식 모두 정상이니 나오는 그대로 쓰시면 됩니다. 옆에 있는 복사 아이콘을 눌러 전체를 복사합니다. 이 화면을 벗어나기 전에 꼭 복사해 두세요.
       </>
     ),
   },

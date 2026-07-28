@@ -109,7 +109,7 @@ export function GeminiKeyManager({
                 type={showFull ? "text" : "password"}
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
-                placeholder="AIzaSy..."
+                placeholder="AIzaSy... 또는 AQ...."
                 className="flex-1 h-10 px-3 rounded-xl border border-ink-200 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 outline-none text-[13px] font-mono"
               />
               <button
@@ -129,7 +129,7 @@ export function GeminiKeyManager({
               >
                 Google AI Studio
               </a>
-              에서 발급 → 보통 39자, AIza로 시작
+              에서 발급 → AIza 또는 AQ. 로 시작 (형식 두 가지 모두 정상)
             </p>
           </div>
           <div>

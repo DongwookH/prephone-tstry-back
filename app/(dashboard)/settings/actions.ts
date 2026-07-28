@@ -65,10 +65,15 @@ export async function addGeminiKeyAction(input: {
   const value = input.value.trim();
   const label = input.label.trim();
   if (!value) return { ok: false, error: "키 값을 입력하세요" };
-  if (!value.startsWith("AIza"))
-    return { ok: false, error: "Google API 키는 보통 AIza로 시작합니다" };
+  // 구글이 2026년 새 키 형식(AQ.…)을 발급하기 시작했다. 기존 AIza…와 공존하므로
+  // 둘 다 허용한다 (2026-07-28: AQ. 키가 등록을 거부당해 확인된 사항).
+  if (!/^(AIza|AQ\.)/.test(value))
+    return {
+      ok: false,
+      error: "Google API 키는 AIza 또는 AQ. 로 시작합니다 — 전체를 복사했는지 확인해 주세요",
+    };
   if (value.length < 30)
-    return { ok: false, error: "키가 너무 짧습니다 (39자 정도 예상)" };
+    return { ok: false, error: "키가 너무 짧습니다 — 전체를 복사했는지 확인해 주세요" };
 
   try {
     const { id } = await addGeminiKey(value, label, scoped.sheetId);
