@@ -1507,6 +1507,21 @@ const CONTENT_COMPLIANCE_BLACKLIST = [
   "개통센터",
 ] as const;
 
+// 번호이동 계열 — 사업주 결정으로 아예 다루지 않는다 (2026-07-28).
+// 번호이동 자체는 취급 서비스지만, 글로 쓰면 "기존 번호 유지"를 설명해야 하고
+// 그 표현은 번호 유지 오정보 가드에 100% 차단된다 (미납·정지 예외 단서를 붙여도
+// 같은 문장 안에 미납이 들어가 예외 판정이 안 됨). 구조적으로 통과 불가라
+// 계획 단계에서 뽑히지 않게 막는다.
+// ⚠️ 'MNP'는 substring이라 영문 키워드에 섞이면 오탐 가능 — 현재 키워드 풀은
+//    한글 위주라 실익이 크다고 판단. 오탐 발견 시 제거.
+const CONTENT_MNP_BLACKLIST = [
+  "번호이동",
+  "번호유지",
+  "번호그대로",
+  "번호살리",
+  "MNP",
+] as const;
+
 function matchesAny(keyword: string, list: readonly string[]): boolean {
   const k = (keyword || "").toLowerCase().replace(/\s+/g, "");
   return list.some((bad) =>
@@ -1527,6 +1542,10 @@ export function isManuallyBlacklistedKeyword(keyword: string): boolean {
 export function isComplianceBlacklistedKeyword(keyword: string): boolean {
   return matchesAny(keyword, CONTENT_COMPLIANCE_BLACKLIST);
 }
+/** 번호이동 계열 키워드 — 번호 유지 가드에 100% 폐기되므로 다루지 않는다. */
+export function isMnpBlacklistedKeyword(keyword: string): boolean {
+  return matchesAny(keyword, CONTENT_MNP_BLACKLIST);
+}
 
 /** 티스토리·쓰레드 양쪽에 적용되는 콘텐츠 블랙리스트 */
 export function isContentBlacklistedKeyword(keyword: string): boolean {
@@ -1534,7 +1553,8 @@ export function isContentBlacklistedKeyword(keyword: string): boolean {
     isMinorRelatedKeyword(keyword) ||
     isForeignerRelatedKeyword(keyword) ||
     isManuallyBlacklistedKeyword(keyword) ||
-    isComplianceBlacklistedKeyword(keyword)
+    isComplianceBlacklistedKeyword(keyword) ||
+    isMnpBlacklistedKeyword(keyword)
   );
 }
 

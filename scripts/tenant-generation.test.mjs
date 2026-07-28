@@ -357,6 +357,26 @@ test("업무폰·법인폰류 키워드 — 세컨폰과 동일한 번호 규칙
   }
 });
 
+test("번호이동 계열 키워드 — 계획 단계에서 차단 (2026-07-28 사업주 결정)", async () => {
+  const { isMnpBlacklistedKeyword, isContentBlacklistedKeyword } =
+    await import("../lib/sheets.ts");
+  for (const kw of [
+    "번호이동",
+    "번호 이동",
+    "선불폰번호이동",
+    "번호유지개통",
+    "번호그대로개통",
+    "MNP선불폰",
+  ]) {
+    assert.equal(isMnpBlacklistedKeyword(kw), true, `${kw}: 차단 안 됨`);
+    assert.equal(isContentBlacklistedKeyword(kw), true, `${kw}: 통합 차단 안 됨`);
+  }
+  // 오탐 경계 — '이동통신'·'이동'만으론 걸리면 안 된다
+  for (const kw of ["이동통신사비교", "선불폰개통", "유심이동", "세컨폰개통"]) {
+    assert.equal(isMnpBlacklistedKeyword(kw), false, `${kw}: 오탐`);
+  }
+});
+
 test("withUtm — 쿼리 유무에 따라 ?/& 처리", () => {
   assert.equal(
     withUtm("https://a.com/x", "c1"),
