@@ -195,7 +195,11 @@ ${tb.extra_rules}`
   // ⚠️ 이 블록의 예시 문장은 반드시 hasNumberKeepingClaim 가드를 통과하는
   //    형태여야 한다. 1차 버전은 정답 예시("번호는 살릴 수 없지만")가 가드
   //    차단 패턴('번호'+'살릴' 결합)과 충돌해 3/3 폐기됐다 (2026-07-26).
-  const isSecondPhoneKeyword = /세컨|투폰|투넘버|두\s*번째|듀얼/.test(keyword);
+  // 업무폰·법인폰류도 "두 번째 회선" 시나리오라 세컨폰과 같은 규칙이 필요하다.
+  // (2026-07-28: '업무폰개통'이 이 목록에 없어 블록이 주입되지 않았고, 모델이
+  //  "번호이동으로 기존 번호 그대로 유지" Q&A를 써서 3/3 폐기 — 하루 10→9 원인)
+  const isSecondPhoneKeyword =
+    /세컨|투폰|투넘버|두\s*번째|듀얼|업무폰|법인폰|사업자폰|회사폰/.test(keyword);
   const numberRiskBlock =
     /정지|미납|연체|직권해지/.test(keyword) || isSecondPhoneKeyword
       ? `

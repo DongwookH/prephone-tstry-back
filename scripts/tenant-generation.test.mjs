@@ -326,6 +326,31 @@ test("조립본이 프롬프트·히어로에 그대로 흘러간다 (폼 → �
   }
 });
 
+test("업무폰·법인폰류 키워드 — 세컨폰과 동일한 번호 규칙 블록 발동 (2026-07-28 회귀)", () => {
+  // '업무폰개통'이 트리거 목록에 없어 블록이 빠졌고, 모델이 번호이동 Q&A를
+  // 써서 3/3 폐기 → 하루 10편이 9편이 된 사고
+  for (const kw of ["업무폰개통", "법인폰개통", "사업자폰", "회사폰추천"]) {
+    const p = buildPrompt({
+      keyword: kw,
+      category: "일반",
+      subKeywords: [],
+      persona: "일반",
+      utmCampaign: "test",
+    });
+    assert.equal(p.includes("번호 관련 서술 규칙"), true, `${kw}: 블록 누락`);
+    assert.equal(
+      p.includes("두 번째 번호를 새로 받는다"),
+      true,
+      `${kw}: 세컨폰 전용 규칙 누락`,
+    );
+    assert.equal(
+      p.includes("번호는 어떻게 되나요?"),
+      true,
+      `${kw}: Q&A 질문 문구 규칙 누락`,
+    );
+  }
+});
+
 test("withUtm — 쿼리 유무에 따라 ?/& 처리", () => {
   assert.equal(
     withUtm("https://a.com/x", "c1"),
