@@ -54,6 +54,9 @@ function parseArgs(argv) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  // 이미지 하단 핸들 — 테넌트 카드에 오너 계정(@ntelsafe)이 박히면 브랜드 사고다.
+  // --handle 로 테넌트 브랜드를 넘기고, 없으면 기존 오너 기본값.
+  const HANDLE = typeof args.handle === "string" ? args.handle : "@ntelsafe";
   const maxCards = args["max-cards"] ? parseInt(args["max-cards"], 10) : 4;
   const skipExisting = !!args["skip-existing"]; // 이미 있는 카드는 건너뜀(백필/재실행용)
 
@@ -61,7 +64,10 @@ async function main() {
   const { extractCardData } = await import("../lib/extract-card-data.ts");
   const { buildPrompt, generateBackgroundImage, pickModel } = await import("./nvidia-image.mjs");
 
-  let posts = await getTodayPosts();
+  // 테넌트 모드: --sheet-id 로 그 테넌트 시트의 오늘 글만 대상으로 한다.
+  //   (인자가 없으면 기존 동작 = 오너 메인 시트, 무회귀)
+  const sheetId = typeof args["sheet-id"] === "string" ? args["sheet-id"] : undefined;
+  let posts = await getTodayPosts(sheetId);
   if (typeof args.ids === "string") {
     const ids = new Set(args.ids.split(",").map((s) => s.trim()));
     posts = posts.filter((p) => ids.has(p.id));
@@ -117,7 +123,7 @@ async function main() {
         subtitle: c.subtitle,
         bullets: c.bullets,
         bullet_style: c.bulletStyle,
-        handle: "@ntelsafe",
+        handle: HANDLE,
         out_path: outPath,
       });
       const py = spawnSync("python3", [INFOCARD_PY], { input, encoding: "utf8", cwd: REPO });

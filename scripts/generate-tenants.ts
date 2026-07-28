@@ -200,6 +200,10 @@ async function main(): Promise<void> {
                 char_count: post.char_count,
                 seo_score: post.seo_score,
                 status: "ready",
+                // 썸네일 문구 메타 — generate-tenant-images.ts가 이 값을 읽어
+                // 썸네일 PNG를 만든다. 안 넣으면 "메타 없음"으로 썸네일만 실패한다
+                // (2026-07-28: 카드뉴스는 3/3 성공, 썸네일만 0/1로 드러남).
+                image_urls: post.thumbnail ? JSON.stringify(post.thumbnail) : "",
                 utm_campaign: post.utm_campaign,
                 created_at: now,
                 updated_at: now,
