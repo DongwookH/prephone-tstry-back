@@ -67,16 +67,26 @@ if (ENV_KEYS.length === 0 && process.env.NODE_ENV !== "test") {
   );
 }
 
-const DEFAULT_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+// ⚠️ gemini-2.5-flash-lite는 2026-07 이후 발급된 키에서 404다
+//    ("no longer available to new users"). 신규 테넌트가 쓸 수 있는 모델만
+//    기본값·폴백에 둔다 — 오너 키에서만 되는 모델을 기본값으로 두면 멤버만
+//    조용히 실패한다 (2026-07-28 실측).
+const DEFAULT_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite";
 
 /**
  * 모델 폴백 체인 — 한 모델이 일시 과부하(503)/한도(429)로 모든 키에서 막혀도
  * 같은 계열 다른 모델 서버는 멀쩡한 경우가 많아 자동으로 갈아탄다.
  * (Free Tier RPD 한도는 모델별로 분리돼 있어 429에도 효과 있음.)
+ *
+ * 3.1-flash-lite는 실측상 503 과부하가 잦아(6~180초 편차) 폴백이 특히 중요하다.
+ * 폴백 후보는 전부 "신규 키에서도 되는" 모델로만 채운다.
  */
 const MODEL_FALLBACKS: Record<string, string[]> = {
+  "gemini-3.1-flash-lite": ["gemini-3.5-flash-lite", "gemini-2.5-flash"],
+  "gemini-3.5-flash-lite": ["gemini-3.1-flash-lite", "gemini-2.5-flash"],
+  "gemini-3.6-flash": ["gemini-3.5-flash-lite", "gemini-2.5-flash"],
   "gemini-2.5-flash-lite": ["gemini-2.5-flash", "gemini-2.0-flash"],
-  "gemini-2.5-flash": ["gemini-2.5-flash-lite", "gemini-2.0-flash"],
+  "gemini-2.5-flash": ["gemini-3.1-flash-lite", "gemini-2.0-flash"],
   "gemini-2.5-pro": ["gemini-2.5-flash"],
   "gemini-2.0-flash": ["gemini-2.0-flash-lite", "gemini-2.5-flash"],
 };
@@ -84,8 +94,8 @@ const MODEL_FALLBACKS: Record<string, string[]> = {
 /** primary 모델 + 폴백 모델들 (primary 중복 제거). */
 function modelsToTry(primary: string): string[] {
   const fallbacks = MODEL_FALLBACKS[primary] ?? [
+    "gemini-3.5-flash-lite",
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
   ];
   return [primary, ...fallbacks.filter((m) => m !== primary)];
 }
@@ -418,9 +428,16 @@ function sanitizeJsonControlChars(s: string): string {
  *   - gemini-2.5-flash: 1500 RPD (Lite와 동일)
  *   - gemini-2.5-pro: 250 RPD
  *
+ * ⚠️ 3.x 계열 RPD는 공식 문서에 표가 없어 미검증이다. 아래 값은 Lite 계열
+ *    관례(1500)를 따른 가정치이므로, 실제 한도가 궁금하면 AI Studio의
+ *    Rate limit 대시보드에서 확인하고 GEMINI_RPD_OVERRIDE로 덮어쓴다.
+ *
  * .env.local에 GEMINI_RPD_OVERRIDE 설정 시 그 값 우선 사용.
  */
 const MODEL_DAILY_LIMITS: Record<string, number> = {
+  "gemini-3.1-flash-lite": 1500, // 미검증(가정)
+  "gemini-3.5-flash-lite": 1500, // 미검증(가정)
+  "gemini-3.6-flash": 1500, // 미검증(가정)
   "gemini-2.5-flash-lite": 1500,
   "gemini-2.5-flash": 1500,
   "gemini-2.5-pro": 250,
