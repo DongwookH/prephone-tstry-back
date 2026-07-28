@@ -33,9 +33,24 @@ const READER_QUESTION =
 /** 시간 앵커 — 한국어 주어 생략 경험담("지난달에 폰이 먹통 됐거든요")의 단서. */
 const TIME_ANCHOR = /지난\s*[주달]|어제|엊그제|그저께|얼마\s*전|요전/;
 
+/**
+ * 블록 태그를 개행으로 바꾼 뒤 태그 제거.
+ *
+ * ⚠️ 그냥 모든 태그를 공백으로 지우면 문단 경계가 사라져 인접한 두 문장이
+ *    하나로 붙는다. 그러면 "…내 명의로 진행하는 순서</h2><p>통신 미납이나…"
+ *    처럼 1인칭 표지와 피해 어휘가 서로 다른 문단에 있는데도 같은 문장으로
+ *    판정돼 오탐이 난다 (2026-07-28 실측). 문장 단위 판정을 하는 가드는
+ *    반드시 블록 경계를 살려서 넘겨야 한다.
+ */
+function htmlToSentences(html: string): string {
+  return (html || "")
+    .replace(/<\/?(?:p|div|h[1-6]|li|ul|ol|tr|td|th|br|section|article)\b[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ");
+}
+
 /** "화자 본인이 고객 피해 상황을 겪었다"는 문장이 있으면 true. */
 export function hasFirstPersonVictimClaim(text: string): boolean {
-  const t = (text || "").replace(/<[^>]+>/g, " ");
+  const t = htmlToSentences(text);
   for (const sent of t.split(/[.!?…]+|\n+/)) {
     if (CUSTOMER_MARKER.test(sent) || !VICTIM_EVENT.test(sent)) continue;
     // (a) 명시적 1인칭 + 피해 사건
