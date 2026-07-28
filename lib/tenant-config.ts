@@ -10,8 +10,9 @@ import {
  *
  * 병합 규칙 (2026-07-25 사업주 확정):
  *   세부 가이드가 공통 가이드보다 우선. 빈 섹션만 공통을 따른다.
- *   단 brand_name·links·company·plans는 "필수" — 폴백 금지 (오너 회사 정보가
+ *   단 brand_name·links·company는 "필수" — 폴백 금지 (오너 회사 정보가
  *   남의 글에 들어가는 사고 방지). 비어 있으면 그 테넌트 생성을 건너뛴다.
+ *   plans는 2026-07-28 사업주 결정으로 폴백 허용 (같은 요금제를 파는 판매점).
  *
  * 저장 구조 (2026-07-27 백오피스 폼 도입):
  *   시트를 단일 저장소로 유지한 채 섹션 "행"만 세분화했다
@@ -88,7 +89,7 @@ export const GUIDE_SECTION_DEFS: ReadonlyArray<{
   },
   {
     key: "plans",
-    desc: "(필수) 단정해서 표기할 수 있는 확정 요금·상품만 적어주세요. 비어 있으면 글이 생성되지 않습니다.",
+    desc: "(선택) 내 요금이 공통 요금표와 다를 때만 적으세요. 비워두면 공통 요금표를 그대로 사용합니다.",
   },
   {
     key: "company",
@@ -240,7 +241,9 @@ export function missingRequiredGuideSections(g: TenantGuide): string[] {
   if (!g.brand_name) missing.push("brand_name");
   if (g.links.length === 0) missing.push("links");
   if (!g.company) missing.push("company");
-  if (!g.plans) missing.push("plans");
+  // plans는 필수에서 제외 (2026-07-28 사업주 결정) — 같은 요금제를 파는
+  // 판매점이라 비워두면 공통 요금표를 쓴다. brand_name·links·company는
+  // 테넌트 고유 정보라 폴백하면 남의 회사 정보가 글에 들어가므로 필수 유지.
   return missing;
 }
 

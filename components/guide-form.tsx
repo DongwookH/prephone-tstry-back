@@ -21,7 +21,7 @@ import type { TenantGuideRaw } from "@/lib/tenant-config";
 /**
  * 「내 가이드」 폼.
  *
- * 필수 4묶음(판매점명 · 링크 · 회사 정보 · 요금표)을 도메인 용어의 개별 칸으로
+ * 필수 3묶음(판매점명 · 링크 · 회사 정보)을 도메인 용어의 개별 칸으로
  * 나눠서 받고, 선택 항목과 자유형식 원문은 접어 둔다. 진행률은 서버의
  * missingRequiredGuideSections와 같은 규칙을 클라이언트에서도 계산해 즉시
  * 반영한다 — 저장 전에도 "지금 채우면 통과인지"가 보여야 하기 때문.
@@ -33,7 +33,6 @@ const REQUIRED_GROUPS = [
   { key: "brand_name", label: "판매점명" },
   { key: "links", label: "링크" },
   { key: "company", label: "회사 정보" },
-  { key: "plans", label: "요금표" },
 ] as const;
 
 /** 서버의 missingRequiredGuideSections와 동일 규칙 (조립 후 기준). */
@@ -46,7 +45,7 @@ function missingGroups(f: Fields): string[] {
   const hasCompany =
     !!f.phone.trim() || !!f.hours.trim() || !!f.company.trim();
   if (!hasCompany) out.push("company");
-  if (!f.plans.trim()) out.push("plans");
+  // 요금표는 필수 아님 — 비우면 공통 요금표를 사용한다 (2026-07-28 결정)
   return out;
 }
 
@@ -196,14 +195,17 @@ export function GuideForm({ initial }: { initial: Fields }) {
           </Callout>
           <Field
             Icon={Receipt}
-            label="요금표"
-            required
+            label="요금표 (선택)"
             multiline
             rows={4}
             value={f.plans}
             onChange={set("plans")}
-            placeholder={"예:\n베이직 20,000원 (데이터 5GB)\n프리미엄 40,000원 (무제한)"}
-            hint="확정된 요금만 적어주세요. 여기 없는 금액은 글에 나오지 않습니다."
+            placeholder={"비워두면 공통 요금표를 그대로 사용합니다.\n내 요금이 다를 때만 적어주세요."}
+            hint={
+              f.plans.trim()
+                ? "여기 적은 요금만 글에 나옵니다. 공통 요금표는 사용하지 않습니다."
+                : "비어 있음 → 공통 요금표(확정가)를 그대로 사용합니다. 같은 요금제를 파신다면 그대로 두세요."
+            }
           />
         </div>
       </section>

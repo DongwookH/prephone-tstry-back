@@ -96,6 +96,16 @@ export function getGlobalContext(): string {
   return compile("__global__", GLOBAL_KB_IDS);
 }
 
+/**
+ * 요금·상품 정보만 따로 (테넌트 폴백용).
+ * 같은 요금제를 파는 판매점 테넌트는 요금표를 직접 안 적어도 되게 한다
+ * (2026-07-28 사업주 결정). 회사·링크·브랜드는 여전히 폴백 금지 —
+ * 그건 테넌트 고유 정보라 섞이면 사고다.
+ */
+export function getPlansContext(): string {
+  return compile("__plans__", ["02-plans"]);
+}
+
 // ─── 카테고리별 컨텍스트 ────────────────────────────
 // ⚠️ 04-faq(259문항·64KB)는 여기서 통째로 넣지 않는다. 글마다 관련 섹션만
 //    getFaqExcerpt()로 발췌 주입 → 프롬프트 토큰 ↓ → 생성 속도 ↑ (60초 벽 회피).

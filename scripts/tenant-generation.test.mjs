@@ -123,7 +123,7 @@ test("히어로 자동 삽입 — 테넌트 모드는 테넌트 브랜드·버�
   assert.equal(ownerOut.includes("앤텔레콤 안심개통 케어통신"), true);
 });
 
-test("필수 섹션 검증 — brand_name·links·company·plans", () => {
+test("필수 섹션 검증 — brand_name·links·company (plans는 폴백 허용)", () => {
   assert.deepEqual(missingRequiredGuideSections(TENANT_GUIDE), []);
   assert.deepEqual(
     missingRequiredGuideSections({
@@ -133,8 +133,47 @@ test("필수 섹션 검증 — brand_name·links·company·plans", () => {
       company: "",
       plans: "",
     }),
-    ["brand_name", "links", "company", "plans"],
+    ["brand_name", "links", "company"],
   );
+  // 2026-07-28 사업주 결정: 같은 요금제를 파는 판매점이라 plans는 비워도 통과
+  assert.deepEqual(
+    missingRequiredGuideSections({ ...TENANT_GUIDE, plans: "" }),
+    [],
+  );
+});
+
+test("요금표 폴백 — 비우면 공통 요금표가 프롬프트에 들어간다", () => {
+  const withOwn = buildPrompt({
+    keyword: "선불폰개통",
+    category: "일반",
+    subKeywords: [],
+    persona: "일반",
+    utmCampaign: "test",
+    tenantBrand: TENANT_GUIDE,
+  });
+  assert.equal(withOwn.includes("베이직 20,000원"), true, "본인 요금표 미주입");
+
+  const fallback = buildPrompt({
+    keyword: "선불폰개통",
+    category: "일반",
+    subKeywords: [],
+    persona: "일반",
+    utmCampaign: "test",
+    tenantBrand: { ...TENANT_GUIDE, plans: "" },
+  });
+  // 공통 요금표의 확정가가 들어와야 한다
+  assert.equal(fallback.includes("12,100"), true, "공통 요금표 폴백 실패");
+  assert.equal(fallback.includes("베이직 20,000원"), false, "옛 요금표 잔존");
+  // 요금표만 폴백이고 브랜드·링크는 여전히 테넌트 것이어야 한다
+  assert.equal(fallback.includes("홍길동텔레콤"), true);
+  assert.equal(fallback.includes("https://hong.example.com/apply"), true);
+  for (const marker of OWNER_MARKERS) {
+    assert.equal(
+      fallback.includes(marker),
+      false,
+      `요금표 폴백에 오너 마커 "${marker}" 누출`,
+    );
+  }
 });
 
 test("컴플라이언스 금지어 포함 키워드 — 계획 단계에서 차단", async () => {
@@ -273,16 +312,15 @@ test("필수 검증 — 카톡만 있어도 links 통과 / 셋 다 없으면 누
       brand_name: "홍길동텔레콤",
       link_kakao: "https://pf.kakao.com/_x",
       phone: "010-1111-2222",
-      plans: "베이직 20,000원",
     }),
   );
+  // 요금표 없이도 통과해야 한다 (공통 요금표 폴백)
   assert.deepEqual(missingRequiredGuideSections(only), []);
 
   const none = assembleGuide(raw({ brand_name: "홍길동텔레콤" }));
   assert.deepEqual(missingRequiredGuideSections(none).sort(), [
     "company",
     "links",
-    "plans",
   ]);
 });
 
