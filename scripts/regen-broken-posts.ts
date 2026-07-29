@@ -60,15 +60,24 @@ async function findBroken(sheetId?: string): Promise<Target[]> {
 
   const rows = (await readRange(sheetId ?? mainSheetId(), "posts!A:U")) as string[][];
 
+  // ⚠️ 헤더는 1행이라고 가정하면 안 된다. 오너 시트는 1행이 "💡 자동 생성된
+  //    글 데이터…" 안내 행이고 헤더가 2행이다. 고정 오프셋을 쓰면 헤더 행을
+  //    글로 착각해 통째로 덮어쓴다 (2026-07-29에 실제로 냈던 사고).
+  //    A열이 정확히 "id"인 행을 헤더로 삼는다.
+  const hIdx = rows.findIndex((r) => (r?.[0] ?? "").trim() === "id");
+  if (hIdx < 0) throw new Error("posts 헤더 행(A열='id')을 찾지 못했습니다 — 중단");
+
   const out: Target[] = [];
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = hIdx + 1; i < rows.length; i++) {
     const r = rows[i];
-    const [id, , keyword, category, persona, , html, , , status] = r;
+    const [id, , keyword, category, persona, , html, , , status, , publishedAt, tistoryUrl] = r;
     if (!id?.trim()) continue;
-    if (status === "published") continue; // 소급 수정 금지
+    // 소급 수정 금지 — status뿐 아니라 발행 흔적(published_at·tistory_url)도 본다.
+    // status가 ready인데 published_at만 찍힌 옛 행이 실제로 있다.
+    if (status === "published" || publishedAt?.trim() || tistoryUrl?.trim()) continue;
     if (!html) continue;
     if (findStructuralDefects(html).length === 0) continue;
-    out.push({ id, keyword, category, persona, row: i + 1 }); // 시트는 1-based + 헤더
+    out.push({ id, keyword, category, persona, row: i + 1 }); // 시트는 1-based
   }
   return out;
 }
