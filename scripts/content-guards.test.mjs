@@ -14,6 +14,7 @@ import {
   hasFirstPersonVictimClaim,
   findStructuralDefects,
   findMinorEligibilityClaims,
+  findForeignerEligibilityClaims,
   measureBodyChars,
   findComplianceBannedWords,
   complianceFixHints,
@@ -344,4 +345,48 @@ test("미성년 가드 — 서술형 오정보는 질문이 아니어도 잡는�
     "(예: 여권 지참 외국인, 미성년자 등) 간편인증서가 있다면 비대면 셀프개통이 가능해요",
   );
   assert.equal(hits.length, 1);
+});
+
+// ─── 외국인 비대면 셀프개통 가드 (규정 Q34 + CLAUDE.md 금지어) ────────
+
+test("외국인 가드 — 실제 발행됐던 문구를 잡는다", () => {
+  const hits = findForeignerEligibilityClaims(
+    "신용불량자, 미성년자, 외국인 등 누구나 5분 안에 가능한 비대면 셀프 개통 방법",
+  );
+  assert.equal(hits.length, 1);
+});
+
+test("외국인 가드 — 여권 + 매장 방문 프레임은 통과", () => {
+  assert.deepEqual(
+    findForeignerEligibilityClaims("외국인은 여권을 지참해 매장에 방문하시면 5분이면 끝나요"),
+    [],
+  );
+  assert.deepEqual(
+    findForeignerEligibilityClaims("외국인은 비대면 셀프개통이 어려워 방문 개통만 가능합니다"),
+    [],
+  );
+});
+
+test("외국인 가드 — Q&A는 답변으로 판정", () => {
+  assert.deepEqual(
+    findForeignerEligibilityClaims(
+      "<div>Q. 외국인도 비대면 셀프개통 되나요?</div><p>아니요, 매장 방문이 필요합니다.</p>",
+    ),
+    [],
+  );
+  assert.equal(
+    findForeignerEligibilityClaims(
+      "<div>Q. 외국인도 비대면 셀프개통 되나요?</div><p>네, 5분이면 됩니다.</p>",
+    ).length,
+    1,
+  );
+});
+
+test("외국인 가드 — 회선 수·일반 안내는 오탐 없음", () => {
+  assert.deepEqual(
+    findForeignerEligibilityClaims("내국인 3회선, 외국인 2회선, 법인 4회선까지 가입됩니다"),
+    [],
+  );
+  assert.deepEqual(findForeignerEligibilityClaims("한국인은 5분이면 셀프개통 끝!"), []);
+  assert.deepEqual(findForeignerEligibilityClaims(""), []);
 });

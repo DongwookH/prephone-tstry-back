@@ -9,6 +9,7 @@
  *   npx --yes tsx scripts/regen-broken-posts.ts --apply         # 실제 기록
  *   npx --yes tsx scripts/regen-broken-posts.ts --apply --tenants-only
  *   npx --yes tsx scripts/regen-broken-posts.ts --apply --owner-only
+ *   npx --yes tsx scripts/regen-broken-posts.ts --apply --scheduled-only  # 예약된 글만
  *
  * 보존/갱신 원칙 — 슬롯을 흔들지 않는다:
  *   보존: id(A) keyword(C) category(D) persona(E) status(J) scheduled_at(K)
@@ -44,6 +45,8 @@ loadEnvLocal();
 const APPLY = process.argv.includes("--apply");
 const OWNER_ONLY = process.argv.includes("--owner-only");
 const TENANTS_ONLY = process.argv.includes("--tenants-only");
+/** 예약된 글만 대상 — 미예약 옛 초안은 건드리지 않는다. */
+const SCHEDULED_ONLY = process.argv.includes("--scheduled-only");
 /** 글 1편당 최대 생성 시도 (구조 가드에 걸리면 재시도). */
 const MAX_TRIES = 3;
 
@@ -56,9 +59,8 @@ function sleep(ms: number) {
 /** 해당 시트의 파손 글 + 시트 행 번호를 찾는다. */
 async function findBroken(sheetId?: string): Promise<Target[]> {
   const { readRange, mainSheetId } = await import("../lib/sheets");
-  const { findStructuralDefects, findMinorEligibilityClaims } = await import(
-    "../lib/content-guards"
-  );
+  const { findStructuralDefects, findMinorEligibilityClaims, findForeignerEligibilityClaims } =
+    await import("../lib/content-guards");
 
   const rows = (await readRange(sheetId ?? mainSheetId(), "posts!A:U")) as string[][];
 
@@ -72,8 +74,11 @@ async function findBroken(sheetId?: string): Promise<Target[]> {
   const out: Target[] = [];
   for (let i = hIdx + 1; i < rows.length; i++) {
     const r = rows[i];
-    const [id, title, keyword, category, persona, , html, , , status, , publishedAt, tistoryUrl] = r;
+    const [id, title, keyword, category, persona, , html, , , status, scheduledAt, publishedAt, tistoryUrl] = r;
     if (!id?.trim()) continue;
+    // --scheduled-only: 예약시각이 있는 글(= 실제로 발행될 글)만 손댄다.
+    // 5~6월 미예약 옛 초안까지 건드리지 말라는 지시 (2026-07-29 사업주).
+    if (SCHEDULED_ONLY && !scheduledAt?.trim()) continue;
     // 소급 수정 금지 — status뿐 아니라 발행 흔적(published_at·tistory_url)도 본다.
     // status가 ready인데 published_at만 찍힌 옛 행이 실제로 있다.
     if (status === "published" || publishedAt?.trim() || tistoryUrl?.trim()) continue;
@@ -83,6 +88,7 @@ async function findBroken(sheetId?: string): Promise<Target[]> {
     const defects = [
       ...findStructuralDefects(html),
       ...findMinorEligibilityClaims(`${title ?? ""}\n${html}`),
+      ...findForeignerEligibilityClaims(`${title ?? ""}\n${html}`),
     ];
     if (defects.length === 0) continue;
     out.push({ id, keyword, category, persona, row: i + 1 }); // 시트는 1-based
@@ -94,8 +100,12 @@ async function findBroken(sheetId?: string): Promise<Target[]> {
 async function regenSheet(label: string, sheetId?: string, tenantGuide?: unknown) {
   const { batchUpdateValues, mainSheetId } = await import("../lib/sheets");
   const { generatePost } = await import("../lib/post-generator");
-  const { findStructuralDefects, findMinorEligibilityClaims, measureBodyChars } =
-    await import("../lib/content-guards");
+  const {
+    findStructuralDefects,
+    findMinorEligibilityClaims,
+    findForeignerEligibilityClaims,
+    measureBodyChars,
+  } = await import("../lib/content-guards");
   const targetSheet = sheetId ?? mainSheetId();
 
   const targets = await findBroken(sheetId);
@@ -119,6 +129,7 @@ async function regenSheet(label: string, sheetId?: string, tenantGuide?: unknown
         const defects = [
           ...findStructuralDefects(post.content_html),
           ...findMinorEligibilityClaims(`${post.title}\n${post.content_html}`),
+          ...findForeignerEligibilityClaims(`${post.title}\n${post.content_html}`),
         ];
         if (defects.length > 0) throw new Error(defects.join(" / "));
 

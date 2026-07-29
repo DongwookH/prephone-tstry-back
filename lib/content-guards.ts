@@ -316,3 +316,53 @@ export function findMinorEligibilityClaims(text: string): string[] {
   }
   return hits;
 }
+
+// ─── 가드 6: 외국인 비대면 셀프개통 가능 오정보 ─────────────────────
+//
+// 규정 Q34: "외국인도 셀프개통 가능한가요? → 외국인등록증이 있고 간편인증서가
+// 있다면 가능합니다. 이외에는 방문 개통만 가능합니다."
+//
+// 그런데 CLAUDE.md가 "외국인등록증"을 게재 금지어로 정했다(2026-07-23).
+// 따라서 콘텐츠에서 셀프개통 경로를 안내할 방법이 없고, 외국인 안내는
+// **여권 + 매장(센터) 방문** 프레임으로만 써야 한다.
+//
+// 실제 위반 사례 (2026-07-29 감사): "신용불량자, 미성년자, 외국인 등 누구나
+// 5분 안에 가능한 비대면 셀프 개통" — 미성년자와 한 문장에 묶여 나갔다.
+
+/** 외국인 표지. */
+const FOREIGNER_MARKER = /외국인|외국\s*국적|여권\s*소지|유학생|이주민|영주권/;
+/** 올바른 프레임 — 방문 개통 안내이거나 불가 안내. */
+const FOREIGNER_CORRECT_FRAME =
+  /불가|안\s*됩니다|안\s*돼|아니요|아니오|어렵|어려|힘들|제한|매장|센터|방문|여권\s*지참|동반/;
+
+/**
+ * "외국인도 비대면/셀프개통 된다"는 취지의 문장 목록 (최대 3개).
+ * 판정 구조는 미성년자 가드와 동일 — 서술형 + Q&A 답변 양쪽을 본다.
+ */
+export function findForeignerEligibilityClaims(text: string): string[] {
+  const t = htmlToSentences(text);
+  const sents = t
+    .split(/[.!?…]+|\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const hits: string[] = [];
+  for (let i = 0; i < sents.length && hits.length < 3; i++) {
+    const sent = sents[i];
+    if (!FOREIGNER_MARKER.test(sent)) continue;
+
+    if (QUESTION_FORM.test(sent)) {
+      const answer = sents[i + 1] ?? "";
+      if (!answer) continue;
+      if (!ELIGIBILITY_CLAIM.test(sent) && !ELIGIBILITY_CLAIM.test(answer)) continue;
+      if (FOREIGNER_CORRECT_FRAME.test(answer)) continue;
+      if (AFFIRMATIVE_ANSWER.test(answer)) hits.push(`${sent} → ${answer}`.slice(0, 140));
+      continue;
+    }
+
+    if (!ELIGIBILITY_CLAIM.test(sent)) continue;
+    if (FOREIGNER_CORRECT_FRAME.test(sent)) continue;
+    hits.push(sent.slice(0, 120));
+  }
+  return hits;
+}

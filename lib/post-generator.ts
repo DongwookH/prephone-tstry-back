@@ -5,6 +5,7 @@ import {
   complianceFixHints,
   findStructuralDefects,
   findMinorEligibilityClaims,
+  findForeignerEligibilityClaims,
 } from "./content-guards";
 import {
   getGlobalContext,
@@ -216,7 +217,10 @@ ${tb.extra_rules}`
 - 따라서 **"학생", "청소년", "미성년", "자녀", "중·고등학생"** 같은 표현을
   "누구나 된다 / 5분이면 된다" 맥락에 절대 쓰지 마세요 — 제목·본문·Q&A 전부.
   ✗ "학생도 직장인도 5분 만에" ← 실제 폐기 사례
-  ○ "직장인도 프리랜서도", "누구나 본인 명의로" 처럼 성인 독자 표현으로 쓰세요.`;
+  ○ "직장인도 프리랜서도", "누구나 본인 명의로" 처럼 성인 독자 표현으로 쓰세요.
+- **외국인**도 비대면 셀프개통 대상이 아닙니다 — 안내는 **여권 + 매장(센터) 방문** 프레임으로만.
+  ✗ "외국인·미성년자도 5분 비대면 셀프개통 가능" ← 실제 폐기 사례
+  ○ "외국인은 여권을 지참해 매장 방문이 필요해요"`;
 
   const numberRiskBlock =
     /정지|미납|연체|직권해지/.test(keyword) || isSecondPhoneKeyword
@@ -1034,6 +1038,17 @@ export async function generatePost(opts: {
       `사실 가드: 미성년자 개통 가능 오정보 — 미성년자는 셀프개통 불가(부모님 동반 매장 방문). ` +
         `위반 구간: ${minorClaims.map((s) => `"…${s}…"`).join(" / ")} ` +
         `← 학생·청소년 등 미성년 표현을 빼고 성인 독자 기준으로 다시 쓸 것`,
+    );
+  }
+
+  // 외국인 가드 — 규정 Q34 + CLAUDE.md: "외국인등록증"이 게재 금지어라
+  // 셀프개통 경로를 안내할 수 없다. 외국인 안내는 여권 + 매장 방문 프레임만.
+  const foreignerClaims = findForeignerEligibilityClaims(guardTarget);
+  if (foreignerClaims.length > 0) {
+    throw new Error(
+      `사실 가드: 외국인 비대면 셀프개통 가능 오정보 — 외국인 안내는 '여권 + 매장 방문' 프레임만 허용. ` +
+        `위반 구간: ${foreignerClaims.map((x) => `"…${x}…"`).join(" / ")} ` +
+        `← 외국인을 '누구나 5분 비대면' 주장에 묶지 말고, 매장 방문 안내로 쓸 것`,
     );
   }
 
