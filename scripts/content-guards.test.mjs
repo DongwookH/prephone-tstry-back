@@ -13,6 +13,7 @@ import {
   hasNumberKeepingClaim,
   hasFirstPersonVictimClaim,
   findStructuralDefects,
+  findMinorEligibilityClaims,
   measureBodyChars,
   findComplianceBannedWords,
   complianceFixHints,
@@ -276,4 +277,71 @@ test("measureBodyChars — 태그·엔티티·공백을 제외하고 실측", ()
   assert.equal(measureBodyChars("<p>가 나\t다</p>"), 3);
   assert.equal(measureBodyChars("<p>가&nbsp;나</p>"), 2);
   assert.equal(measureBodyChars(""), 0);
+});
+
+// ─── 미성년자 개통 가능 오정보 가드 (운영 규정 Q8) ────────────────
+
+test("미성년 가드 — 실제 발행됐던 제목을 잡는다", () => {
+  const hits = findMinorEligibilityClaims(
+    "투폰, 학생도 직장인도 5분 만에 하나 더 만드는 법",
+  );
+  assert.equal(hits.length, 1);
+  assert.match(hits[0], /학생도 직장인도/);
+});
+
+test("미성년 가드 — '가능하다' 취지의 다른 표현들도 차단", () => {
+  assert.equal(findMinorEligibilityClaims("청소년도 간편하게 셀프개통 가능해요").length, 1);
+  assert.equal(findMinorEligibilityClaims("중학생 자녀 폰도 비대면으로 바로 됩니다").length, 1);
+  assert.equal(findMinorEligibilityClaims("<h2>고등학생도 5분이면 개통 끝!</h2>").length, 1);
+});
+
+test("미성년 가드 — 올바른 안내는 통과", () => {
+  // 규정 Q8의 정답 문장
+  assert.deepEqual(
+    findMinorEligibilityClaims("미성년자는 셀프개통이 불가하고 부모님과 함께 매장에 방문하셔야 합니다"),
+    [],
+  );
+  assert.deepEqual(
+    findMinorEligibilityClaims("청소년은 보호자 동반 방문개통만 가능합니다"),
+    [],
+  );
+});
+
+test("미성년 가드 — 대학생·유학생은 성인이므로 오탐 없음", () => {
+  assert.deepEqual(findMinorEligibilityClaims("대학생도 5분 만에 개통 가능해요"), []);
+  assert.deepEqual(findMinorEligibilityClaims("자취하는 대학생에게 추천하는 요금제"), []);
+  assert.deepEqual(findMinorEligibilityClaims("직장인도 프리랜서도 누구나 본인 명의로"), []);
+  assert.deepEqual(findMinorEligibilityClaims(""), []);
+});
+
+test("미성년 가드 — 블록 태그가 문장 경계로 살아난다 (오탐 방지)", () => {
+  // '학생'(제목)과 '가능'(다른 문단)이 별개 문장이면 위반이 아니다
+  assert.deepEqual(
+    findMinorEligibilityClaims("<h2>대학생 요금제 비교</h2><p>비대면 개통이 가능합니다</p>"),
+    [],
+  );
+});
+
+test("미성년 가드 — Q&A 질문은 답변으로 판정한다", () => {
+  // 정상: 질문 + 올바른 답변 (실제 발행글 다수가 이 형태)
+  assert.deepEqual(
+    findMinorEligibilityClaims(
+      "<div>Q. 미성년자도 개통 가능한가요?</div><p>아니요, 부모님과 함께 매장에 방문하셔야 합니다.</p>",
+    ),
+    [],
+  );
+  // 위반: 질문 + 긍정 답변
+  const bad = findMinorEligibilityClaims(
+    "<div>Q. 미성년자도 개통 가능한가요?</div><p>네, 간편인증만 있으면 바로 됩니다.</p>",
+  );
+  assert.equal(bad.length, 1);
+  assert.match(bad[0], /네, 간편인증/);
+});
+
+test("미성년 가드 — 서술형 오정보는 질문이 아니어도 잡는다", () => {
+  // 실제 발행글 p-20260726-011의 문장
+  const hits = findMinorEligibilityClaims(
+    "(예: 여권 지참 외국인, 미성년자 등) 간편인증서가 있다면 비대면 셀프개통이 가능해요",
+  );
+  assert.equal(hits.length, 1);
 });

@@ -4,6 +4,7 @@ import {
   findComplianceBannedWords,
   complianceFixHints,
   findStructuralDefects,
+  findMinorEligibilityClaims,
 } from "./content-guards";
 import {
   getGlobalContext,
@@ -204,6 +205,19 @@ ${tb.extra_rules}`
   //  "번호이동으로 기존 번호 그대로 유지" Q&A를 써서 3/3 폐기 — 하루 10→9 원인)
   const isSecondPhoneKeyword =
     /세컨|투폰|투넘버|두\s*번째|듀얼|업무폰|법인폰|사업자폰|회사폰/.test(keyword);
+  // 미성년자 규칙 — 운영 규정 Q8(셀프개통 불가, 부모님 동반 센터 방문).
+  // 키워드와 무관하게 항상 붙인다: 키워드가 "투폰"이어도 모델이 제목에
+  // "학생도 5분 만에"를 넣어 발행된 사례가 있다 (2026-07-29).
+  const minorRuleBlock = `
+
+## 🚨 독자 대상 규칙 (위반 시 글 전체 폐기)
+- 이 글의 독자는 **성인**입니다. 비대면 셀프개통은 **성인만 가능**합니다.
+- 미성년자는 셀프개통이 **불가**하고 보호자 동반 매장 방문이 필요합니다.
+- 따라서 **"학생", "청소년", "미성년", "자녀", "중·고등학생"** 같은 표현을
+  "누구나 된다 / 5분이면 된다" 맥락에 절대 쓰지 마세요 — 제목·본문·Q&A 전부.
+  ✗ "학생도 직장인도 5분 만에" ← 실제 폐기 사례
+  ○ "직장인도 프리랜서도", "누구나 본인 명의로" 처럼 성인 독자 표현으로 쓰세요.`;
+
   const numberRiskBlock =
     /정지|미납|연체|직권해지/.test(keyword) || isSecondPhoneKeyword
       ? `
@@ -248,7 +262,7 @@ ${faqCtx}
 - 정책·케이스별 가능 여부: 위 KB·FAQ에 있는 것만
 - 정보가 없으면 "자세한 내용은 문의 채널에서 확인해 주세요" 식으로 우회
 
-${bannedBlock}${extraRulesBlock}${numberRiskBlock}${
+${bannedBlock}${extraRulesBlock}${minorRuleBlock}${numberRiskBlock}${
     opts.retryFeedback
       ? `
 
@@ -1008,6 +1022,18 @@ export async function generatePost(opts: {
   if (structural.length > 0) {
     throw new Error(
       `구조 가드: ${structural.join(" / ")} — 6개 섹션을 끝까지 채워서 다시 작성할 것`,
+    );
+  }
+
+  // 미성년자 가드 — 운영 규정 Q8: 미성년자 셀프개통 불가(부모님 동반 센터 방문).
+  // 키워드 블랙리스트는 "미성년" 계열 키워드만 막을 뿐, 키워드가 "투폰"인데
+  // 제목에 "학생도 5분 만에"가 들어가는 건 못 막는다 (2026-07-29 실사례).
+  const minorClaims = findMinorEligibilityClaims(guardTarget);
+  if (minorClaims.length > 0) {
+    throw new Error(
+      `사실 가드: 미성년자 개통 가능 오정보 — 미성년자는 셀프개통 불가(부모님 동반 매장 방문). ` +
+        `위반 구간: ${minorClaims.map((s) => `"…${s}…"`).join(" / ")} ` +
+        `← 학생·청소년 등 미성년 표현을 빼고 성인 독자 기준으로 다시 쓸 것`,
     );
   }
 

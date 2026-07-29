@@ -56,7 +56,9 @@ function sleep(ms: number) {
 /** 해당 시트의 파손 글 + 시트 행 번호를 찾는다. */
 async function findBroken(sheetId?: string): Promise<Target[]> {
   const { readRange, mainSheetId } = await import("../lib/sheets");
-  const { findStructuralDefects } = await import("../lib/content-guards");
+  const { findStructuralDefects, findMinorEligibilityClaims } = await import(
+    "../lib/content-guards"
+  );
 
   const rows = (await readRange(sheetId ?? mainSheetId(), "posts!A:U")) as string[][];
 
@@ -70,13 +72,19 @@ async function findBroken(sheetId?: string): Promise<Target[]> {
   const out: Target[] = [];
   for (let i = hIdx + 1; i < rows.length; i++) {
     const r = rows[i];
-    const [id, , keyword, category, persona, , html, , , status, , publishedAt, tistoryUrl] = r;
+    const [id, title, keyword, category, persona, , html, , , status, , publishedAt, tistoryUrl] = r;
     if (!id?.trim()) continue;
     // 소급 수정 금지 — status뿐 아니라 발행 흔적(published_at·tistory_url)도 본다.
     // status가 ready인데 published_at만 찍힌 옛 행이 실제로 있다.
     if (status === "published" || publishedAt?.trim() || tistoryUrl?.trim()) continue;
     if (!html) continue;
-    if (findStructuralDefects(html).length === 0) continue;
+    // 재생성 사유 두 가지: 구조 파손 + 사실 오류(미성년자 셀프개통 가능 주장).
+    // 제목만 위반인 경우도 있어 제목·본문을 함께 검사한다.
+    const defects = [
+      ...findStructuralDefects(html),
+      ...findMinorEligibilityClaims(`${title ?? ""}\n${html}`),
+    ];
+    if (defects.length === 0) continue;
     out.push({ id, keyword, category, persona, row: i + 1 }); // 시트는 1-based
   }
   return out;
@@ -86,7 +94,8 @@ async function findBroken(sheetId?: string): Promise<Target[]> {
 async function regenSheet(label: string, sheetId?: string, tenantGuide?: unknown) {
   const { batchUpdateValues, mainSheetId } = await import("../lib/sheets");
   const { generatePost } = await import("../lib/post-generator");
-  const { findStructuralDefects, measureBodyChars } = await import("../lib/content-guards");
+  const { findStructuralDefects, findMinorEligibilityClaims, measureBodyChars } =
+    await import("../lib/content-guards");
   const targetSheet = sheetId ?? mainSheetId();
 
   const targets = await findBroken(sheetId);
@@ -107,7 +116,10 @@ async function regenSheet(label: string, sheetId?: string, tenantGuide?: unknown
           retryFeedback: attempt > 1 ? lastErr : undefined,
           tenantGuide: tenantGuide as never,
         });
-        const defects = findStructuralDefects(post.content_html);
+        const defects = [
+          ...findStructuralDefects(post.content_html),
+          ...findMinorEligibilityClaims(`${post.title}\n${post.content_html}`),
+        ];
         if (defects.length > 0) throw new Error(defects.join(" / "));
 
         const chars = measureBodyChars(post.content_html);

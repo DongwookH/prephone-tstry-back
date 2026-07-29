@@ -229,3 +229,90 @@ export function findStructuralDefects(html: string): string[] {
   }
   return out;
 }
+
+// ─── 가드 5: 미성년자 개통 가능 오정보 ─────────────────────────────
+//
+// 운영 규정 Q8: "미성년자도 셀프개통 되나요? → 아니요, 부모님과 동반해서
+// 센터에서 개통하셔야 합니다."
+//
+// 키워드 블랙리스트(CONTENT_MINOR_BLACKLIST)는 "미성년" 계열 키워드로
+// 글을 못 만들게 막지만, 키워드가 "투폰"이어도 모델이 본문·제목에
+// "학생도 5분 만에"라고 쓰는 건 못 막는다 (2026-07-29 실제 발행 사례:
+// "투폰, 학생도 직장인도 5분 만에 하나 더 만드는 법").
+//
+// 판정: 미성년 표지 + 가능하다는 주장이 같은 문장에 있고, 올바른 프레임
+// (불가·보호자 동반·매장 방문)이 없으면 위반.
+
+/** 미성년 표지. 대학생·유학생은 성인이므로 제외하고 검사한다. */
+const MINOR_MARKER =
+  /미성년|청소년|어린이|아동|초등|중등|중학생|고등학생|자녀|키즈|만\s*1[3-8]\s*세|학생/;
+/**
+ * ⚠️ 막아야 하는 건 "미성년자 개통 가능"이 아니라 "미성년자 **셀프**개통 가능"이다.
+ *
+ * 규정 Q8: "미성년자도 셀프개통 되나요? → 아니요, 부모님과 동반해서 센터에서
+ * 개통하셔야 합니다." 즉 개통 자체는 되고 비대면·셀프 경로만 막힌다.
+ *
+ * 처음엔 `가능|됩니다` 같은 범용 표현까지 넣었다가 "미성년자는 선불·후불 각
+ * 1회선까지 가능" 같은 **사실 안내**를 무더기로 오탐했다 (2026-07-29 실측
+ * 12편 중 8편이 오탐). 셀프·비대면·즉시성 표지로 좁힌다.
+ */
+const ELIGIBILITY_CLAIM =
+  /셀프|비대면|온라인\s*개통|집에서|업로드|간편인증|5분|3분|즉시|만드는\s*법|만들\s*수/;
+/**
+ * 올바른 프레임 — 이게 있으면 정확한 안내다.
+ * ⚠️ 한국어 활용형을 어간으로 잡아야 한다. "어렵"만 넣으면 실제로 가장 많이
+ *    쓰이는 "어려워요/어려우니"를 놓쳐 정답 문장을 위반으로 찍는다
+ *    (2026-07-29 실측: 정상 글 3편이 이 이유로 오탐).
+ */
+const MINOR_CORRECT_FRAME =
+  /불가|안\s*됩니다|안\s*돼|아니요|아니오|어렵|어려|힘들|제한|조건부|보호자|부모님|법정\s*대리인|동반|방문\s*개통|매장|센터/;
+
+/**
+ * 질문형 종결 — "미성년자도 개통 가능한가요?"는 주장이 아니라 Q&A의 질문이다.
+ * 이런 문장은 그 자체로 위반이 아니고 "바로 다음 문장(답변)"을 봐야 한다.
+ */
+const QUESTION_FORM = /(?:나요|가요|까요|런가|는지)\s*$/;
+/** 긍정 답변 표지 — Q&A 답변이 "된다"고 하면 위반. */
+const AFFIRMATIVE_ANSWER = /^\s*(?:네|예|맞아|가능|됩니다|돼요|물론)/;
+
+/**
+ * "미성년자도 (셀프)개통 된다"는 취지의 문장 목록 (최대 3개).
+ *
+ * 두 가지 형태를 구분한다:
+ *   (a) 서술형 — "미성년자도 간편인증서가 있으면 셀프개통 가능해요" → 위반
+ *   (b) Q&A 질문 — "미성년자도 개통 가능한가요?" 자체는 정상.
+ *       바로 다음 문장(답변)이 긍정이고 올바른 프레임이 없을 때만 위반.
+ *
+ * 대학생·유학생은 성인이라 검사 대상에서 뺀다.
+ */
+export function findMinorEligibilityClaims(text: string): string[] {
+  // '대학생'·'유학생'을 먼저 지워 '학생' 부분 매칭 오탐을 막는다.
+  const t = htmlToSentences(text).replace(/[대유]학생/g, "");
+  const sents = t
+    .split(/[.!?…]+|\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const hits: string[] = [];
+  for (let i = 0; i < sents.length && hits.length < 3; i++) {
+    const sent = sents[i];
+    if (!MINOR_MARKER.test(sent)) continue;
+
+    if (QUESTION_FORM.test(sent)) {
+      // Q&A 질문 — 답변을 봐야 판정할 수 있다.
+      const answer = sents[i + 1] ?? "";
+      if (!answer) continue;
+      // ⚠️ "미성년자도 개통 가능한가요? → 네, 가능합니다"는 사실이다(개통 자체는 됨).
+      //    질문이나 답변에 셀프·비대면 표지가 있을 때만 위반으로 본다.
+      if (!ELIGIBILITY_CLAIM.test(sent) && !ELIGIBILITY_CLAIM.test(answer)) continue;
+      if (MINOR_CORRECT_FRAME.test(answer)) continue; // "아니요, 보호자 동반 방문" → 정상
+      if (AFFIRMATIVE_ANSWER.test(answer)) hits.push(`${sent} → ${answer}`.slice(0, 140));
+      continue;
+    }
+
+    if (!ELIGIBILITY_CLAIM.test(sent)) continue;
+    if (MINOR_CORRECT_FRAME.test(sent)) continue; // 올바른 안내
+    hits.push(sent.slice(0, 120));
+  }
+  return hits;
+}
