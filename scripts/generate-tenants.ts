@@ -49,9 +49,17 @@ function loadEnvLocal(): void {
 loadEnvLocal();
 
 const DRY_RUN = process.argv.includes("--dry-run");
+/**
+ * 테넌트 1인당 하루 생성 편수 (env TENANT_DAILY_COUNT, 기본 3).
+ *
+ * 상한 30 — 무한정 열어두면 오타 하나로 수백 편이 생성돼 키워드 재고와
+ * API 할당량이 하루에 소진된다. 30은 GHA 잡 제한시간 안에서 이미지까지
+ * 끝낼 수 있는 현실적 상한이다 (편당 생성+이미지 약 1분).
+ * 상한을 올릴 땐 워크플로 timeout-minutes도 같이 올려야 한다.
+ */
 const DAILY_COUNT = Math.max(
   1,
-  Math.min(10, parseInt(process.env.TENANT_DAILY_COUNT ?? "3", 10) || 3),
+  Math.min(30, parseInt(process.env.TENANT_DAILY_COUNT ?? "3", 10) || 3),
 );
 
 function sleep(ms: number): Promise<void> {

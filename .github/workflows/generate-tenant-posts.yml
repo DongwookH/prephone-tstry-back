@@ -25,7 +25,9 @@ jobs:
   generate:
     name: Generate (테넌트 순회)
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    # 편당 생성 ~1분 + 썸네일 1장·카드 4장. TENANT_DAILY_COUNT를 올릴 때
+    # 여기도 같이 올린다 — 20편이면 글 ~23분 + 이미지 ~15분이라 50분은 빠듯하다.
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
