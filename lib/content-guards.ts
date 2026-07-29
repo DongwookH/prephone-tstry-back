@@ -169,3 +169,63 @@ export function complianceFixHints(words: string[]): string {
     .map((b) => `"${b.word}" → ${b.fix}`)
     .join("; ");
 }
+
+// ─── 가드 4: 구조 결함 (본문 잘림·목차 끊김) ──────────────────────
+//
+// 2026-07-29 사고: 모델을 바꿨더니 본문이 1/3로 줄고 목차가 가리키는 섹션이
+// 통째로 사라진 글 10편이 그대로 발행됐다. 금지어·번호이동 가드는 다 통과했고
+// (내용 자체는 문제없으니) 로그에도 "✅ 2680자 | 시도 1"로 찍혔다.
+// char_count가 모델의 자기 신고값이었기 때문이다 — 실측은 859자였다.
+//
+// 교훈: "무엇을 썼는가"만 검사하고 "제대로 다 썼는가"는 아무도 안 봤다.
+// 이 가드가 그 구멍을 막는다. 모델 교체·프롬프트 변경 때 조용히 품질이
+// 무너지는 걸 잡는 최종 방어선이다.
+
+/**
+ * 실측 하한 — "잘린 글"과 "짧지만 멀쩡한 글" 사이의 빈 구간에 둔다.
+ *
+ *   파손분(7/29 사고, 섹션 누락 동반)   635 ~ 1,269자
+ *   ── 여기 1,500 ──
+ *   테넌트 정상분(3.5-flash-lite)       1,676 ~ 2,350자
+ *   오너 정상분(2.5-flash)              2,368 ~ 3,062자
+ *
+ * 1,800으로 잡았다가 멀쩡한 테넌트 글(1,676자·섹션 6/6)을 폐기시켜 내렸다.
+ * 사고분은 최고 1,269자라 1,500이어도 10/10 전부 걸러진다.
+ * 분량은 어디까지나 보조 지표다 — 진짜 판정은 목차/섹션 대조 쪽이다.
+ */
+export const MIN_BODY_CHARS = 1500;
+
+/** 태그·엔티티·공백을 걷어낸 실측 글자 수 — 모델 신고값을 믿지 않기 위한 척도. */
+export function measureBodyChars(html: string): number {
+  if (!html) return 0;
+  return html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&[a-z]+;/gi, " ")
+    .replace(/\s+/g, "")
+    .length;
+}
+
+/**
+ * 구조 결함 목록 (없으면 빈 배열).
+ *   1) 목차가 가리키는 #section-N이 본문에 없음 → 죽은 링크 + 내용 누락
+ *   2) 실측 분량이 하한 미만 → 응답이 중간에 잘림
+ */
+export function findStructuralDefects(html: string): string[] {
+  const out: string[] = [];
+  const h = html || "";
+
+  const toc = [...new Set([...h.matchAll(/href="#(section-\d+)"/g)].map((m) => m[1]))];
+  const body = [...new Set([...h.matchAll(/id="(section-\d+)"/g)].map((m) => m[1]))];
+  const missing = toc.filter((id) => !body.includes(id));
+  if (missing.length > 0) {
+    out.push(
+      `목차가 가리키는 섹션이 본문에 없음 [${missing.join(", ")}] — 목차 ${toc.length}개 / 본문 ${body.length}개`,
+    );
+  }
+
+  const chars = measureBodyChars(h);
+  if (chars < MIN_BODY_CHARS) {
+    out.push(`본문 분량 미달 — 실측 ${chars}자 (하한 ${MIN_BODY_CHARS}자)`);
+  }
+  return out;
+}

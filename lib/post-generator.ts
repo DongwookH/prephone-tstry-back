@@ -3,6 +3,7 @@ import {
   findNumberKeepingClaims,
   findComplianceBannedWords,
   complianceFixHints,
+  findStructuralDefects,
 } from "./content-guards";
 import {
   getGlobalContext,
@@ -953,10 +954,10 @@ export async function generatePost(opts: {
   // 티스토리 sanitizer 안전 후처리 — summary 안 div를 span으로, 마커 제거, open 첫개만
   const safeHtml = sanitizeForTistory(result.content_html || "");
 
-  const charCount =
-    typeof result.char_count === "number" && result.char_count > 0
-      ? result.char_count
-      : htmlTextLength(safeHtml);
+  // ⚠️ 모델이 신고한 char_count는 쓰지 않는다 — 실제로 859자를 쓰고도
+  //    "2680자"라고 신고해서 반토막 글 10편이 정상으로 로깅·발행됐다
+  //    (2026-07-29 사고). 항상 실측한다.
+  const charCount = htmlTextLength(safeHtml);
   const seoScore =
     typeof result.seo_score === "number"
       ? Math.max(0, Math.min(100, result.seo_score))
@@ -999,6 +1000,17 @@ export async function generatePost(opts: {
   // 위반 구간을 에러에 그대로 실어 재시도 프롬프트가 "정확히 이 문장을 고쳐라"가
   // 되게 한다 (일반 사유만으로는 같은 자리 반복 위반 — 2026-07-27 실측).
   const guardTarget = `${finalTitle}\n${result.meta_description ?? ""}\n${htmlWithHero}`;
+
+  // 구조 가드 — 본문이 잘렸거나 목차가 가리키는 섹션이 없으면 폐기·재시도.
+  // 내용 가드(금지어·번호이동)를 다 통과해도 "글이 반토막"이면 발행하면 안 된다.
+  // 이 가드가 없어서 2026-07-29에 목차만 6개고 본문은 3섹션인 글이 나갔다.
+  const structural = findStructuralDefects(htmlWithHero);
+  if (structural.length > 0) {
+    throw new Error(
+      `구조 가드: ${structural.join(" / ")} — 6개 섹션을 끝까지 채워서 다시 작성할 것`,
+    );
+  }
+
   const numberClaims = findNumberKeepingClaims(guardTarget);
   if (numberClaims.length > 0) {
     const snippets = numberClaims

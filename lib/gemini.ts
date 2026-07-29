@@ -67,35 +67,47 @@ if (ENV_KEYS.length === 0 && process.env.NODE_ENV !== "test") {
   );
 }
 
-// ⚠️ gemini-2.5-flash-lite는 2026-07 이후 발급된 키에서 404다
-//    ("no longer available to new users"). 신규 테넌트가 쓸 수 있는 모델만
-//    기본값·폴백에 둔다 — 오너 키에서만 되는 모델을 기본값으로 두면 멤버만
-//    조용히 실패한다 (2026-07-28 실측).
-const DEFAULT_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite";
+/**
+ * 기본 모델 = gemini-2.5-flash.
+ *
+ * 2026-07-29 실측 (키워드 3종 × 후보 4종, 지표는 "섹션 완결성 + 실측 분량"):
+ *   gemini-2.5-flash       성공 3/3, 섹션 3/3, 실측 3,725자   ← 채택
+ *   gemini-3.5-flash-lite  성공 2/3, 섹션 2/2, 실측 2,427자
+ *   gemini-3.6-flash       성공 1/3, 섹션 1/1, 실측 3,782자
+ *   gemini-3.1-flash-lite  성공 2/3, 섹션 2/2, 실측 1,815자   ← 사고 원인
+ *
+ * ⚠️ 2.5 계열은 2026-07 이후 발급 키에서 404("no longer available to new
+ *    users")다. 오너 키는 되고 신규 테넌트 키는 안 된다. 그래서 이 값을
+ *    전역 기본으로 두되, 폴백 1순위를 "신규 키에서도 되는" 3.5-flash-lite로
+ *    깔아 테넌트는 자동으로 그쪽을 타게 한다 (isRetryableError에 404 포함이
+ *    전제 — 빠지면 테넌트가 통째로 실패한다).
+ */
+const DEFAULT_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 
 /**
  * 모델 폴백 체인 — 한 모델이 일시 과부하(503)/한도(429)로 모든 키에서 막혀도
  * 같은 계열 다른 모델 서버는 멀쩡한 경우가 많아 자동으로 갈아탄다.
  * (Free Tier RPD 한도는 모델별로 분리돼 있어 429에도 효과 있음.)
  *
- * 3.1-flash-lite는 실측상 503 과부하가 잦아(6~180초 편차) 폴백이 특히 중요하다.
- * 폴백 후보는 전부 "신규 키에서도 되는" 모델로만 채운다.
+ * 폴백 1순위는 항상 "신규 키에서도 되는" 모델이어야 한다. 2.5 계열끼리
+ * 이어두면 신규 키 사용자는 폴백을 타도 계속 404라 결국 0편이 된다.
+ * 품질 순서도 반영한다 — 실측 분량 3.5-flash-lite > 3.1-flash-lite.
  */
 const MODEL_FALLBACKS: Record<string, string[]> = {
-  "gemini-3.1-flash-lite": ["gemini-3.5-flash-lite", "gemini-2.5-flash"],
+  "gemini-2.5-flash": ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"],
+  "gemini-2.5-flash-lite": ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"],
   "gemini-3.5-flash-lite": ["gemini-3.1-flash-lite", "gemini-2.5-flash"],
-  "gemini-3.6-flash": ["gemini-3.5-flash-lite", "gemini-2.5-flash"],
-  "gemini-2.5-flash-lite": ["gemini-2.5-flash", "gemini-2.0-flash"],
-  "gemini-2.5-flash": ["gemini-3.1-flash-lite", "gemini-2.0-flash"],
-  "gemini-2.5-pro": ["gemini-2.5-flash"],
-  "gemini-2.0-flash": ["gemini-2.0-flash-lite", "gemini-2.5-flash"],
+  "gemini-3.6-flash": ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"],
+  "gemini-3.1-flash-lite": ["gemini-3.5-flash-lite", "gemini-2.5-flash"],
+  "gemini-2.5-pro": ["gemini-2.5-flash", "gemini-3.5-flash-lite"],
+  "gemini-2.0-flash": ["gemini-3.5-flash-lite", "gemini-2.0-flash-lite"],
 };
 
 /** primary 모델 + 폴백 모델들 (primary 중복 제거). */
 function modelsToTry(primary: string): string[] {
   const fallbacks = MODEL_FALLBACKS[primary] ?? [
     "gemini-3.5-flash-lite",
-    "gemini-2.5-flash",
+    "gemini-3.1-flash-lite",
   ];
   return [primary, ...fallbacks.filter((m) => m !== primary)];
 }
@@ -134,10 +146,32 @@ function isRetryableError(err: unknown): boolean {
     message.includes("api key not valid") ||
     message.includes("permission denied");
 
+  // 404 = "이 모델은 이 키로 못 쓴다" (은퇴 모델의 신규 키 차단 등).
+  // 키·모델을 더 시도해볼 가치가 있으므로 재시도 대상에 포함한다.
+  // ⚠️ 빼두면 폴백 체인이 통째로 무력화된다 — 첫 404에서 즉시 throw라
+  //    "신규 키 사용자만 글이 0편"이 되고 로그엔 이유가 안 남는다
+  //    (2026-07-29 실측: 2.5-flash가 신규 키에서 404).
   if (status) {
-    return [401, 403, 408, 429, 500, 502, 503, 504].includes(status);
+    return [401, 403, 404, 408, 429, 500, 502, 503, 504].includes(status);
   }
-  return messageSuggestsTransient;
+  return (
+    messageSuggestsTransient ||
+    message.includes("no longer available") ||
+    message.includes("not found for api version")
+  );
+}
+
+/** "이 키로는 이 모델을 못 쓴다"(404/은퇴) — 다음 키·다음 모델로 넘어가야 하는 상황. */
+function isModelUnavailableError(err: unknown): boolean {
+  const status =
+    (err as { status?: number })?.status ??
+    (err as { response?: { status?: number } })?.response?.status;
+  const lower = String((err as Error)?.message ?? "").toLowerCase();
+  return (
+    status === 404 ||
+    lower.includes("no longer available") ||
+    lower.includes("not found for api version")
+  );
 }
 
 /**
@@ -283,6 +317,14 @@ export async function generateWithFallback<T>(
             `[Gemini] ${label} 모델 과부하(${status}) — 남은 키 생략, 다음 모델로`,
           );
           break;
+        }
+        if (isModelUnavailableError(err)) {
+          // 은퇴 모델 404 — 계정 생성 시점에 따라 키마다 다르므로 남은 키는
+          // 마저 시도하되(빠른 실패), 로그로 이유를 분명히 남긴다.
+          console.warn(
+            `[Gemini] ${label} 이 키에서 사용 불가(404) — 다음 키/모델로`,
+          );
+          continue;
         }
         // 키 단위 문제(429/인증) — 다음 키로
         console.warn(`[Gemini] ${label} 실패 (status=${status}) — 다음 키로`);

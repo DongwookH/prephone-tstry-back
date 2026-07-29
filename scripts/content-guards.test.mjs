@@ -12,6 +12,8 @@ import assert from "node:assert/strict";
 import {
   hasNumberKeepingClaim,
   hasFirstPersonVictimClaim,
+  findStructuralDefects,
+  measureBodyChars,
   findComplianceBannedWords,
   complianceFixHints,
 } from "../lib/content-guards.ts";
@@ -226,4 +228,52 @@ test("컴플라이언스 — 교정 힌트 생성", () => {
   const hints = complianceFixHints(["공식", "고객센터"]);
   assert.ok(hints.includes("인증판매점"));
   assert.ok(hints.includes("1:1 채팅 상담"));
+});
+
+// ─── 구조 가드 (2026-07-29 사고 회귀 방지) ────────────────────────
+
+test("구조 가드 — 실제 파손된 발행글(p-20260729-010 축약형)을 잡는다", () => {
+  // 목차는 6개를 가리키는데 본문엔 1·3·6만 존재 → 2·4·5가 죽은 링크
+  const broken =
+    '<a href="#section-1">a</a><a href="#section-2">b</a><a href="#section-3">c</a>' +
+    '<a href="#section-4">d</a><a href="#section-5">e</a><a href="#section-6">f</a>' +
+    '<div id="section-1">' + "가".repeat(700) + "</div>" +
+    '<div id="section-3">' + "나".repeat(700) + "</div>" +
+    '<div id="section-6">' + "다".repeat(700) + "</div>";
+  const defects = findStructuralDefects(broken);
+  assert.equal(defects.length, 1, "섹션 누락 1건이 잡혀야 한다");
+  assert.match(defects[0], /section-2/);
+  assert.match(defects[0], /section-4/);
+  assert.match(defects[0], /section-5/);
+});
+
+test("구조 가드 — 목차가 아예 없어도 분량 미달이면 잡는다", () => {
+  // 7/29 파손분 중 -003·006·007·008 유형: 목차 없음 + 본문 1,000자 내외
+  const short = '<div id="section-1">' + "가".repeat(1000) + "</div>";
+  const defects = findStructuralDefects(short);
+  assert.equal(defects.length, 1);
+  assert.match(defects[0], /분량 미달/);
+});
+
+test("구조 가드 — 임계값이 사고분과 정상분 사이에 있다 (경계 회귀)", () => {
+  const body = (n) => '<div id="section-1">' + "가".repeat(n) + "</div>";
+  // 7/29 사고분 최고치(1,269자)는 반드시 걸러야 한다
+  assert.equal(findStructuralDefects(body(1269)).length, 1);
+  // 테넌트 정상분 최저치(1,676자·섹션 완결)는 통과해야 한다
+  assert.deepEqual(findStructuralDefects(body(1676)), []);
+});
+
+test("구조 가드 — 정상 글은 통과 (오탐 회귀 방지)", () => {
+  // 7/28 정상분 최저치(2,379자)보다 약간 위
+  const ok =
+    '<a href="#section-1">a</a><a href="#section-2">b</a>' +
+    '<div id="section-1">' + "가".repeat(1200) + "</div>" +
+    '<div id="section-2">' + "나".repeat(1200) + "</div>";
+  assert.deepEqual(findStructuralDefects(ok), []);
+});
+
+test("measureBodyChars — 태그·엔티티·공백을 제외하고 실측", () => {
+  assert.equal(measureBodyChars("<p>가 나\t다</p>"), 3);
+  assert.equal(measureBodyChars("<p>가&nbsp;나</p>"), 2);
+  assert.equal(measureBodyChars(""), 0);
 });
