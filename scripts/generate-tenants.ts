@@ -164,13 +164,40 @@ async function main(): Promise<void> {
         (p.id || "").startsWith(`p-${todayKST}-`),
       );
       const doneKeywords = new Set(todayIds.map((p) => p.keyword));
+
+      // ⚠️ 하루 총량 상한 — 키워드 중복 검사만으로는 재실행을 막지 못한다.
+      //    picked는 used_count 오름차순으로 매 호출 재계산되므로, 어제 쓴
+      //    키워드의 used_count가 올라가면 오늘 뽑히는 20개가 이미 저장된
+      //    19개와 겹치지 않는다 → "전부 누락"으로 보여 20개를 더 만든다.
+      //    (2026-07-30 실측: 19편 + 재실행 17편 = 36편. 오너 파이프라인은
+      //     같은 사고를 2026-07-26에 겪고 이 상한을 넣어 막고 있었다.)
+      const remainingToday = Math.max(0, DAILY_COUNT - todayIds.length);
+      if (remainingToday === 0) {
+        // entry는 루프 진입 시 이미 summary에 넣었으므로 다시 push하지 않는다.
+        entry.skipped = `오늘 이미 ${todayIds.length}편 저장됨 (상한 ${DAILY_COUNT}) — 생성 없음`;
+        console.log(`   ↩️ ${t.email} — ${entry.skipped}`);
+        continue;
+      }
+      if (todayIds.length > 0) {
+        console.log(
+          `   ⚠️ 하루 상한 적용: 오늘 이미 ${todayIds.length}편 → ${remainingToday}편만 생성`,
+        );
+      }
       const usedSlots = new Set<number>(
         todayIds
           .map((p) => parseInt((p.id || "").split("-")[2] || "0", 10))
           .filter((n) => n > 0),
       );
 
+      let madeToday = 0;
       for (const kw of picked) {
+        // 상한 도달 — 남은 키워드는 내일로 넘긴다 (재실행 과잉 생성 방지)
+        if (madeToday >= remainingToday) {
+          console.log(
+            `   ⏹️ 하루 상한 ${DAILY_COUNT}편 도달 — 남은 키워드는 다음 실행으로`,
+          );
+          break;
+        }
         if (doneKeywords.has(kw.keyword)) {
           console.log(`   ↩️ ${kw.keyword} — 오늘 이미 생성됨, 스킵`);
           continue;
@@ -223,6 +250,7 @@ async function main(): Promise<void> {
               `   ✅ ${t.email} | ${kw.keyword} → ${id} | ${post.title} (시도 ${attempt})`,
             );
             entry.saved++;
+            madeToday++;
             ok = true;
             break;
           } catch (err) {
