@@ -407,12 +407,18 @@ export async function generateJSON<T = unknown>(
     // Gemini가 문자열 값 안에 raw 제어문자(줄바꿈/탭 등)를 넣어서
     // "Bad control character in string literal" 파싱 실패가 종종 발생.
     // → 문자열 리터럴 내부의 제어문자를 escape 처리 후 재시도.
+    const step1 = sanitizeJsonControlChars(text);
     try {
-      return JSON.parse(sanitizeJsonControlChars(text)) as T;
-    } catch (err2) {
-      throw new Error(
-        `Gemini JSON 파싱 실패: ${(err2 as Error).message}\n원본: ${text.slice(0, 200)}…`,
-      );
+      return JSON.parse(step1) as T;
+    } catch {
+      // 3차 — 문자열 값 안의 escape 안 된 따옴표까지 복구 (HTML style="..." 때문)
+      try {
+        return JSON.parse(repairUnescapedQuotes(step1)) as T;
+      } catch (err3) {
+        throw new Error(
+          `Gemini JSON 파싱 실패: ${(err3 as Error).message}\n원본: ${text.slice(0, 200)}…`,
+        );
+      }
     }
   }
 }
@@ -528,4 +534,54 @@ export async function geminiKeyStatus(sheetId?: string) {
     /** 키 N개 합산 일일 한도. 키 5개 × 1500 = 7500. */
     dailyLimit: keys.length * rpdPerKey,
   };
+}
+
+/**
+ * 문자열 값 안의 escape 안 된 큰따옴표를 escape 처리한다.
+ *
+ * Gemini가 HTML을 JSON 문자열로 실어 보낼 때 `style="..."`의 내부 따옴표를
+ * 간헐적으로 escape하지 않는다. 그러면 파서가 문자열이 끝났다고 착각해
+ * "Expected ',' or '}' after property value" 로 죽는다.
+ * (2026-07-30: 이 실패로 이진수 님 20편 중 1편이 3회 재시도 모두 실패)
+ *
+ * 판정: 문자열 안에서 만난 `"` 뒤에 (공백 건너뛰고) JSON 구조 문자
+ * `, : } ]`나 입력 끝이 오면 정상 닫는 따옴표, 아니면 값 안의 따옴표로 보고
+ * escape한다.
+ */
+export function repairUnescapedQuotes(s: string): string {
+  let out = "";
+  let inStr = false;
+  let escaped = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (!inStr) {
+      out += ch;
+      if (ch === '"') inStr = true;
+      continue;
+    }
+    if (escaped) {
+      out += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      out += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      let j = i + 1;
+      while (j < s.length && /\s/.test(s[j])) j++;
+      const next = j < s.length ? s[j] : "";
+      if (next === "" || next === "," || next === ":" || next === "}" || next === "]") {
+        out += ch; // 정상적인 닫는 따옴표
+        inStr = false;
+      } else {
+        out += '\\"'; // 값 안의 따옴표 — escape
+      }
+      continue;
+    }
+    out += ch;
+  }
+  return out;
 }

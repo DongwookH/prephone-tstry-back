@@ -390,3 +390,34 @@ test("외국인 가드 — 회선 수·일반 안내는 오탐 없음", () => {
   assert.deepEqual(findForeignerEligibilityClaims("한국인은 5분이면 셀프개통 끝!"), []);
   assert.deepEqual(findForeignerEligibilityClaims(""), []);
 });
+
+test("외국인 가드 — 간편인증 단서가 있으면 통과 (2026-07-30 사고 회귀)", () => {
+  // 로그에 실제로 걸렸던 세 문장. CLAUDE.md가 명시한 정답 표현이다.
+  assert.deepEqual(
+    findForeignerEligibilityClaims("한국 간편인증이 가능한 외국인이라면 비대면도 가능하답니다"),
+    [],
+  );
+  assert.deepEqual(
+    findForeignerEligibilityClaims("한국 간편인증이 가능한 외국인만 비대면 개통이 가능해요"),
+    [],
+  );
+  assert.deepEqual(
+    findForeignerEligibilityClaims(
+      "외국인 고객님은 한국 간편인증(PASS 등)이 가능하시면 비대면 개통이 가능합니다",
+    ),
+    [],
+  );
+  // 단서가 없는 주장은 여전히 차단해야 한다 (가드 무력화 방지)
+  assert.equal(
+    findForeignerEligibilityClaims("외국인도 누구나 5분이면 비대면 셀프개통 끝!").length,
+    1,
+  );
+});
+
+test("미성년자는 간편인증이 있어도 셀프개통 불가 — 면제 없음", () => {
+  // 외국인과 달리 미성년자는 간편인증 예외가 없다 (규정 Q8).
+  assert.equal(
+    findMinorEligibilityClaims("미성년자도 간편인증만 있으면 5분 비대면 셀프개통 가능해요").length,
+    1,
+  );
+});
