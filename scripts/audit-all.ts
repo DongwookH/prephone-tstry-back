@@ -40,8 +40,13 @@ const VERBOSE = process.argv.includes("--verbose");
 
 /** 확정 공식가 6종 (CLAUDE.md 2026-07-23). 이외 금액은 단정 금지. */
 const OK_PRICES = new Set(["12,100", "33,000", "39,600", "45,900", "46,400", "85,900"]);
-/** 남의 글에 절대 없어야 하는 오너 고유 정보. */
-const OWNER_LEAKS = ["앤텔레콤", "케어통신", "안심개통", "ntelecomsafe", "ntelsafe"];
+/**
+ * 남의 글에 절대 없어야 하는 **오너 판매점 고유** 정보.
+ * ⚠️ "앤텔레콤"은 여기 넣으면 안 된다 — 통신사 이름이고, 테넌트도 앤텔레콤의
+ *    온라인 판매점이라 정상 표현이다 (2026-07-30 사업주 확인).
+ *    누출로 봐야 하는 건 오너 판매점 상호·도메인·핸들뿐이다.
+ */
+const OWNER_LEAKS = ["케어통신", "안심개통", "ntelecomsafe", "ntelsafe"];
 
 type Finding = { where: string; what: string; detail: string; published?: boolean };
 
@@ -89,6 +94,8 @@ async function auditContent(label: string, sheetId: string | undefined, isTenant
     minor: [] as Finding[],
     foreigner: [] as Finding[],
     price: [] as Finding[],
+    official: [] as Finding[],
+    leak2: [] as Finding[],
     leak: [] as Finding[],
     tenantInfo: [] as Finding[],
   };
@@ -125,6 +132,12 @@ async function auditContent(label: string, sheetId: string | undefined, isTenant
     const fr = g.findForeignerEligibilityClaims(both);
     if (fr.length) F.foreigner.push(at("foreigner", fr[0].slice(0, 80)));
 
+    const oc = g.findOfficialSelfClaims(both);
+    if (oc.length) F.official.push(at("official", oc[0].slice(0, 80)));
+
+    const pl = g.findPromptLeakage(both);
+    if (pl.length) F.leak2.push(at("promptleak", pl[0].slice(0, 90)));
+
     // 요금 표기 — 확정 6종 외 "…원" 금액
     const plain = html.replace(/<[^>]+>/g, " ");
     const bad = [...new Set(plain.match(/\d{1,3},\d{3}\s*원/g) || [])]
@@ -153,6 +166,8 @@ async function auditContent(label: string, sheetId: string | undefined, isTenant
   report("미성년자 셀프개통 가능 주장", F.minor);
   report("외국인 비대면 셀프개통 주장", F.foreigner);
   report("확정가 외 금액 표기", F.price);
+  report("'앤텔레콤 공식' 자기 지칭", F.official);
+  report("프롬프트 지시문 누출", F.leak2);
   if (isTenant) {
     report("오너 정보 누출", F.leak);
     report("테넌트 브랜드·링크 누락", F.tenantInfo);
@@ -393,6 +408,8 @@ async function auditScheduled(label: string, sheetId?: string) {
     if (bw.length) push(`금지어: ${bw.join(", ")}`);
     if (g.findMinorEligibilityClaims(both).length) push("미성년자 셀프개통 주장");
     if (g.findForeignerEligibilityClaims(both).length) push("외국인 셀프개통 주장");
+    if (g.findOfficialSelfClaims(both).length) push("'앤텔레콤 공식' 자기 지칭");
+    if (g.findPromptLeakage(both).length) push("프롬프트 지시문 누출");
     const plain = html.replace(/<[^>]+>/g, " ");
     const bad = [...new Set(plain.match(/\d{1,3},\d{3}\s*원/g) || [])]
       .map((x) => x.replace(/\s*원/, ""))

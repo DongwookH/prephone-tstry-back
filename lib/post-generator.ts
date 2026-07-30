@@ -6,6 +6,8 @@ import {
   findStructuralDefects,
   findMinorEligibilityClaims,
   findForeignerEligibilityClaims,
+  findOfficialSelfClaims,
+  findPromptLeakage,
 } from "./content-guards";
 import {
   getGlobalContext,
@@ -1049,6 +1051,27 @@ export async function generatePost(opts: {
       `사실 가드: 외국인 비대면 셀프개통 가능 오정보 — 외국인 안내는 '여권 + 매장 방문' 프레임만 허용. ` +
         `위반 구간: ${foreignerClaims.map((x) => `"…${x}…"`).join(" / ")} ` +
         `← 외국인을 '누구나 5분 비대면' 주장에 묶지 말고, 매장 방문 안내로 쓸 것`,
+    );
+  }
+
+  // "앤텔레콤 공식" 자기 지칭 가드 — 판매점이 통신사 공식을 자칭하면 폐기.
+  // ("공식" 자체는 허용. 외부 기관 지칭은 통과 — 2026-07-30 사업주 확인)
+  const officialClaims = findOfficialSelfClaims(guardTarget);
+  if (officialClaims.length > 0) {
+    throw new Error(
+      `컴플라이언스 가드: '앤텔레콤 공식' 자기 지칭 — 우리는 앤텔레콤의 온라인 판매점이지 앤텔레콤 공식이 아니다. ` +
+        `위반 구간: ${officialClaims.map((x) => `"…${x}…"`).join(" / ")} ` +
+        `← "공식 사이트/홈페이지/판매점" 같은 표현을 빼고 "신청 페이지", "요금제 안내"로 쓸 것`,
+    );
+  }
+
+  // 프롬프트 지시문 누출 가드 — 내부 작성 규칙이 본문·소제목으로 새어나오면 폐기.
+  const leaks = findPromptLeakage(guardTarget);
+  if (leaks.length > 0) {
+    throw new Error(
+      `품질 가드: 프롬프트 지시문이 본문에 노출됨 — 내부 작성 규칙을 독자용 문장으로 쓰지 말 것. ` +
+        `위반 구간: ${leaks.map((x) => `"${x}"`).join(" / ")} ` +
+        `← 요금은 "선불 기본1 12,100원" 처럼 상품명+금액으로만 쓰고, '단정 가능/확정가/후킹' 같은 내부 용어는 쓰지 말 것`,
     );
   }
 

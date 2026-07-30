@@ -15,6 +15,8 @@ import {
   findStructuralDefects,
   findMinorEligibilityClaims,
   findForeignerEligibilityClaims,
+  findOfficialSelfClaims,
+  findPromptLeakage,
   measureBodyChars,
   findComplianceBannedWords,
   complianceFixHints,
@@ -187,10 +189,10 @@ test("1인칭 가드 — 블록 태그가 문장 경계로 살아나야 오탐�
 // ─── 컴플라이언스 금지어 가드 (CLAUDE.md 2026-07-23) ───────────────
 
 test("컴플라이언스 — 실제 발행됐던 위반 문구 전부 감지", () => {
-  assert.deepEqual(
-    findComplianceBannedWords("자세한 유심 가이드는 공식 사이트에서 확인하실 수 있어요"),
-    ["공식"],
-  );
+  // "공식"은 2026-07-30에 이 목록에서 빠졌다 — 문맥을 봐야 하므로
+  // findOfficialSelfClaims가 담당한다 (외부 기관 지칭은 정당하기 때문).
+  assert.deepEqual(findComplianceBannedWords("자세한 유심 가이드는 공식 사이트에서 확인하실 수 있어요"), []);
+  assert.equal(findOfficialSelfClaims("자세한 유심 가이드는 공식 사이트에서 확인하실 수 있어요").length, 1);
   assert.deepEqual(
     findComplianceBannedWords("다이소 U+망 유심(빨간색)도 호환돼요"),
     ["다이소"],
@@ -215,7 +217,10 @@ test("컴플라이언스 — 복수 금지어 동시 감지 + HTML 제거", () =
   const hits = findComplianceBannedWords(
     '<p>본사 공식 개통센터에서 24시간 상담해 드려요</p>',
   );
-  assert.deepEqual(hits.sort(), ["24시간", "개통센터", "공식", "본사"].sort());
+  // "공식"은 목록에서 빠졌으므로 나머지 3종만 잡힌다
+  assert.deepEqual(hits.sort(), ["24시간", "개통센터", "본사"].sort());
+  // "공식"은 전용 가드가 잡는다
+  assert.equal(findOfficialSelfClaims("본사 공식 개통센터에서 상담해 드려요").length, 1);
 });
 
 test("컴플라이언스 — 정상 표현은 통과 (경계 오탐 회귀 방지)", () => {
@@ -227,7 +232,7 @@ test("컴플라이언스 — 정상 표현은 통과 (경계 오탐 회귀 방�
 });
 
 test("컴플라이언스 — 교정 힌트 생성", () => {
-  const hints = complianceFixHints(["공식", "고객센터"]);
+  const hints = complianceFixHints(["본사", "고객센터"]);
   assert.ok(hints.includes("인증판매점"));
   assert.ok(hints.includes("1:1 채팅 상담"));
 });
@@ -420,4 +425,66 @@ test("미성년자는 간편인증이 있어도 셀프개통 불가 — 면제 �
     findMinorEligibilityClaims("미성년자도 간편인증만 있으면 5분 비대면 셀프개통 가능해요").length,
     1,
   );
+});
+
+// ─── "앤텔레콤 공식" 자기 지칭 가드 (2026-07-30 사업주 확인) ──────────
+//
+// 구조: 앤텔레콤 = 통신사. 안심개통 케어통신·올리브모바일 = 그 온라인 판매점.
+// 금지는 "공식"이라는 단어가 아니라 판매점의 공식 자칭이다.
+
+test("공식 가드 — 판매점을 공식이라 칭하면 차단 (실제 발행 문구)", () => {
+  assert.equal(findOfficialSelfClaims("→ 앤텔레콤 안심개통 공식 사이트").length, 1);
+  assert.equal(findOfficialSelfClaims("공식 신청 페이지 접속").length, 1);
+  assert.equal(
+    findOfficialSelfClaims("통영앤텔레콤은 앤텔레콤의 지역별 공식 판매점으로 서비스를 제공합니다").length,
+    1,
+  );
+  assert.equal(findOfficialSelfClaims("✅ 올리브모바일 공식 신청 채널 활용").length, 1);
+});
+
+test("공식 가드 — 외부 기관 지칭은 통과 (오탐 방지)", () => {
+  assert.deepEqual(
+    findOfficialSelfClaims("공식 정보는 과학기술정보통신부 및 한국정보통신진흥협회에서 확인할 수 있습니다"),
+    [],
+  );
+  assert.deepEqual(
+    findOfficialSelfClaims("과학기술정보통신부 공식 발표 자료를 참고했어요"),
+    [],
+  );
+  // "공식"이 아예 없으면 당연히 통과
+  assert.deepEqual(findOfficialSelfClaims("신청 페이지에서 요금제를 고르세요"), []);
+  assert.deepEqual(findOfficialSelfClaims(""), []);
+});
+
+// ─── 프롬프트 지시문 누출 가드 (2026-07-30 발견) ─────────────────────
+
+test("프롬프트 누출 — 내부 작성 규칙이 본문에 나오면 차단 (실제 발행 문구)", () => {
+  // 지식베이스 07-content-rules.md의 규칙이 독자용 문장으로 변형돼 나갔다
+  assert.equal(
+    findPromptLeakage("단정 표기 가능한 확정 가격은 12,100원, 33,000원, 39,600원입니다").length,
+    1,
+  );
+  assert.equal(findPromptLeakage("공식적으로 단정 가능한 가격은 12,100원입니다").length, 1);
+  // 내부 기획 용어가 소제목으로 나간 사례
+  assert.equal(findPromptLeakage("도입부(왜 개통해야 할까) 후킹 포인트").length, 1);
+  // 스키마 필드명·프롬프트 메타
+  assert.equal(findPromptLeakage("content_html 항목을 참고하세요").length, 1);
+  assert.equal(findPromptLeakage("이 글의 페르소나는 30대 직장인입니다").length, 1);
+});
+
+test("프롬프트 누출 — 정상 용법은 통과 (코퍼스 785편 실측 기준)", () => {
+  // '단정'의 정상 용법 15편이 있었다 — 좁힌 패턴이라 안 걸려야 한다
+  assert.deepEqual(
+    findPromptLeakage("어떤 망이 더 빠르다고 단정하기보다는 사용 환경을 보세요"),
+    [],
+  );
+  // '위 요금'·'아래 요금'은 정상 (각 17·18편) — 마커에서 제외했다
+  assert.deepEqual(findPromptLeakage("아래 요금제들을 살펴보세요"), []);
+  assert.deepEqual(findPromptLeakage("위 요금제 안내 섹션에서 확인 가능해요"), []);
+  // '폐기'의 정상 용법 (유심칩 폐기 과정)
+  assert.deepEqual(findPromptLeakage("유심칩 생산 및 폐기 과정이 줄어들어 환경에 기여해요"), []);
+  // 처방된 대체 표현은 통과해야 한다 (96편에 등장)
+  assert.deepEqual(findPromptLeakage("1:1 채팅 상담을 통해 추천받을 수 있어요"), []);
+  assert.deepEqual(findPromptLeakage("정상적인 가격은 12,100원입니다"), []);
+  assert.deepEqual(findPromptLeakage(""), []);
 });

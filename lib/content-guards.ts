@@ -146,7 +146,10 @@ const COMPLIANCE_BANNED: ReadonlyArray<{ word: string; fix: string }> = [
   { word: "다이소", fix: "유심 안내는 KT 바로유심·LG 모두의 원칩만" },
   { word: "스카이라이프", fix: "유심 안내는 KT 바로유심·LG 모두의 원칩만" },
   { word: "24시간", fix: "개통 시간: 신규 08:00~21:50, 번호이동 10:00~19:50" },
-  { word: "공식", fix: "'인증판매점'으로 바꾸거나 표현 삭제 (NRC 컴플라이언스)" },
+  // ⚠️ "공식"은 이 목록에서 뺐다 — 단순 문자열 매칭이라 "공식 정보는
+  //    과학기술정보통신부에서 확인" 같은 정당한 외부 기관 지칭까지 잡았다.
+  //    금지 대상은 "판매점이 스스로를 앤텔레콤 공식이라 칭하는 것"이므로
+  //    문맥을 보는 findOfficialSelfClaims()로 옮겼다 (2026-07-30 사업주 확인).
   { word: "본사", fix: "'인증판매점'으로 (NRC 컴플라이언스)" },
   { word: "직영", fix: "'인증판매점' 또는 '매장'으로 (NRC 컴플라이언스)" },
   { word: "고객센터", fix: "'1:1 채팅 상담'으로 (NRC 컴플라이언스)" },
@@ -376,6 +379,98 @@ export function findForeignerEligibilityClaims(text: string): string[] {
     if (!ELIGIBILITY_CLAIM.test(sent)) continue;
     if (FOREIGNER_CORRECT_FRAME.test(sent)) continue;
     hits.push(sent.slice(0, 120));
+  }
+  return hits;
+}
+
+// ─── 가드 7: "앤텔레콤 공식" 자기 지칭 ──────────────────────────────
+//
+// 구조: 앤텔레콤 = 통신사. 그 아래 온라인 판매점이 둘 —
+//   · 앤텔레콤 안심개통 케어통신 (오너)
+//   · 앤텔레콤 올리브모바일 (테넌트)
+//
+// 사업주 확정(2026-07-30): "공식"이라는 단어 자체가 금지는 아니다.
+// **판매점이 스스로를 "앤텔레콤 공식"이라 칭하는 것**이 금지다.
+//   ✗ "올리브모바일 공식 신청 채널"  ✗ "공식 신청 페이지"  ✗ "앤텔레콤 공식 판매점"
+//   ○ "공식 정보는 과학기술정보통신부에서 확인"  (외부 기관 지칭)
+//
+// 기존 findComplianceBannedWords의 "공식" 단순 문자열 매칭은 외부 기관
+// 지칭까지 잡아 오탐이 났다 — 그쪽은 이 가드로 대체한다.
+
+/** 판매점 브랜드 표지 (오너·테넌트 공통 + 자기 지칭 대명사). */
+const SHOP_SELF =
+  /앤텔레콤|안심개통|케어통신|올리브모바일|저희|우리\s*(?:는|가|의)?|본\s*판매점/;
+/** "공식" 뒤에 붙으면 자기 포장이 되는 명사. */
+/**
+ * "공식" 뒤에 붙으면 자기 포장이 되는 명사.
+ * ⚠️ "공식 개통센터", "공식 온라인 스토어"처럼 중간에 수식어가 끼는 경우가
+ *    많아 짧은 토큰 하나를 허용해야 한다 — 붙여만 두면 "공식 개통센터"를
+ *    놓친다 (테스트가 잡아낸 결함).
+ */
+const OFFICIAL_NOUN =
+  /공식\s*(?:[가-힣A-Za-z0-9]{1,6}\s*)?(?:채널|페이지|사이트|홈페이지|신청|접수|판매점|대리점|스토어|파트너|인증점|몰|샵|센터|매장|지점|총판)/;
+/** "공식"이 외부 기관·자료를 가리키는 정당한 용법. */
+const OFFICIAL_EXTERNAL =
+  /공식\s*(?:정보|자료|발표|문서|통계|기관|고시|약관|지침)|(?:정보통신부|방송통신위원회|협회|정부|기관)\s*[^.]{0,20}공식/;
+
+/**
+ * "이 판매점이 앤텔레콤 공식이다"는 취지의 문장 목록 (최대 3개).
+ * 브랜드 표지 + 공식이 같은 문장에 있거나, "공식 + 채널/페이지"류 조합이면 위반.
+ */
+export function findOfficialSelfClaims(text: string): string[] {
+  const t = htmlToSentences(text);
+  const hits: string[] = [];
+  for (const sent of t.split(/[.!?…]+|\n+/)) {
+    const s = sent.trim();
+    if (hits.length >= 3) break;
+    if (!s.includes("공식")) continue;
+    if (OFFICIAL_EXTERNAL.test(s)) continue; // 외부 기관 지칭 — 정당
+    if (OFFICIAL_NOUN.test(s) || SHOP_SELF.test(s)) hits.push(s.slice(0, 120));
+  }
+  return hits;
+}
+
+// ─── 가드 8: 프롬프트 지시문 누출 ──────────────────────────────────
+//
+// 2026-07-30 발견: 지식베이스의 작성 규칙이 본문으로 흘러나왔다.
+//   내부 규칙  "단정 표기 가능한 확정 가격은 6종뿐 … 이외 숫자 단정 금지"
+//   발행 본문  "공식적으로 단정 가능한 가격은 12,100원, 33,000원, …입니다"
+//   소제목     "도입부(왜 개통해야 할까) 후킹 포인트"
+//
+// 마커는 전체 코퍼스(785편)에 대고 실측해 오탐 0인 것만 골랐다.
+// '단정'은 "단정하기보다는" 같은 정상 용법이 15편 있어 그대로 못 쓰고,
+// '단정 가능/표기/금지' 조합으로 좁혀야 14편(전부 진짜 누출)만 잡힌다.
+// '위 요금'·'아래 요금'·'폐기'·'1:1 채팅 상담'은 정상 용법이 많아 제외했다.
+
+const PROMPT_LEAK_PATTERNS: ReadonlyArray<{ re: RegExp; label: string }> = [
+  { re: /단정\s*(?:가능|불가|금지|표기|하지\s*말)/, label: "단정 표기 규칙" },
+  { re: /확정\s*정보만|확정가/, label: "확정가 지시" },
+  { re: /후킹|클리셰/, label: "후킹·클리셰 (내부 기획 용어)" },
+  { re: /금지어|게재\s*금지|위반\s*시|글\s*전체가/, label: "금지어 규칙" },
+  { re: /프롬프트|지시문|출력\s*형식|재작성/, label: "프롬프트 메타" },
+  { re: /페르소나|톤앤|말투\s*(?:는|를)/, label: "페르소나·톤 지시" },
+  { re: /NRC|컴플라이언스|banned_words/, label: "컴플라이언스 내부어" },
+  { re: /content_html|meta_description|sub_keywords|char_count|seo_score/, label: "스키마 필드명" },
+  { re: /SEO\s*점수|본문\s*글자\s*수/, label: "품질 지표 지시" },
+  { re: /규정\s*Q\d|knowledge-base|CLAUDE\.md/, label: "내부 문서 참조" },
+];
+
+/**
+ * 프롬프트·내부 규칙이 본문에 새어나온 구간 목록 (최대 3개).
+ * 독자용 글에 절대 등장하지 않는 내부 용어만 마커로 쓴다.
+ */
+export function findPromptLeakage(text: string): string[] {
+  const t = htmlToSentences(text);
+  const hits: string[] = [];
+  for (const sent of t.split(/[.!?…]+|\n+/)) {
+    const s = sent.trim();
+    if (!s || hits.length >= 3) continue;
+    for (const { re, label } of PROMPT_LEAK_PATTERNS) {
+      if (re.test(s)) {
+        hits.push(`[${label}] ${s.slice(0, 100)}`);
+        break;
+      }
+    }
   }
   return hits;
 }
