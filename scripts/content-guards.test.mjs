@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import {
   hasNumberKeepingClaim,
   hasFirstPersonVictimClaim,
+  findFirstPersonVictimClaims,
   findStructuralDefects,
   findMinorEligibilityClaims,
   findForeignerEligibilityClaims,
@@ -185,6 +186,63 @@ test("1인칭 가드 — 블록 태그가 문장 경계로 살아나야 오탐�
     hasFirstPersonVictimClaim("내 명의로 개통 가능해요<br>미납 이력 있어도 됩니다"),
     false,
   );
+});
+
+test("1인칭 가드 — 조사 결합형은 1인칭이 아니다 (블로그 배선 전 실측 오탐)", () => {
+  // 905편 코퍼스 실측: 히트 49건 중 42건이 이 유형이었다.
+  // 한국어엔 단어 경계가 없어 "문제가"·"언제가"·"실제 명의" 속 글자가 걸렸다.
+  assert.equal(hasFirstPersonVictimClaim("타사 미납이 있어도 개통에 전혀 문제가 없습니다"), false);
+  assert.equal(hasFirstPersonVictimClaim("미납 때문에 막막하다면 언제가 좋을지 알려드릴게요"), false);
+  assert.equal(hasFirstPersonVictimClaim("연체 이력이 있어도 실제 명의로 개통돼요"), false);
+});
+
+test("1인칭 가드 — '내가/내 명의'는 독자를 가리키는 정상 표현 (실측 6/6 오탐)", () => {
+  // 실제 발행 제목·소제목. 화자가 아니라 독자가 주어다.
+  assert.equal(
+    hasFirstPersonVictimClaim("편의점선불유심개통, 신용·연체·미납 내가 개통될지 3초 진단"),
+    false,
+  );
+  assert.equal(
+    hasFirstPersonVictimClaim("신용 문제나 미납 이력이 있어도 내 명의로 진행 가능한 이유"),
+    false,
+  );
+  assert.equal(
+    hasFirstPersonVictimClaim("통신비 미납 때문에 혹시 나도 개통이 어려울까 봐 망설여지시나요"),
+    false,
+  );
+});
+
+test("1인칭 가드 — '제가'는 조력자 문장이면 통과, 피해담이면 차단", () => {
+  // 통과: 화자가 도움을 주는 쪽 (실측 3/3이 이 유형)
+  assert.equal(
+    hasFirstPersonVictimClaim("신용 문제나 통신비 미납 때문에 개통이 어려웠다면, 오늘 제가 쉽고 빠른 방법을 알려드릴게요"),
+    false,
+  );
+  assert.equal(
+    hasFirstPersonVictimClaim("연체로 고민하는 분들을 위해 제가 직접 정리해 드릴게요"),
+    false,
+  );
+  // 차단: 화자가 당사자
+  assert.equal(hasFirstPersonVictimClaim("제가 요금 밀려서 폰 정지당했을 때 알게 된 방법이에요"), true);
+});
+
+test("1인칭 가드 — 실제로 발행된 위반 문장 4건 (블로그 미배선 기간에 나감)", () => {
+  const real = [
+    "저는 통신비 연체 이력이 몇 번 있어서 휴대폰 개통이 번번이 거절되었어요",
+    "저는 통신사 미납 이력 때문에 새로운 번호를 발급받아야 할 때마다 스트레스였어요",
+    "저도 처음엔 뭘 준비해야 할지 막막했는데, 막상 해보니 정말 간단했습니다",
+    "저처럼 통신사 미납 이력이 있거나, 신용 조회 없이 깔끔하게 폰을 쓰고 싶은 분들에게 딱 맞는 선택이죠",
+  ];
+  for (const s of real) assert.equal(hasFirstPersonVictimClaim(s), true, s);
+});
+
+test("1인칭 가드 — 위반 구간을 문장으로 돌려준다 (재시도 프롬프트용)", () => {
+  const spans = findFirstPersonVictimClaims(
+    "<p>선불폰은 신용조회가 없어요</p><p>저는 연체 이력 때문에 개통이 거절되었어요</p>",
+  );
+  assert.equal(spans.length, 1);
+  assert.ok(spans[0].includes("저는 연체 이력"));
+  assert.deepEqual(findFirstPersonVictimClaims("선불폰은 신용조회 없이 개통돼요"), []);
 });
 
 // ─── 컴플라이언스 금지어 가드 (CLAUDE.md 2026-07-23) ───────────────

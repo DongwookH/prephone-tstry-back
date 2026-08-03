@@ -66,6 +66,7 @@ async function findBroken(sheetId?: string): Promise<Target[]> {
     findOfficialSelfClaims,
     findPromptLeakage,
     findCommonComplianceBannedWords,
+    findFirstPersonVictimClaims,
   } = await import("../lib/content-guards");
 
   const rows = (await readRange(sheetId ?? mainSheetId(), "posts!A:U")) as string[][];
@@ -98,6 +99,7 @@ async function findBroken(sheetId?: string): Promise<Target[]> {
       ...findOfficialSelfClaims(`${title ?? ""}\n${html}`),
       ...findPromptLeakage(`${title ?? ""}\n${html}`),
       ...findCommonComplianceBannedWords(`${title ?? ""}\n${html}`),
+      ...findFirstPersonVictimClaims(`${title ?? ""}\n${html}`),
     ];
     if (defects.length === 0) continue;
     out.push({ id, keyword, category, persona, row: i + 1 }); // 시트는 1-based
@@ -116,6 +118,7 @@ async function regenSheet(label: string, sheetId?: string, tenantGuide?: unknown
     findOfficialSelfClaims,
     findPromptLeakage,
     findCommonComplianceBannedWords,
+    findFirstPersonVictimClaims,
     measureBodyChars,
   } = await import("../lib/content-guards");
   const targetSheet = sheetId ?? mainSheetId();
@@ -145,6 +148,7 @@ async function regenSheet(label: string, sheetId?: string, tenantGuide?: unknown
           ...findOfficialSelfClaims(`${post.title}\n${post.content_html}`),
           ...findPromptLeakage(`${post.title}\n${post.content_html}`),
           ...findCommonComplianceBannedWords(`${post.title}\n${post.content_html}`),
+          ...findFirstPersonVictimClaims(`${post.title}\n${post.content_html}`),
         ];
         if (defects.length > 0) throw new Error(defects.join(" / "));
 

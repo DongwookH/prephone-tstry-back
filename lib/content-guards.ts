@@ -21,8 +21,32 @@
 // 손님 표지가 없으면 위반. (한국어 주어 생략형은 여기서 못 잡음 — 2차
 // 비평 패스와 프롬프트 규칙이 보완. 오탐 비용 = 초안 1건 재생성, 저렴)
 
-const FIRST_PERSON =
-  /저도|제가|저는|저처럼|저\s*같은|제\s*폰|제\s*명의|제\s*상황|제\s*착각|내가|나도|내\s*폰|내\s*명의/;
+/**
+ * 1인칭 표지 (확실한 것만).
+ *
+ * ⚠️ 한국어엔 단어 경계(\b)가 없다. 앞 글자가 한글이면 조사 결합형이지
+ *    1인칭이 아니다 — "문**제가** 없습니다", "언**제가** 좋을까요",
+ *    "실**제 명의**로". 룩비하인드 없이 쓰면 905편 코퍼스에서 히트 49건 중
+ *    42건이 이 유형의 오탐이었다 (2026-08-03 실측).
+ *
+ * ⚠️ `내가`·`나도`·`내 폰`·`내 명의`는 표지에서 뺐다. 이 글들에서는 화자가
+ *    아니라 **독자를 가리키는 정상 표현**이다 — "신용·연체·미납 내가 개통될지
+ *    3초 진단", "복잡한 절차 없이 내 명의로 다시 시작". 실측 오탐 6/6.
+ */
+const FIRST_PERSON = /(?<![가-힣])(?:저도|저는|저처럼|저\s*같은|제\s*폰|제\s*명의|제\s*상황|제\s*착각)/;
+/**
+ * 약한 1인칭 표지 — `제가`는 조력자 문장에도 흔하다
+ * ("오늘 **제가** 쉽고 빠른 방법을 알려드릴게요"). 피해 어휘가 같은 문장에
+ * 있어도 화자가 도움을 주는 쪽이면 위반이 아니므로 HELPER_ROLE로 걸러낸다.
+ * 실측 3건 전부 이 유형이었다.
+ */
+const FIRST_PERSON_WEAK = /(?<![가-힣])제가/;
+/**
+ * 화자가 조력자로 말하는 문장 표지 — `제가` 판정에서만 제외용.
+ * ⚠️ 활용형을 다 받아야 한다. "알려**드릴**게요"는 `드리`로 안 잡힌다.
+ */
+const HELPER_ROLE =
+  /(?:알려|도와|안내해|안내|정리해|추천|말씀|보여|설명)\s*드[리릴려립린]|준비했/;
 const VICTIM_EVENT =
   /거절|퇴짜|정지|미납|연체|먹통|멈췄|밀려|밀렸|신용불량|막막|당황|폭탄|던질\s*뻔|그랬|겪었|겪어봤|착각|안\s*될\s*줄|못\s*했|안\s*된다고|안된다고/;
 const CUSTOMER_MARKER =
@@ -48,17 +72,32 @@ function htmlToSentences(html: string): string {
     .replace(/<[^>]+>/g, " ");
 }
 
+/**
+ * "화자 본인이 고객 피해 상황을 겪었다"는 **문장 구간**을 뽑는다.
+ * 재시도 프롬프트에 "정확히 이 문장을 고쳐라"로 실어 보내기 위해 span을 돌려준다
+ * (사유만 주면 모델이 같은 자리를 반복 위반 — 2026-07-27 실측).
+ */
+export function findFirstPersonVictimClaims(text: string): string[] {
+  const out: string[] = [];
+  for (const sent of htmlToSentences(text).split(/[.!?…]+|\n+/)) {
+    if (CUSTOMER_MARKER.test(sent) || !VICTIM_EVENT.test(sent)) continue;
+    const hit =
+      // (a) 명시적 1인칭 + 피해 사건
+      FIRST_PERSON.test(sent) ||
+      // (b) `제가` — 단, 조력자 문장("제가 알려드릴게요")은 제외
+      (FIRST_PERSON_WEAK.test(sent) && !HELPER_ROLE.test(sent)) ||
+      // (c) 주어 생략형: 시간 앵커 + 피해 사건, 독자용 질문이 아니면 화자 경험담
+      (TIME_ANCHOR.test(sent) && !READER_QUESTION.test(sent));
+    if (!hit) continue;
+    const s = sent.trim().replace(/\s+/g, " ");
+    if (s) out.push(s.slice(0, 120));
+  }
+  return out;
+}
+
 /** "화자 본인이 고객 피해 상황을 겪었다"는 문장이 있으면 true. */
 export function hasFirstPersonVictimClaim(text: string): boolean {
-  const t = htmlToSentences(text);
-  for (const sent of t.split(/[.!?…]+|\n+/)) {
-    if (CUSTOMER_MARKER.test(sent) || !VICTIM_EVENT.test(sent)) continue;
-    // (a) 명시적 1인칭 + 피해 사건
-    if (FIRST_PERSON.test(sent)) return true;
-    // (b) 주어 생략형: 시간 앵커 + 피해 사건, 독자용 질문이 아니면 화자 경험담으로 판정
-    if (TIME_ANCHOR.test(sent) && !READER_QUESTION.test(sent)) return true;
-  }
-  return false;
+  return findFirstPersonVictimClaims(text).length > 0;
 }
 
 // ─── 가드 1: "번호 유지/살림" 오정보 ─────────────────────────────
