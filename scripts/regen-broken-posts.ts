@@ -59,8 +59,14 @@ function sleep(ms: number) {
 /** 해당 시트의 파손 글 + 시트 행 번호를 찾는다. */
 async function findBroken(sheetId?: string): Promise<Target[]> {
   const { readRange, mainSheetId } = await import("../lib/sheets");
-  const { findStructuralDefects, findMinorEligibilityClaims, findForeignerEligibilityClaims } =
-    await import("../lib/content-guards");
+  const {
+    findStructuralDefects,
+    findMinorEligibilityClaims,
+    findForeignerEligibilityClaims,
+    findOfficialSelfClaims,
+    findPromptLeakage,
+    findCommonComplianceBannedWords,
+  } = await import("../lib/content-guards");
 
   const rows = (await readRange(sheetId ?? mainSheetId(), "posts!A:U")) as string[][];
 
@@ -89,6 +95,9 @@ async function findBroken(sheetId?: string): Promise<Target[]> {
       ...findStructuralDefects(html),
       ...findMinorEligibilityClaims(`${title ?? ""}\n${html}`),
       ...findForeignerEligibilityClaims(`${title ?? ""}\n${html}`),
+      ...findOfficialSelfClaims(`${title ?? ""}\n${html}`),
+      ...findPromptLeakage(`${title ?? ""}\n${html}`),
+      ...findCommonComplianceBannedWords(`${title ?? ""}\n${html}`),
     ];
     if (defects.length === 0) continue;
     out.push({ id, keyword, category, persona, row: i + 1 }); // 시트는 1-based
@@ -104,6 +113,9 @@ async function regenSheet(label: string, sheetId?: string, tenantGuide?: unknown
     findStructuralDefects,
     findMinorEligibilityClaims,
     findForeignerEligibilityClaims,
+    findOfficialSelfClaims,
+    findPromptLeakage,
+    findCommonComplianceBannedWords,
     measureBodyChars,
   } = await import("../lib/content-guards");
   const targetSheet = sheetId ?? mainSheetId();
@@ -130,6 +142,9 @@ async function regenSheet(label: string, sheetId?: string, tenantGuide?: unknown
           ...findStructuralDefects(post.content_html),
           ...findMinorEligibilityClaims(`${post.title}\n${post.content_html}`),
           ...findForeignerEligibilityClaims(`${post.title}\n${post.content_html}`),
+          ...findOfficialSelfClaims(`${post.title}\n${post.content_html}`),
+          ...findPromptLeakage(`${post.title}\n${post.content_html}`),
+          ...findCommonComplianceBannedWords(`${post.title}\n${post.content_html}`),
         ];
         if (defects.length > 0) throw new Error(defects.join(" / "));
 
