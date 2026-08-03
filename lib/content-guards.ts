@@ -157,6 +157,25 @@ const COMPLIANCE_BANNED: ReadonlyArray<{ word: string; fix: string }> = [
 ];
 
 /**
+ * **판매점 공통** 규제어 — 브랜드와 무관하게 모든 판매점에 적용된다.
+ *
+ * COMPLIANCE_BANNED 중 앤텔레콤 고유 항목(더지통신·앤스마트·다이소·
+ * 스카이라이프·외국인등록증·24시간)을 뺀 나머지. 자기 지칭으로 "고객센터",
+ * "본사", "직영", "개통센터"를 쓰면 통신사 조직으로 오인시키는 표현이라
+ * 판매점이면 누구나 걸린다.
+ *
+ * 테넌트에도 이걸 적용한다 (2026-08-03 사업주 결정) — 그전엔 테넌트가
+ * 본인 banned_words만 검사받아 "올리브모바일 고객센터"가 계속 나갔다.
+ */
+const COMMON_BANNED_WORDS = ["고객센터", "본사", "직영", "개통센터"] as const;
+
+/** 판매점 공통 규제어 검사 — 오너·테넌트 공통. */
+export function findCommonComplianceBannedWords(text: string): string[] {
+  const t = (text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  return COMMON_BANNED_WORDS.filter((w) => t.includes(w));
+}
+
+/**
  * 컴플라이언스 금지어 검사 — 걸린 단어 목록 반환 (없으면 빈 배열).
  * HTML 태그 제거 + 공백 정규화 후 부분 문자열 매칭.
  * (공백을 통째로 제거하면 "기본 사용"→"본사" 같은 경계 오탐이 생기므로 하지 않는다)

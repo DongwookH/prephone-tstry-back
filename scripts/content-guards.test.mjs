@@ -16,6 +16,7 @@ import {
   findMinorEligibilityClaims,
   findForeignerEligibilityClaims,
   findOfficialSelfClaims,
+  findCommonComplianceBannedWords,
   findPromptLeakage,
   measureBodyChars,
   findComplianceBannedWords,
@@ -487,4 +488,34 @@ test("프롬프트 누출 — 정상 용법은 통과 (코퍼스 785편 실측 �
   assert.deepEqual(findPromptLeakage("1:1 채팅 상담을 통해 추천받을 수 있어요"), []);
   assert.deepEqual(findPromptLeakage("정상적인 가격은 12,100원입니다"), []);
   assert.deepEqual(findPromptLeakage(""), []);
+});
+
+// ─── 판매점 공통 규제어 (2026-08-03 사업주 결정: 테넌트에도 적용) ──────
+
+test("공통 규제어 — 자기 지칭 4종을 잡는다 (실제 발행 문구)", () => {
+  assert.deepEqual(
+    findCommonComplianceBannedWords("추가 문의는 올리브모바일 고객센터로 연락 주세요"),
+    ["고객센터"],
+  );
+  assert.deepEqual(
+    findCommonComplianceBannedWords("올리브모바일 고객센터 영업시간은 오전 8시부터입니다"),
+    ["고객센터"],
+  );
+  assert.deepEqual(
+    findCommonComplianceBannedWords("<p>본사 개통센터에서 직영으로 처리합니다</p>").sort(),
+    ["개통센터", "본사", "직영"].sort(),
+  );
+});
+
+test("공통 규제어 — 앤텔레콤 고유 금지어는 포함하지 않는다", () => {
+  // 테넌트에 강제하면 안 되는 항목들 — 공통 목록에 없어야 한다
+  assert.deepEqual(findCommonComplianceBannedWords("다이소 유심도 됩니다"), []);
+  assert.deepEqual(findCommonComplianceBannedWords("더지통신 전산 확인"), []);
+  assert.deepEqual(findCommonComplianceBannedWords("24시간 언제든지"), []);
+});
+
+test("공통 규제어 — 정상 표현·경계 오탐 없음", () => {
+  assert.deepEqual(findCommonComplianceBannedWords("1:1 채팅 상담으로 문의해 주세요"), []);
+  assert.deepEqual(findCommonComplianceBannedWords("기본 사용법을 알려드려요"), []); // "본사" 오탐 X
+  assert.deepEqual(findCommonComplianceBannedWords(""), []);
 });

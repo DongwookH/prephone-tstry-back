@@ -50,6 +50,33 @@ const OWNER_LEAKS = ["케어통신", "안심개통", "ntelecomsafe", "ntelsafe"]
 
 type Finding = { where: string; what: string; detail: string; published?: boolean };
 
+/** 부대 실비 문맥 — 이 단어가 같은 문장에 있으면 요금제 가격이 아니다. */
+const FEE_CONTEXT =
+  /유심|usim|esim|이심|배송|발급|수수료|구매|구입|실비|보증금|택배|충전\s*금액|합계|총\s*비용|기기|단말/i;
+/** 요금제 가격 문맥 — 이 단어가 있어야 "요금제 가격"으로 본다. */
+const PLAN_CONTEXT = /요금제|월정액|기본료|정액|플랜|월\s*\d|한\s*달/;
+
+/**
+ * 확정 6종에 없는 **요금제 가격**만 뽑는다 (없으면 빈 배열).
+ * 문장 단위로 판정 — 실비 문맥이면 제외, 요금제 문맥일 때만 위반으로 본다.
+ */
+function findUnapprovedPlanPrices(html: string): string[] {
+  const sents = (html || "")
+    .replace(/<\/?(?:p|div|h[1-6]|li|ul|ol|tr|td|th|br)\b[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .split(/\n+|(?<=[.!?])\s+/);
+  const out = new Set<string>();
+  for (const s of sents) {
+    if (FEE_CONTEXT.test(s)) continue; // 유심비·eSIM 발급비 등 — 허용
+    if (!PLAN_CONTEXT.test(s)) continue; // 요금제 이야기가 아니면 대상 아님
+    for (const m of s.match(/\d{1,3},\d{3}\s*원/g) || []) {
+      const n = m.replace(/\s*원/, "");
+      if (!OK_PRICES.has(n)) out.add(n);
+    }
+  }
+  return [...out];
+}
+
 function h1(s: string) {
   console.log(`\n${"═".repeat(74)}\n${s}\n${"═".repeat(74)}`);
 }
@@ -138,11 +165,10 @@ async function auditContent(label: string, sheetId: string | undefined, isTenant
     const pl = g.findPromptLeakage(both);
     if (pl.length) F.leak2.push(at("promptleak", pl[0].slice(0, 90)));
 
-    // 요금 표기 — 확정 6종 외 "…원" 금액
-    const plain = html.replace(/<[^>]+>/g, " ");
-    const bad = [...new Set(plain.match(/\d{1,3},\d{3}\s*원/g) || [])]
-      .map((x) => x.replace(/\s*원/, ""))
-      .filter((n) => !OK_PRICES.has(n));
+    // 요금 표기 — **요금제 가격**만 검사한다.
+    // 유심 구매비(8,800원)·eSIM 발급비(2,750원) 같은 부대 실비는 써도 된다
+    // (2026-08-03 사업주 확인). 문장 단위로 보고 실비 문맥이면 건너뛴다.
+    const bad = findUnapprovedPlanPrices(html);
     if (bad.length) F.price.push(at("price", `확정가 아님: ${bad.join(", ")}원`));
 
     if (isTenant) {

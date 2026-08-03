@@ -4,6 +4,7 @@ import {
   findComplianceBannedWords,
   complianceFixHints,
   findStructuralDefects,
+  findCommonComplianceBannedWords,
   findMinorEligibilityClaims,
   findForeignerEligibilityClaims,
   findOfficialSelfClaims,
@@ -176,7 +177,11 @@ UTM 캠페인: ${utmCampaign}`;
   const bannedBlock = tb
     ? `## 🚫 게재 금지어 (하나라도 쓰면 글 전체가 폐기됩니다)
 - "100% 보장", "100% 가능", "무조건 가능" — 과장·단정 광고 표현 금지
-- 경쟁사·타 업체 직접 비방 금지${
+- 경쟁사·타 업체 직접 비방 금지
+- **"고객센터", "개통센터"** — 판매점은 이렇게 자칭할 수 없습니다 (통신사 조직으로 오인).
+  ✗ "○○ 고객센터에 문의하세요"  ○ "1:1 채팅 상담으로 문의하세요"
+  ✗ "고객센터 운영시간은…"      ○ "상담 운영시간은…"
+- **"본사", "직영"** — 자기 지칭·타사 지칭 모두 금지. 표현을 빼거나 "매장"으로.${
         tb.banned_words.length
           ? "\n" + tb.banned_words.map((w) => `- "${w}" — 사용자 지정 금지어`).join("\n")
           : ""
@@ -1101,13 +1106,23 @@ export async function generatePost(opts: {
   }
 
   if (opts.tenantGuide) {
-    // 테넌트 금지어 가드 — 사용자가 지정한 banned_words만 검사
-    // (앤텔레콤 NRC 컴플라이언스는 오너 전용 — 타 테넌트에 강제하지 않는다)
+    // 테넌트 금지어 가드 — 사용자 지정 banned_words + **판매점 공통 규제어**.
+    // 앤텔레콤 고유 항목(더지통신·다이소 등)은 강제하지 않지만,
+    // "고객센터·본사·직영·개통센터" 자기 지칭은 브랜드 무관 규제라 공통 적용한다
+    // (2026-08-03 사업주 결정 — 그전엔 "올리브모바일 고객센터"가 계속 나갔다).
     const plain = guardTarget.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-    const hits = opts.tenantGuide.banned_words.filter((w) => plain.includes(w));
-    if (hits.length > 0) {
+    const ownHits = opts.tenantGuide.banned_words.filter((w) => plain.includes(w));
+    if (ownHits.length > 0) {
       throw new Error(
-        `테넌트 금지어 가드: [${hits.join(", ")}] 감지 — 세부 가이드 banned_words 위반, 재생성 필요`,
+        `테넌트 금지어 가드: [${ownHits.join(", ")}] 감지 — 세부 가이드 banned_words 위반, 재생성 필요`,
+      );
+    }
+    const commonHits = findCommonComplianceBannedWords(guardTarget);
+    if (commonHits.length > 0) {
+      throw new Error(
+        `컴플라이언스 가드: 판매점 공통 규제어 [${commonHits.join(", ")}] 감지 — ` +
+          `자기 지칭으로 쓸 수 없습니다. "고객센터/개통센터" → "1:1 채팅 상담", ` +
+          `"본사/직영" → 표현 삭제`,
       );
     }
   } else {
