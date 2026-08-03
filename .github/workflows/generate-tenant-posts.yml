@@ -60,18 +60,30 @@ jobs:
       #    자식 프로세스에 새어들어 테넌트 이미지가 오너 할당량으로 나간다.
       #    generate-tenant-images.ts가 테넌트 settings 탭에서 각자 키를 읽는다.
       - name: 한글 폰트 준비
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+        # ⚠️ !cancelled() 필수 — 이게 없으면 앞 스텝(글 생성)이 exit 1일 때
+        #    GitHub Actions가 이 스텝을 자동 skip한다. 20편 중 1편만 가드에
+        #    걸려도 이미지가 통째로 안 만들어진다 (2026-07-30~08-03 5일 연속 사고).
+        #    오너 워크플로는 같은 이유로 이미 !cancelled()를 쓰고 있었다.
+        if: ${{ !cancelled() && github.event.inputs.dry_run != 'true' }}
         run: |
           curl -sL -o /tmp/NotoSansKR.ttf \
             https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf
           ls -la /tmp/NotoSansKR.ttf
 
       - name: Pillow 설치
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+        # ⚠️ !cancelled() 필수 — 이게 없으면 앞 스텝(글 생성)이 exit 1일 때
+        #    GitHub Actions가 이 스텝을 자동 skip한다. 20편 중 1편만 가드에
+        #    걸려도 이미지가 통째로 안 만들어진다 (2026-07-30~08-03 5일 연속 사고).
+        #    오너 워크플로는 같은 이유로 이미 !cancelled()를 쓰고 있었다.
+        if: ${{ !cancelled() && github.event.inputs.dry_run != 'true' }}
         run: pip install --quiet Pillow
 
       - name: 테넌트 썸네일·카드뉴스 생성
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+        # ⚠️ !cancelled() 필수 — 이게 없으면 앞 스텝(글 생성)이 exit 1일 때
+        #    GitHub Actions가 이 스텝을 자동 skip한다. 20편 중 1편만 가드에
+        #    걸려도 이미지가 통째로 안 만들어진다 (2026-07-30~08-03 5일 연속 사고).
+        #    오너 워크플로는 같은 이유로 이미 !cancelled()를 쓰고 있었다.
+        if: ${{ !cancelled() && github.event.inputs.dry_run != 'true' }}
         env:
           GOOGLE_SHEETS_CLIENT_EMAIL: ${{ secrets.GOOGLE_SHEETS_CLIENT_EMAIL }}
           GOOGLE_SHEETS_PRIVATE_KEY: ${{ secrets.GOOGLE_SHEETS_PRIVATE_KEY }}
@@ -83,7 +95,11 @@ jobs:
           echo "--- 요약 ---"; tail -n1 /tmp/tenant-images.log
 
       - name: 생성된 이미지 커밋·push
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+        # ⚠️ !cancelled() 필수 — 이게 없으면 앞 스텝(글 생성)이 exit 1일 때
+        #    GitHub Actions가 이 스텝을 자동 skip한다. 20편 중 1편만 가드에
+        #    걸려도 이미지가 통째로 안 만들어진다 (2026-07-30~08-03 5일 연속 사고).
+        #    오너 워크플로는 같은 이유로 이미 !cancelled()를 쓰고 있었다.
+        if: ${{ !cancelled() && github.event.inputs.dry_run != 'true' }}
         run: |
           set -uo pipefail
           git config user.name "github-actions[bot]"

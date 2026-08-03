@@ -40,6 +40,11 @@ loadEnvLocal();
 
 const DRY_RUN = process.argv.includes("--dry-run");
 const MAX_CARDS = process.env.TENANT_MAX_CARDS ?? "4";
+/** --date YYMMDD : 그 날짜 글만 (백필용). 생략 시 오늘. */
+const DATE_ARG = (() => {
+  const i = process.argv.indexOf("--date");
+  return i >= 0 ? process.argv[i + 1] : undefined;
+})();
 
 /** 브랜드명 → 이미지 하단 핸들. 이모지·특수문자를 걷어내고 한 줄로. */
 function handleFor(brandName: string): string {
@@ -77,7 +82,12 @@ async function main() {
       continue;
     }
 
-    const posts = await getTodayPosts(t.spreadsheet_id).catch(() => []);
+    const { getAllPosts } = await import("../lib/sheets");
+    const posts = DATE_ARG
+      ? (await getAllPosts(t.spreadsheet_id).catch(() => [])).filter((p: any) =>
+          (p.id || "").startsWith(`p-${DATE_ARG}-`),
+        )
+      : await getTodayPosts(t.spreadsheet_id).catch(() => []);
     if (posts.length === 0) {
       entry.skipped = "오늘 생성된 글 없음";
       console.log(`⏭️  ${t.email} — ${entry.skipped}`);
@@ -113,6 +123,7 @@ async function main() {
           t.spreadsheet_id,
           "--handle",
           handle,
+          ...(DATE_ARG ? ["--date", DATE_ARG] : []),
           ...extra,
         ],
         { env: childEnv, encoding: "utf8", cwd: process.cwd() },

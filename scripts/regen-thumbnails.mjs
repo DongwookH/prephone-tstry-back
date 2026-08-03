@@ -59,13 +59,22 @@ async function main() {
   // --handle 로 테넌트 브랜드를 넘기고, 없으면 기존 오너 기본값.
   const HANDLE = typeof args.handle === "string" ? args.handle : "@ntelsafe";
   const skipExisting = !!args["skip-existing"]; // 이미 있는 썸네일은 건너뜀(백필/재실행용)
-  const { getTodayPosts } = await import("../lib/sheets.ts");
+  const { getTodayPosts, getAllPosts } = await import("../lib/sheets.ts");
   const { buildPrompt, generateBackgroundImage } = await import("./nvidia-image.mjs");
 
   // 테넌트 모드: --sheet-id 로 그 테넌트 시트의 오늘 글만 대상으로 한다.
   //   (인자가 없으면 기존 동작 = 오너 메인 시트, 무회귀)
   const sheetId = typeof args["sheet-id"] === "string" ? args["sheet-id"] : undefined;
-  let posts = await getTodayPosts(sheetId);
+  // --date YYMMDD | YYYYMMDD : 그 날짜 글만. 생략 시 오늘 (기존 동작).
+  //   워크플로 사고로 특정 날짜 이미지가 통째로 빠졌을 때 백필용
+  //   (2026-08-03: 테넌트 이미지 스텝이 3일간 skip돼 필요해짐).
+  let posts;
+  if (typeof args.date === "string" && /^\d{6}(\d{2})?$/.test(args.date)) {
+    const all = await getAllPosts(sheetId);
+    posts = all.filter((p) => (p.id || "").startsWith(`p-${args.date}-`));
+  } else {
+    posts = await getTodayPosts(sheetId);
+  }
   if (typeof args.ids === "string") {
     const ids = new Set(args.ids.split(",").map((s) => s.trim()));
     posts = posts.filter((p) => ids.has(p.id));
