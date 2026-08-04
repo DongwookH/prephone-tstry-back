@@ -56,10 +56,12 @@ jobs:
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           TENANT_DAILY_COUNT: ${{ vars.TENANT_DAILY_COUNT || '3' }}
         run: |
+          # pipefail 필수 — tee를 거치면 스크립트가 아니라 tee의 exit code가 잡힌다.
+          set -uo pipefail
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            npx --yes tsx scripts/generate-tenants.ts --dry-run
+            npx --yes tsx scripts/generate-tenants.ts --dry-run 2>&1 | tee /tmp/tenant-gen.log
           else
-            npx --yes tsx scripts/generate-tenants.ts
+            npx --yes tsx scripts/generate-tenants.ts 2>&1 | tee /tmp/tenant-gen.log
           fi
 
       # ── 이미지 (테넌트별 본인 NVIDIA 키 사용) ────────────────────────
@@ -118,3 +120,24 @@ jobs:
           git commit -m "chore(images): 테넌트 썸네일·카드뉴스 자동 생성 [skip ci]"
           git pull --rebase --autostash origin main || true
           git push origin main
+
+      # ⚠️ 이 워크플로엔 실패 알림이 아예 없었다. 그래서 이미지가 5일 연속
+      #    0장이어도, push가 403으로 전멸해도 아무도 몰랐고 사업주가 눈으로
+      #    발견했다 (2026-08-04). 오너 워크플로엔 처음부터 있던 장치다.
+      - name: 실패 시 텔레그램 알림
+        if: always()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          [ "$JOB_STATUS" = "success" ] && exit 0
+          gen=$(tail -n1 /tmp/tenant-gen.log 2>/dev/null || echo '요약 없음')
+          img=$(tail -n1 /tmp/tenant-images.log 2>/dev/null || echo '요약 없음')
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          msg="🚨 테넌트 글 생성 실패 (${JOB_STATUS})
+          글: ${gen}
+          이미지: ${img}
+          ${run_url}"
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT}" --data-urlencode "text=${msg}" >/dev/null || true
