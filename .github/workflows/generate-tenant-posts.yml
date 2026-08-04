@@ -25,6 +25,13 @@ jobs:
   generate:
     name: Generate (테넌트 순회)
     runs-on: ubuntu-latest
+    # ⚠️ 이 잡은 생성한 이미지를 리포에 커밋·push한다. permissions가 없으면
+    #    기본 토큰이 읽기 전용이라 push가 403으로 거부된다 — 이미지는 다
+    #    만들어놓고 마지막 한 줄에서 통째로 날아간다 (2026-08-04 실제 사고:
+    #    썸네일 19·카드 76장이 커밋까지 되고 push에서 전멸).
+    #    오너 워크플로(generate-posts.yml)엔 처음부터 있었는데 이식이 빠졌다.
+    permissions:
+      contents: write
     # 편당 생성 ~1분 + 썸네일 1장·카드 4장. TENANT_DAILY_COUNT를 올릴 때
     # 여기도 같이 올린다 — 20편이면 글 ~23분 + 이미지 ~15분이라 50분은 빠듯하다.
     timeout-minutes: 90
