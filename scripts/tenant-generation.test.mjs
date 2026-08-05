@@ -166,7 +166,7 @@ test("컴플라이언스 금지어 포함 키워드 — 계획 단계에서 차�
   assert.equal(isContentBlacklistedKeyword("스카이라이프유심"), true);
 });
 
-test("정지·미납류 키워드 — 새 번호 프레임 강제 블록 주입", () => {
+test("새 번호 프레임 블록 — 키워드와 무관하게 항상 주입 (가드가 항상 켜져 있으므로)", () => {
   const risky = buildPrompt({
     keyword: "SKT발신정지",
     category: "일반",
@@ -176,9 +176,11 @@ test("정지·미납류 키워드 — 새 번호 프레임 강제 블록 주입"
   });
   assert.equal(risky.includes("번호 관련 서술 규칙"), true);
   assert.equal(risky.includes("새 번호가 발급"), true);
-  // 발신정지류는 독자가 번호 결말을 궁금해하므로 Q&A 유도 규칙을 유지한다
-  assert.equal(risky.includes("번호는 어떻게 되나요?"), true);
 
+  // ⚠️ 조건부로 되돌리지 말 것. 가드(findNumberKeepingClaims)는 키워드와
+  //    무관하게 항상 켜져 있다. 규칙만 조건부면 조건 밖 키워드에서 모델이
+  //    배운 적 없는 위반을 반복해 재시도 3회를 그대로 태운다
+  //    (2026-08-04 '선불폰당일개통' 3/3 폐기).
   const normal = buildPrompt({
     keyword: "선불유심가격",
     category: "일반",
@@ -186,7 +188,14 @@ test("정지·미납류 키워드 — 새 번호 프레임 강제 블록 주입"
     persona: "일반",
     utmCampaign: "test",
   });
-  assert.equal(normal.includes("번호 관련 서술 규칙"), false);
+  assert.equal(normal.includes("번호 관련 서술 규칙"), true);
+  assert.equal(normal.includes("새 번호가 발급"), true);
+
+  // 번호 Q&A는 "유도"가 아니라 "금지"다 — 답변이 거의 매번 "기존 번호를
+  // 유지할 수 없어요"로 나와 통째로 폐기됐다 (2026-08-04 '통신사직권해지').
+  for (const p of [risky, normal]) {
+    assert.equal(p.includes("Q&A에 번호 관련 질문을 아예 만들지 마세요"), true);
+  }
 });
 
 test("프레임 블록이 지시하는 예시 문장 — 실제 가드 통과 정합성", async () => {

@@ -65,12 +65,14 @@ type LibModules = {
   getAllPosts: typeof import("../lib/sheets")["getAllPosts"];
   generatePost: typeof import("../lib/post-generator")["generatePost"];
   ACTIVE_PATTERN_IDS: typeof import("../lib/title-diversity")["ACTIVE_PATTERN_IDS"];
+  isTransientApiError: typeof import("../lib/gemini")["isTransientApiError"];
 };
 
 async function loadLibs(): Promise<LibModules> {
   const sheets = await import("../lib/sheets");
   const gen = await import("../lib/post-generator");
   const td = await import("../lib/title-diversity");
+  const gemini = await import("../lib/gemini");
   return {
     appendPosts: sheets.appendPosts,
     bumpKeywordsUsage: sheets.bumpKeywordsUsage,
@@ -78,6 +80,7 @@ async function loadLibs(): Promise<LibModules> {
     getAllPosts: sheets.getAllPosts,
     generatePost: gen.generatePost,
     ACTIVE_PATTERN_IDS: td.ACTIVE_PATTERN_IDS,
+    isTransientApiError: gemini.isTransientApiError,
   };
 }
 
@@ -388,7 +391,12 @@ async function main(): Promise<void> {
     // 직전 시도의 가드 폐기 사유 — 다음 시도 프롬프트에 교정 지시로 주입
     // (사유 없이 같은 프롬프트로 재시도하면 같은 금지어를 반복해 3회 전부 소진하는 문제 방지)
     let lastGuardError: string | undefined;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    // 통신 오류로 날린 횟수 — "내용 시도 3회"에서 차감하지 않는다.
+    // 차감하면 글 자체엔 문제가 없는데 네트워크 블립 한 번에 키워드가 사라진다
+    // (2026-08-05 테넌트에서 실제 발생 — 오너 쪽도 같은 구조라 같이 막는다).
+    let transientRetries = 0;
+    const MAX_TRANSIENT_RETRIES = 2;
+    for (let attempt = 1; attempt <= 3; ) {
       try {
         const r = await generateAndSaveOne(libs, item, lastGuardError);
         console.log(
@@ -400,10 +408,22 @@ async function main(): Promise<void> {
         break;
       } catch (err) {
         const msg = (err as Error).message || String(err);
+        if (
+          libs.isTransientApiError(err) &&
+          transientRetries < MAX_TRANSIENT_RETRIES
+        ) {
+          transientRetries++;
+          console.log(
+            `  🔁 통신 오류 — 시도 횟수 차감 없이 재시도 (${transientRetries}/${MAX_TRANSIENT_RETRIES}): ${msg.slice(0, 120)}`,
+          );
+          await sleep(20_000);
+          continue; // attempt 증가시키지 않음
+        }
         console.log(`  …시도 ${attempt}/3 실패: ${msg}`);
         // 가드 사유만 피드백으로 전달 (API 오류·429 등은 프롬프트에 넣어봐야 무의미)
         lastGuardError = /가드/.test(msg) ? msg : lastGuardError;
-        if (attempt < 3) {
+        attempt++;
+        if (attempt <= 3) {
           await sleep(5_000); // 사이 5초 대기
         }
       }

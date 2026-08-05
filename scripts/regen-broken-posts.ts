@@ -47,6 +47,19 @@ const OWNER_ONLY = process.argv.includes("--owner-only");
 const TENANTS_ONLY = process.argv.includes("--tenants-only");
 /** 예약된 글만 대상 — 미예약 옛 초안은 건드리지 않는다. */
 const SCHEDULED_ONLY = process.argv.includes("--scheduled-only");
+/**
+ * 특정 id만 대상 (`--ids=p-260805-020,p-260805-011`).
+ *
+ * 가드로는 못 잡는 결함 — 예컨대 직전 글과 거의 같은 제목 — 을 사람이 눈으로
+ * 찾았을 때 그 글만 다시 뽑기 위한 통로다. 지정하면 가드 검사를 건너뛰지만
+ * 발행 흔적이 있는 글은 여전히 손대지 않는다.
+ */
+const ONLY_IDS = new Set(
+  (process.argv.find((a) => a.startsWith("--ids="))?.slice("--ids=".length) ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
 /** 글 1편당 최대 생성 시도 (구조 가드에 걸리면 재시도). */
 const MAX_TRIES = 3;
 
@@ -90,6 +103,13 @@ async function findBroken(sheetId?: string): Promise<Target[]> {
     // status가 ready인데 published_at만 찍힌 옛 행이 실제로 있다.
     if (status === "published" || publishedAt?.trim() || tistoryUrl?.trim()) continue;
     if (!html) continue;
+    // --ids 지정 시엔 가드 검사 없이 그 id만 (가드로 못 잡는 결함 수동 처리용).
+    if (ONLY_IDS.size > 0) {
+      if (ONLY_IDS.has(id.trim())) {
+        out.push({ id, keyword, category, persona, row: i + 1 });
+      }
+      continue;
+    }
     // 재생성 사유 두 가지: 구조 파손 + 사실 오류(미성년자 셀프개통 가능 주장).
     // 제목만 위반인 경우도 있어 제목·본문을 함께 검사한다.
     const defects = [
@@ -124,7 +144,9 @@ async function regenSheet(label: string, sheetId?: string, tenantGuide?: unknown
   const targetSheet = sheetId ?? mainSheetId();
 
   const targets = await findBroken(sheetId);
-  console.log(`\n=== ${label} — 파손 ${targets.length}편 ===`);
+  console.log(
+    `\n=== ${label} — ${ONLY_IDS.size > 0 ? "id 지정" : "파손"} ${targets.length}편 ===`,
+  );
   if (targets.length === 0) return { total: 0, ok: 0, failed: 0 };
 
   let ok = 0;

@@ -1064,9 +1064,16 @@ export async function generatePost(opts: {
   // 이 가드가 없어서 2026-07-29에 목차만 6개고 본문은 3섹션인 글이 나갔다.
   const structural = findStructuralDefects(htmlWithHero);
   if (structural.length > 0) {
-    throw new Error(
-      `구조 가드: ${structural.join(" / ")} — 6개 섹션을 끝까지 채워서 다시 작성할 것`,
-    );
+    // 분량 미달일 때는 "몇 자 더" 대신 "각 섹션 몇 문장"으로 지시한다.
+    // 숫자만 주면 모델이 하한 언저리를 겨냥해 계속 아슬아슬하게 미달한다
+    // (2026-08-05 프리페이드유심: 1,279 → 1,370 → 1,487자로 13자 모자라 폐기).
+    const shortBody = structural.some((d) => d.includes("분량 미달"));
+    const fix = shortBody
+      ? `— 직전 글은 각 섹션이 2~3문장에서 끊겼다. **6개 섹션을 각각 6문장 이상**으로 ` +
+        `끝까지 쓰고, 표·목록·Q&A도 항목을 빠짐없이 채울 것. 하한(1,500자)을 겨우 넘기려 하지 말고 ` +
+        `본문 2,500자를 목표로 쓸 것`
+      : `— 6개 섹션을 끝까지 채워서 다시 작성할 것`;
+    throw new Error(`구조 가드: ${structural.join(" / ")} ${fix}`);
   }
 
   // 미성년자 가드 — 운영 규정 Q8: 미성년자 셀프개통 불가(부모님 동반 센터 방문).

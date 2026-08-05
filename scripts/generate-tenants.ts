@@ -81,7 +81,9 @@ async function main(): Promise<void> {
   } = await import("../lib/tenant-config");
   const sheets = await import("../lib/sheets");
   const { generatePost } = await import("../lib/post-generator");
-  const { invalidateGeminiKeyCache } = await import("../lib/gemini");
+  const { invalidateGeminiKeyCache, isTransientApiError } = await import(
+    "../lib/gemini"
+  );
 
   // ① 테넌트 목록은 env 오버라이드 전에 (마스터 시트에서) 읽는다
   const tenants = (await listTenants()).filter(
@@ -205,7 +207,13 @@ async function main(): Promise<void> {
 
         let lastGuardError: string | undefined;
         let ok = false;
-        for (let attempt = 1; attempt <= 3; attempt++) {
+        // 통신 오류로 날린 횟수 — "내용 시도 3회"에서 차감하지 않는다.
+        // 차감하면 글 자체엔 아무 문제가 없는데도 네트워크 블립 한 번에
+        // 키워드가 사라진다 (2026-08-05 프리페이드유심: 3회 중 1회를
+        // fetch failed로 잃고 남은 시도에서 1,487자로 13자 모자라 폐기).
+        let transientRetries = 0;
+        const MAX_TRANSIENT_RETRIES = 2;
+        for (let attempt = 1; attempt <= 3; ) {
           try {
             const recentTitles = await sheets
               .getRecentPostTitles(25)
@@ -255,11 +263,23 @@ async function main(): Promise<void> {
             break;
           } catch (err) {
             const msg = (err as Error).message || String(err);
+            if (
+              isTransientApiError(err) &&
+              transientRetries < MAX_TRANSIENT_RETRIES
+            ) {
+              transientRetries++;
+              console.log(
+                `   🔁 ${t.email} | ${kw.keyword} 통신 오류 — 시도 횟수 차감 없이 재시도 (${transientRetries}/${MAX_TRANSIENT_RETRIES}): ${msg.slice(0, 120)}`,
+              );
+              await sleep(20_000);
+              continue; // attempt 증가시키지 않음
+            }
             if (/가드/.test(msg)) lastGuardError = msg;
             console.log(
               `   ⚠️ ${t.email} | ${kw.keyword} 시도 ${attempt}/3 실패: ${msg.slice(0, 160)}`,
             );
-            if (attempt < 3) await sleep(5_000);
+            attempt++;
+            if (attempt <= 3) await sleep(5_000);
           }
         }
         if (!ok) entry.errors.push(kw.keyword);

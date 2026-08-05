@@ -118,6 +118,60 @@ function maskKey(key: string) {
 }
 
 /**
+ * 네트워크 계층 실패인지 판정 — HTTP 응답 자체가 없었던 경우.
+ *
+ * undici(node fetch)는 실패를 "fetch failed"라는 밋밋한 메시지로 감싸고
+ * 진짜 사유는 err.cause에 넣는다. cause까지 따라가야 ECONNRESET·타임아웃을
+ * 구분할 수 있다.
+ */
+function looksLikeNetworkFailure(err: unknown): boolean {
+  const seen = new Set<unknown>();
+  let cur: unknown = err;
+  for (let depth = 0; cur && depth < 5; depth++) {
+    if (seen.has(cur)) break; // cause 순환 방어
+    seen.add(cur);
+    const message = String((cur as Error)?.message ?? "").toLowerCase();
+    const code = String((cur as { code?: string })?.code ?? "").toUpperCase();
+    if (
+      message.includes("fetch failed") ||
+      message.includes("socket hang up") ||
+      message.includes("network") ||
+      message.includes("terminated") ||
+      /^(ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EPIPE|UND_ERR_)/.test(
+        code,
+      )
+    ) {
+      return true;
+    }
+    cur = (cur as { cause?: unknown })?.cause;
+  }
+  return false;
+}
+
+/**
+ * 스크립트 재시도 루프용 — "글 내용 문제"가 아니라 "통신 문제"인가?
+ *
+ * 왜 필요한가: 생성 스크립트는 항목당 3회만 시도한다. 통신 오류가 그 3회를
+ * 깎아먹으면 멀쩡한 키워드가 내용 문제도 없이 사라진다. 이 판정으로
+ * 통신 실패는 횟수 차감 없이 다시 태운다.
+ */
+export function isTransientApiError(err: unknown): boolean {
+  if (looksLikeNetworkFailure(err)) return true;
+  const status =
+    (err as { status?: number })?.status ??
+    (err as { response?: { status?: number } })?.response?.status;
+  if (status) return [408, 429, 500, 502, 503, 504].includes(status);
+  const message = String((err as Error)?.message ?? "").toLowerCase();
+  return (
+    message.includes("overloaded") ||
+    message.includes("unavailable") ||
+    message.includes("rate limit") ||
+    message.includes("resource_exhausted") ||
+    message.includes("timeout")
+  );
+}
+
+/**
  * 일시적 오류인지 판정. 일시적이면 다음 키로 fallback.
  * - 429: rate limit (분당/일일 한도 초과)
  * - 500/502/503/504: 서버 일시 오류
@@ -132,6 +186,11 @@ function isRetryableError(err: unknown): boolean {
     (err as { status?: number })?.status ??
     (err as { response?: { status?: number } })?.response?.status ??
     (err as { httpStatus?: number })?.httpStatus;
+
+  // 네트워크 계층 실패는 HTTP status가 아예 없다 — status만 보면 못 잡는다.
+  // 이게 빠져 있어서 "fetch failed" 한 번에 폴백 체인 전체가 무력화됐다
+  // (2026-08-05: 테넌트 4회 발생, 그중 프리페이드유심 1편이 이걸로 사망).
+  if (looksLikeNetworkFailure(err)) return true;
 
   // 메시지 기반 휴리스틱 (Gemini SDK는 status를 항상 채우진 않음)
   const message = String((err as Error)?.message ?? "").toLowerCase();
