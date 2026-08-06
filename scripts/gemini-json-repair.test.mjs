@@ -103,3 +103,34 @@ test("cause 순환 참조에도 무한루프에 빠지지 않는다", async () =
   b.cause = a;
   assert.equal(isTransientApiError(a), false);
 });
+
+// generateWithFallback은 마지막에 "🚦 Gemini 호출 한도 도달(429)…" 같은
+// 한국어 안내 문구로 Error를 새로 만들어 던진다. 그 과정에서 원본 status가
+// 겉면에서 사라지므로 cause 체인을 따라가야 429를 알아본다.
+// (2026-08-06 '쿠팡유심개통' 3번째 시도가 이걸 못 잡아 통째로 소진됐다.)
+test("한국어 안내 문구로 감싼 429 — cause 체인으로 통신 오류 판정", async () => {
+  const { isTransientApiError } = await import("../lib/gemini.ts");
+  const wrapped = new Error(
+    "🚦 Gemini 호출 한도 도달(429) — 분당/일일 한도일 수 있습니다. 키 4개 × 모델 3종 모두 시도함.",
+    { cause: Object.assign(new Error("Too Many Requests"), { status: 429 }) },
+  );
+  assert.equal(isTransientApiError(wrapped), true);
+
+  // cause가 없어도 한국어 문구만으로 판정된다 (구버전 에러 대비)
+  assert.equal(
+    isTransientApiError(new Error("🚦 Gemini 호출 한도 도달(429) — 잠시 후 재시도")),
+    true,
+  );
+  assert.equal(
+    isTransientApiError(new Error("⏳ Gemini 서버 일시 과부하(503) — 구글 쪽 현상")),
+    true,
+  );
+});
+
+test("가드 폐기는 cause가 있어도 통신 오류가 아니다", async () => {
+  const { isTransientApiError } = await import("../lib/gemini.ts");
+  const guard = new Error("품질 가드: 프롬프트 지시문이 본문에 노출됨", {
+    cause: new Error("위반 구간: 요금제 확정가 안내"),
+  });
+  assert.equal(isTransientApiError(guard), false);
+});

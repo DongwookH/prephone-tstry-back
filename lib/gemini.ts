@@ -157,18 +157,34 @@ function looksLikeNetworkFailure(err: unknown): boolean {
  */
 export function isTransientApiError(err: unknown): boolean {
   if (looksLikeNetworkFailure(err)) return true;
-  const status =
-    (err as { status?: number })?.status ??
-    (err as { response?: { status?: number } })?.response?.status;
-  if (status) return [408, 429, 500, 502, 503, 504].includes(status);
-  const message = String((err as Error)?.message ?? "").toLowerCase();
-  return (
-    message.includes("overloaded") ||
-    message.includes("unavailable") ||
-    message.includes("rate limit") ||
-    message.includes("resource_exhausted") ||
-    message.includes("timeout")
-  );
+
+  // cause 체인까지 훑는다 — generateWithFallback이 마지막에 던지는 에러는
+  // 한국어 안내 문구로 새로 만든 Error라 status가 겉면엔 없고 cause에만 있다.
+  const seen = new Set<unknown>();
+  let cur: unknown = err;
+  for (let depth = 0; cur && depth < 5; depth++) {
+    if (seen.has(cur)) break;
+    seen.add(cur);
+    const status =
+      (cur as { status?: number })?.status ??
+      (cur as { response?: { status?: number } })?.response?.status;
+    if (status && [408, 429, 500, 502, 503, 504].includes(status)) return true;
+    const message = String((cur as Error)?.message ?? "").toLowerCase();
+    if (
+      message.includes("overloaded") ||
+      message.includes("unavailable") ||
+      message.includes("rate limit") ||
+      message.includes("resource_exhausted") ||
+      message.includes("timeout") ||
+      // describeFinalError가 만드는 한국어 문구 — 영어 키워드가 없다.
+      message.includes("호출 한도 도달") ||
+      message.includes("서버 일시 과부하")
+    ) {
+      return true;
+    }
+    cur = (cur as { cause?: unknown })?.cause;
+  }
+  return false;
 }
 
 /**
@@ -394,7 +410,13 @@ export async function generateWithFallback<T>(
     }
   }
 
-  throw new Error(describeFinalError(lastError, KEYS.length, models));
+  // ⚠️ cause를 반드시 실어 보낸다. describeFinalError는 읽기 좋은 한국어
+  //    문구를 새로 만드는데, 그 과정에서 원본 에러의 status가 사라진다.
+  //    그러면 호출부(isTransientApiError)가 429·503을 "글 내용 문제"로
+  //    오인해 재시도 3회를 태운다 (2026-08-06 '쿠팡유심개통' 3번째 시도).
+  throw new Error(describeFinalError(lastError, KEYS.length, models), {
+    cause: lastError,
+  });
 }
 
 /**
