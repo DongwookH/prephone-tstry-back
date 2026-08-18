@@ -7,8 +7,11 @@ name: Threads Watchdog (발행 감시)
 # 두 워크플로가 같은 GHA 스킵 윈도우에 동시에 죽을 확률을 낮춤.
 # 알림 스팸 없음 — 라우트 쪽에서 60분 쿨다운 + 요약 하루 1회 보장.
 on:
-  schedule:
-    - cron: "18,38,58 23,0-16 * * *"
+  # ⚠️ 2026-08-18 중단 — v2 백오피스(prephone-tstry-back-v2)로 이관 완료.
+  # 사장님 지시로 구 시스템 정기 실행을 전부 끔. 수동 실행(workflow_dispatch)은
+  # 되돌릴 일에 대비해 남겨둔다. 되살리려면 아래 schedule 블록의 주석을 풀면 된다.
+  # schedule:
+    # - cron: "18,38,58 23,0-16 * * *"
   workflow_dispatch:
 
 concurrency:

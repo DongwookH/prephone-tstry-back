@@ -8,8 +8,11 @@ name: Generate Tenant Posts
 # ⚠️ GEMINI_API_KEYS를 일부러 주입하지 않는다 — 테넌트는 반드시 본인 시트
 #    settings 탭의 키만 사용해야 하며, 키 없는 테넌트는 스크립트가 스킵한다.
 on:
-  schedule:
-    - cron: "45 22 * * *"
+  # ⚠️ 2026-08-18 중단 — v2 백오피스(prephone-tstry-back-v2)로 이관 완료.
+  # 사장님 지시로 구 시스템 정기 실행을 전부 끔. 수동 실행(workflow_dispatch)은
+  # 되돌릴 일에 대비해 남겨둔다. 되살리려면 아래 schedule 블록의 주석을 풀면 된다.
+  # schedule:
+    # - cron: "45 22 * * *"
   workflow_dispatch:
     inputs:
       dry_run:

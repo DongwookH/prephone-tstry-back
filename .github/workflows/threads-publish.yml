@@ -12,8 +12,11 @@ name: Threads Publish (scheduled drafts)
 # 밴드: UTC 23,0-16시 (= KST 8시 ~ 익일 1시) — 슬롯(KST 9/14/20) + 최대 5h 지연 꼬리 커버.
 # 분: :08/:28/:48 — 정시(:00) 피크 시간대를 피해 스킵 확률을 낮춤(GitHub 권장).
 on:
-  schedule:
-    - cron: "8,28,48 23,0-16 * * *"
+  # ⚠️ 2026-08-18 중단 — v2 백오피스(prephone-tstry-back-v2)로 이관 완료.
+  # 사장님 지시로 구 시스템 정기 실행을 전부 끔. 수동 실행(workflow_dispatch)은
+  # 되돌릴 일에 대비해 남겨둔다. 되살리려면 아래 schedule 블록의 주석을 풀면 된다.
+  # schedule:
+    # - cron: "8,28,48 23,0-16 * * *"
   workflow_dispatch:
 
 concurrency:

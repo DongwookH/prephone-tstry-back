@@ -15,8 +15,11 @@ name: Generate Daily Posts
 #    → 생성 자체를 GHA 러너에서 실행(scripts/generate-daily.ts)하고 시트 저장까지 러너에서 직접 수행.
 #      Vercel은 계획 조회(plan) 등 가벼운 API만 담당. GHA 러너는 실행 시간 제한이 없다.
 on:
-  schedule:
-    - cron: "15 22 * * *"
+  # ⚠️ 2026-08-18 중단 — v2 백오피스(prephone-tstry-back-v2)로 이관 완료.
+  # 사장님 지시로 구 시스템 정기 실행을 전부 끔. 수동 실행(workflow_dispatch)은
+  # 되돌릴 일에 대비해 남겨둔다. 되살리려면 아래 schedule 블록의 주석을 풀면 된다.
+  # schedule:
+    # - cron: "15 22 * * *"
   workflow_dispatch:
     inputs:
       reason:

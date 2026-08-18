@@ -6,8 +6,11 @@ name: Threads Weekly Plan (24 drafts)
 #
 # 24번 직렬 호출 (각 1편 생성, Vercel 60초 한도 회피). 8일=월~다음주 월.
 on:
-  schedule:
-    - cron: "15 19 * * 0"
+  # ⚠️ 2026-08-18 중단 — v2 백오피스(prephone-tstry-back-v2)로 이관 완료.
+  # 사장님 지시로 구 시스템 정기 실행을 전부 끔. 수동 실행(workflow_dispatch)은
+  # 되돌릴 일에 대비해 남겨둔다. 되살리려면 아래 schedule 블록의 주석을 풀면 된다.
+  # schedule:
+    # - cron: "15 19 * * 0"
   workflow_dispatch:
     inputs:
       reason:
